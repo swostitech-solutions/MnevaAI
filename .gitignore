@@ -19,7 +19,7 @@ Thumbs.db
 .env.staging
 
 # ── Qdrant local vector storage ─────────────────────────────
-storage/
+/storage/
 
 # ── Snapshots / temp ──────────────────────────────────────────
 snapshots/
