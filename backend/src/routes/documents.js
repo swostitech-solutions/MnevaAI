@@ -9,16 +9,18 @@ import {
 } from '../controllers/document.controller.js'
 
 const router = express.Router()
-const uploadDir = path.resolve(process.cwd(), 'storage', 'uploads')
-fs.mkdirSync(uploadDir, { recursive: true })
 
+// Use memory storage — controller handles S3 or local disk persistence
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadDir),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 })
+
+// Ensure local uploads dir exists as fallback when S3 is not configured
+if (!process.env.AWS_S3_BUCKET) {
+  const uploadDir = path.resolve(process.cwd(), 'storage', 'uploads')
+  fs.mkdirSync(uploadDir, { recursive: true })
+}
 
 router.get('/', getDocuments)
 router.post('/upload', upload.single('file'), uploadDocument)

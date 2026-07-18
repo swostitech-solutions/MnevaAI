@@ -5,12 +5,14 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "npx kill-port 3001 && nodemon src/server.js",
-    "start": "node src/server.js",
+    "build": "npx prisma generate",
+    "start": "npx prisma migrate deploy && node src/server.js",
     "db:test": "node -r dotenv/config test-db.js",
     "db:clean-demo": "node scripts/cleanDemoData.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
+    "@aws-sdk/client-s3": "^3.1090.0",
     "@langchain/langgraph": "^1.4.4",
     "@prisma/client": "^6.19.3",
     "@qdrant/js-client-rest": "^1.18.0",

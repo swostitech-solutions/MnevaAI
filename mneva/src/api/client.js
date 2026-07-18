@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 
 function getBaseUrl() {
   // In production build, use the hardcoded production URL
-  if (!__DEV__) return 'https://your-production-url.com';
+  if (!__DEV__) return 'https://mneva-backend.onrender.com';
 
   // In dev, derive host from Expo's dev server so it works on any network/IP
   const host = Constants.expoConfig?.hostUri?.split(':')[0];

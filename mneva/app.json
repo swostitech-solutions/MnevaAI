@@ -48,6 +48,11 @@
     "web": {
       "favicon": "./assets/mneva.png"
     },
+    "extra": {
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    },
     "plugins": [
       "expo-audio",
       "expo-image-picker",

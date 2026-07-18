@@ -202,26 +202,7 @@ const shutdown = async (signal) => {
   setTimeout(() => process.exit(1), 10000)
 }
 
-const preferredPort = Number(process.env.PORT) || 3001
-const listenPort = await new Promise((resolve) => {
-  const tryPort = (port) => {
-    const tempServer = createServer(app)
-    tempServer.once('error', (err) => {
-      if (err && err.code === 'EADDRINUSE') {
-        tryPort(port + 1)
-      } else {
-        logger.error(err)
-        process.exit(1)
-      }
-    })
-    tempServer.once('listening', () => {
-      tempServer.close(() => resolve(port))
-    })
-    tempServer.listen(port)
-  }
-
-  tryPort(preferredPort)
-})
+const listenPort = Number(process.env.PORT) || 3001
 
 const redisClient = await connectRedis()
 const qdrantClient = await connectQdrant()
@@ -240,7 +221,7 @@ if (redisClient) {
   logger.warn('⚠️ Redis not reachable; BullMQ workers skipped')
 }
 
-server.listen(listenPort)
+server.listen(listenPort, '0.0.0.0')
 
 server.on('listening', () => {
   logger.info(`🚀 Mneva AI v2 running on :${listenPort}`)
@@ -252,7 +233,7 @@ server.on('listening', () => {
 
 server.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
-    logger.error(`Port ${listenPort} is already in use. Free the port or set PORT to a different value.`)
+    logger.error(`Port ${listenPort} is already in use.`)
     process.exit(1)
   }
   logger.error(err)

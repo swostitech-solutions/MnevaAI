@@ -6,6 +6,52 @@ import { qdrantService } from '../services/qdrant.service.js'
 
 const SUPPORTED_DOCUMENT_TYPES = ['pdf', 'docx', 'text', 'zip', 'image']
 
+// ── S3 helpers (only initialised when AWS_S3_BUCKET is set) ──────────────────
+let s3Client = null
+async function getS3() {
+  if (s3Client) return s3Client
+  if (!process.env.AWS_S3_BUCKET) return null
+  const { S3Client } = await import('@aws-sdk/client-s3')
+  s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' })
+  return s3Client
+}
+
+async function persistFile(file) {
+  const s3 = await getS3()
+  const filename = `${Date.now()}-${file.originalname}`
+
+  if (s3) {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+    await s3.send(new PutObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET,
+      Key: `uploads/${filename}`,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    }))
+    return `s3://${process.env.AWS_S3_BUCKET}/uploads/${filename}`
+  }
+
+  // Local disk fallback
+  const uploadDir = path.resolve(process.cwd(), 'storage', 'uploads')
+  const localPath = path.join(uploadDir, filename)
+  await fs.writeFile(localPath, file.buffer)
+  return localPath
+}
+
+async function deletePersistedFile(filePath) {
+  if (!filePath) return
+  if (filePath.startsWith('s3://')) {
+    const s3 = await getS3()
+    if (!s3) return
+    const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')
+    const key = filePath.replace(`s3://${process.env.AWS_S3_BUCKET}/`, '')
+    await s3.send(new DeleteObjectCommand({ Bucket: process.env.AWS_S3_BUCKET, Key: key })).catch(() => {})
+    return
+  }
+  const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath)
+  await fs.unlink(resolved).catch(() => {})
+}
+
 export async function getDocuments(req, res) {
   try {
     const docs = await prisma.document.findMany({
@@ -27,11 +73,10 @@ export async function uploadDocument(req, res) {
     const { chunkText } = await import('../documents/chunker.js')
 
     const title = req.body.title || req.file.originalname
-    const filePath = req.file.path || req.file.originalname
 
     let parsed
     try {
-      parsed = await parseFile(filePath, req.file.mimetype, req.file.buffer)
+      parsed = await parseFile(req.file.originalname, req.file.mimetype, req.file.buffer)
       if (!SUPPORTED_DOCUMENT_TYPES.includes(parsed.type)) {
         throw new Error(`Unsupported parsed document type: ${parsed.type}`)
       }
@@ -39,20 +84,18 @@ export async function uploadDocument(req, res) {
       return res.status(422).json({ error: `Could not parse file: ${parseErr.message}` })
     }
 
+    const filePath = await persistFile(req.file)
+
     const document = await prisma.document.create({
       data: { title, filePath, userId: req.user.id },
     })
 
-    // If this is an image and OCR didn't find text, skip indexing and inform the user
     if (parsed.type === 'image' && parsed.ocr === false) {
       const detail = parsed.error || 'No readable text found in the image. OCR failed or there was no extractable text.'
       return res.status(201).json({
-        document,
-        chunks: 0,
+        document, chunks: 0,
         preview: parsed.text ? parsed.text.slice(0, 500) : '',
-        fileType: parsed.type,
-        stored: [],
-        note: detail,
+        fileType: parsed.type, stored: [], note: detail,
       })
     }
 
@@ -79,11 +122,9 @@ export async function uploadDocument(req, res) {
     }
 
     res.status(201).json({
-      document,
-      chunks: chunks.length,
+      document, chunks: chunks.length,
       preview: parsed.text.slice(0, 500),
-      fileType: parsed.type,
-      stored,
+      fileType: parsed.type, stored,
     })
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -104,15 +145,7 @@ export async function deleteDocument(req, res) {
     }
 
     if (document.filePath) {
-      const resolvedPath = path.isAbsolute(document.filePath)
-        ? document.filePath
-        : path.resolve(process.cwd(), document.filePath)
-
-      try {
-        await fs.unlink(resolvedPath)
-      } catch {
-        // ignore missing file artifacts
-      }
+      await deletePersistedFile(document.filePath)
     }
 
     await qdrantService.deleteByFilter('mneva_memory', {

@@ -70,7 +70,10 @@ async function parseZipArchive(filePath, buffer) {
 async function parseImage(filePath, buffer) {
   try {
     const { createWorker } = await import('tesseract.js')
-    const worker = await createWorker({ logger: () => {} })
+    // On Render (Docker), Tesseract is installed system-wide via apk.
+    // TESSDATA_PREFIX points to the system tessdata dir; falls back to local.
+    const langPath = process.env.TESSDATA_PREFIX || '/usr/share/tessdata'
+    const worker = await createWorker({ logger: () => {}, langPath })
 
     try {
       await worker.loadLanguage('eng')
