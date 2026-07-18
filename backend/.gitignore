@@ -1,0 +1,29 @@
+# ── Dependencies ──────────────────────────────────────────────
+node_modules/
+
+# ── Environment (contains real API keys, DB passwords) ────────
+.env
+.env.local
+.env.production
+.env.staging
+
+# ── PostgreSQL local data volume ──────────────────────────────
+.postgres-data/
+
+# ── Logs ──────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Uploaded user files ───────────────────────────────────────
+storage/uploads/
+
+# ── Prisma generated client ───────────────────────────────────
+src/generated/
+
+# ── Tesseract OCR trained data (large binary) ─────────────────
+*.traineddata
+
+# ── OS / Editor ───────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/

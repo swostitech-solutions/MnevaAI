@@ -1,0 +1,105 @@
+version: '3.9'
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mneva-postgres
+    ports: ["5432:5432"]
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-mneva}
+      - POSTGRES_USER=${POSTGRES_USER:-mneva_admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-Mneva@12345}
+    volumes:
+      - mneva-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-mneva_admin} -d $${POSTGRES_DB:-mneva}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mneva-redis
+    ports: ["6379:6379"]
+    command: redis-server --appendonly yes
+    volumes:
+      - mneva-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.0
+    container_name: mneva-qdrant
+    ports: ["6333:6333", "6334:6334"]
+    volumes:
+      - mneva-qdrant-data:/qdrant/storage
+    environment:
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: { context: ../backend, dockerfile: Dockerfile }
+    container_name: mneva-backend
+    ports: ["3001:3001"]
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3001
+      - FRONTEND_URL=http://localhost:5174
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-mneva_admin}:${POSTGRES_PASSWORD:-Mneva@12345}@db:5432/${POSTGRES_DB:-mneva}?schema=public
+      - REDIS_URL=redis://redis:6379
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-mneva_super_secret_key_change_in_production_32chars}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-test-key-replace-with-your-actual-key}
+      - DEEPSEEK_MODEL=deepseek-chat
+      - DEEPSEEK_BASE_URL=https://api.deepseek.com
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - EMBEDDING_DIMENSIONS=512
+      - QDRANT_VECTOR_SIZE=512
+      - RATE_LIMIT_WINDOW_MS=900000
+      - RATE_LIMIT_MAX=200
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mneva-network
+
+  frontend:
+    build: { context: ../frontend, dockerfile: Dockerfile }
+    container_name: mneva-frontend
+    ports: ["5173:80"]
+    environment:
+      - VITE_API_BASE_URL=http://localhost:3001
+      - VITE_SOCKET_URL=http://localhost:3001
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - mneva-network
+
+networks:
+  mneva-network:
+    driver: bridge
+
+volumes:
+  mneva-postgres-data:
+  mneva-redis-data:
+  mneva-qdrant-data:
+

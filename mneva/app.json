@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Mneva",
+    "slug": "Mneva",
+    "scheme": "mneva",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/mneva.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FAFAFC",
+    "ios": {
+      "supportsTablet": true,
+      "userInterfaceStyle": "light",
+      "bundleIdentifier": "com.swostitech.mneva",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Mneva uses your location to show local weather on the dashboard.",
+        "NSCameraUsageDescription": "Mneva uses your camera to capture images for AI analysis.",
+        "NSPhotoLibraryUsageDescription": "Mneva accesses your photo library to upload images for AI analysis."
+      }
+    },
+    "android": {
+      "userInterfaceStyle": "light",
+      "package": "com.swostitech.mneva",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "mneva" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE"
+      ],
+      "backgroundColor": "#FAFAFC",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/mneva.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/mneva.png"
+    },
+    "plugins": [
+      "expo-audio",
+      "expo-image-picker",
+      "expo-status-bar",
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}

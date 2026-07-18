@@ -1,0 +1,17 @@
+# ── Dependencies ──────────────────────────────────────────────
+node_modules/
+
+# ── Environment ───────────────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.staging
+
+# ── Build output ──────────────────────────────────────────────
+dist/
+build/
+
+# ── OS / Editor ───────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/

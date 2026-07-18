@@ -1,0 +1,47 @@
+{
+  "name": "mneva-backend",
+  "version": "2.0.0",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "npx kill-port 3001 && nodemon src/server.js",
+    "start": "node src/server.js",
+    "db:test": "node -r dotenv/config test-db.js",
+    "db:clean-demo": "node scripts/cleanDemoData.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
+    "@langchain/langgraph": "^1.4.4",
+    "@prisma/client": "^6.19.3",
+    "@qdrant/js-client-rest": "^1.18.0",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.79.0",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.3.1",
+    "express-validator": "^7.1.0",
+    "googleapis": "^131.0.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.11.1",
+    "jsonwebtoken": "^9.0.2",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.8.0",
+    "morgan": "^1.10.0",
+    "multer": "^2.2.0",
+    "openai": "^6.45.0",
+    "pdf-parse": "^1.1.1",
+    "prisma": "^6.19.3",
+    "resend": "^6.17.2",
+    "socket.io": "^4.7.5",
+    "tesseract.js": "^4.1.4",
+    "uuid": "^9.0.1",
+    "voyageai": "^0.0.5",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "kill-port": "^1.6.1",
+    "nodemon": "^3.1.4"
+  }
+}

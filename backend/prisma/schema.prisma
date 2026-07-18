@@ -1,0 +1,282 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AgentType {
+  PLANNER
+  RESEARCHER
+  MEMORY
+  FINANCE
+  HEALTH
+  COMMUNICATION
+  CUSTOM
+}
+
+enum WorkflowStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id               String         @id @default(uuid())
+  email            String         @unique
+  name             String
+  passwordHash     String
+  avatar           String?
+  trustLevel       Int            @default(1)
+  plan             String         @default("Free")
+  city             String?
+  preferences      Json           @default("{}")
+  emailVerified    Boolean        @default(false)
+  verifyToken      String?
+  verifyTokenExp   DateTime?
+  onboardingDone   Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+
+  notifications Notification[]
+  agentLedgers  AgentLedger[]
+  trustScore    TrustScore?
+  userProfile   UserProfile?
+
+  conversations Conversation[]
+  agents        Agent[]
+  workflows     Workflow[]
+  documents     Document[]
+  tasks         Task[]
+}
+
+model UserProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  // About
+  nickname            String?
+  dateOfBirth         String?
+  gender              String?
+  country             String?
+  city                String?
+  timezone            String?
+  language            String?
+  // Work
+  occupation          String?
+  company             String?
+  industry            String?
+  professionalLevel   String?
+  skills              Json     @default("[]")
+  learningTopics      Json     @default("[]")
+  careerGoals         String?
+  // Interests
+  interests           Json     @default("[]")
+  followTopics        Json     @default("[]")
+  // Goals
+  goals               Json     @default("[]")
+  topGoal             String?
+  // Lifestyle
+  wakeTime            String?
+  sleepTime           String?
+  workingHours        String?
+  exerciseFrequency   String?
+  workMode            String?
+  productiveTime      String?
+  // Health
+  height              String?
+  weight              String?
+  bloodGroup          String?
+  diet                String?
+  exerciseLevel       String?
+  medicalConditions   String?
+  allergies           String?
+  healthConnect       String?
+  // Finance
+  financeCountry      String?
+  currency            String?
+  monthlyBudget       String?
+  investmentExp       String?
+  investmentPlatforms Json     @default("[]")
+  investmentTypes     Json     @default("[]")
+  upiApps             Json     @default("[]")
+  monitorBills        Boolean  @default(false)
+  // Family
+  familyReminders     Boolean  @default(false)
+  familyMembers       Json     @default("[]")
+  schoolReminders     Boolean  @default(false)
+  medicineReminders   Boolean  @default(false)
+  vaccinationReminders Boolean @default(false)
+  // AI Preferences
+  aiPersonality       String   @default("Friendly")
+  responseLength      String   @default("Medium")
+  aiVoice             String   @default("None")
+  enableMemory        Boolean  @default(true)
+  proactiveSuggestions Boolean @default(true)
+  dailySummary        Boolean  @default(true)
+  weeklyReport        Boolean  @default(false)
+  // Connections
+  connectedApps       Json     @default("[]")
+  // Memory
+  aiMemories          Json     @default("[]")
+  // Completion
+  completedSections   Json     @default("[]")
+  completionPct       Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Conversation {
+  id          String    @id @default(uuid())
+  title       String?
+  userId      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+
+  @@index([userId])
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  conversationId  String
+  role            String
+  content         String   @db.Text
+  embeddingId     String?
+  createdAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model Agent {
+  id          String    @id @default(uuid())
+  name        String
+  type        AgentType
+  description String?
+  config      Json?
+  userId      String
+  createdAt   DateTime @default(now())
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Workflow {
+  id          String           @id @default(uuid())
+  name        String
+  description String?
+  status      WorkflowStatus   @default(PENDING)
+  userId      String
+  createdAt   DateTime         @default(now())
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  executions  WorkflowExecution[]
+
+  @@index([userId])
+}
+
+model WorkflowExecution {
+  id          String   @id @default(uuid())
+  workflowId  String
+  status      String
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeSource {
+  id          String   @id @default(uuid())
+  name        String
+  sourceType  String
+  url         String?
+  createdAt   DateTime @default(now())
+
+  documents   Document[]
+}
+
+model Document {
+  id                String   @id @default(uuid())
+  title             String
+  filePath          String?
+  qdrantCollection  String?
+  knowledgeSourceId String?
+  userId            String
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  knowledgeSource KnowledgeSource? @relation(fields: [knowledgeSourceId], references: [id])
+
+  @@index([userId])
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  status      String   @default("PENDING")
+  userId      String
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ToolExecution {
+  id          String   @id @default(uuid())
+  toolName    String
+  status      String
+  input       Json?
+  output      Json?
+  createdAt   DateTime @default(now())
+}
+
+model ApprovalRequest {
+  id          String   @id @default(uuid())
+  action      String
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  userId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AgentLedger {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  tool      String
+  status    String
+  signature String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model TrustScore {
+  id              String @id @default(uuid())
+  userId          String @unique
+  score           Int    @default(0)
+  approvedActions Int    @default(0)
+  rejectedActions Int    @default(0)
+  executedActions Int    @default(0)
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
