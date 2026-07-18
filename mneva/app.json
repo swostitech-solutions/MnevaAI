@@ -26,16 +26,25 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "mneva" }
+            {
+              "scheme": "mneva"
+            }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "READ_MEDIA_IMAGES",
-        "READ_EXTERNAL_STORAGE"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "backgroundColor": "#FAFAFC",
       "adaptiveIcon": {
@@ -48,16 +57,19 @@
     "web": {
       "favicon": "./assets/mneva.png"
     },
-    "extra": {
-      "eas": {
-        "projectId": "your-eas-project-id"
-      }
-    },
     "plugins": [
       "expo-audio",
       "expo-image-picker",
       "expo-status-bar",
-      "@react-native-community/datetimepicker"
-    ]
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b64ced4b-09af-428c-b47c-b626fd1c6321"
+      }
+    },
+    "owner": "suryasunil10"
   }
 }
