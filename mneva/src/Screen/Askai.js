@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
-import Voice from "@react-native-voice/voice";
+import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as Speech from "expo-speech";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -291,7 +291,7 @@ export default function AskAI({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const scrollRef = useRef(null);
-  const audioRecorder = null; // replaced by Voice
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef(null);
 
@@ -461,38 +461,53 @@ export default function AskAI({ navigation }) {
     }
   };
 
-  // ── Voice recording (native SpeechRecognition — no API key needed) ────────
-  useEffect(() => {
-    Voice.onSpeechStart = () => setRecording(true);
-    Voice.onSpeechEnd = () => setRecording(false);
-    Voice.onSpeechError = () => {
-      setRecording(false);
-      setTranscribing(false);
-      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Could not understand. Please try again.' });
-    };
-    Voice.onSpeechResults = async (e) => {
-      const text = e.value?.[0];
-      if (text) {
-        setTranscribing(false);
-        await handleSend(text);
-      }
-    };
-    return () => { Voice.destroy().then(Voice.removeAllListeners); };
-  }, [messages]);
-
+  // ── Voice recording (expo-audio → backend transcription) ──────────────────
   const startRecording = async () => {
     try {
-      await Voice.start('en-IN');
+      const status = await AudioModule.requestRecordingPermissionsAsync();
+      if (!status.granted) {
+        addMessage({ id: String(Date.now()), sender: 'ai', text: 'Microphone permission denied. Please enable it in Settings.' });
+        return;
+      }
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setRecording(true);
     } catch {
-      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Could not start voice input. Please try again.' });
+      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Could not start recording. Please try again.' });
     }
   };
 
   const stopRecording = async () => {
+    setRecording(false);
+    setTranscribing(true);
     try {
-      await Voice.stop();
-      setTranscribing(true);
-    } catch {}
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
+      if (!uri) throw new Error('No recording URI');
+
+      const { token } = await getStoredAuth();
+      const formData = new FormData();
+      formData.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' });
+
+      const res = await fetch(`${BASE_URL}/api/agent/transcribe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data?.text) {
+        await handleSend(data.text);
+      } else {
+        const errMsg = data?.error || 'Could not transcribe audio.';
+        addMessage({ id: String(Date.now()), sender: 'ai', text: errMsg.includes('GROQ_API_KEY')
+          ? 'Voice transcription needs a free Groq API key on the server. For now, please type your message.'
+          : 'Could not transcribe audio. Please type your message instead.' });
+      }
+    } catch {
+      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Transcription failed. Please type your message.' });
+    } finally {
+      setTranscribing(false);
+    }
   };
 
   const handleMicPress = () => {
