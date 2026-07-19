@@ -504,6 +504,8 @@ export default function AskAI({ navigation }) {
     try {
       const { token } = await getStoredAuth();
       const formData = new FormData();
+      // Always include the filename with extension so backend can detect type
+      // React Native sometimes sends wrong mimeType — backend uses extension
       formData.append("file", { uri, name, type: mimeType || "application/octet-stream" });
 
       const res = await fetch(`${BASE_URL}/api/documents/upload`, {
@@ -515,14 +517,12 @@ export default function AskAI({ navigation }) {
       let data = {};
       try { data = await res.json(); } catch {}
 
-      if (!res.ok) {
-        throw new Error(data.error || `Server error ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
 
       const chunks = data.chunks || 0;
       const msg = chunks > 0
-        ? `\u2705 Uploaded and indexed **${name}** (${chunks} chunk${chunks > 1 ? 's' : ''}). You can now ask me questions about its content.`
-        : `Uploaded ${name}. ${data.note || 'No readable text was found in the file.'}`;
+        ? `\u2705 Uploaded **${name}** (${chunks} chunk${chunks > 1 ? 's' : ''}). You can now ask me questions about its content.`
+        : `Uploaded ${name}. ${data.note || 'No readable text found in the file.'}`;
 
       setMessages(prev => {
         const copy = [...prev];
