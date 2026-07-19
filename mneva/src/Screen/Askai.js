@@ -650,8 +650,8 @@ export default function AskAI({ navigation }) {
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
       >
         {/* Header */}
         <View style={[styles.header, { paddingHorizontal: horizontalPad }]}>
@@ -691,6 +691,7 @@ export default function AskAI({ navigation }) {
           style={styles.container}
           contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad }]}
           showsVerticalScrollIndicator={false}
+          keyboardDismissMode="on-drag"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
           onLayout={() => scrollRef.current?.scrollToEnd({ animated: false })}
         >
