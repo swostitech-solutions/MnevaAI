@@ -8,6 +8,11 @@
     "icon": "./assets/mneva.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FAFAFC",
+    "splash": {
+      "image": "./assets/mneva-m-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAFAFC"
+    },
     "ios": {
       "supportsTablet": true,
       "userInterfaceStyle": "light",
@@ -63,7 +68,8 @@
       "expo-status-bar",
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      "expo-splash-screen"
     ],
     "extra": {
       "eas": {
