@@ -70,7 +70,7 @@ function AccountTab({ user, currentLevel, navigation }) {
               await apiFetch('/api/auth/delete-account', { method: 'DELETE' });
             } catch {}
             await clearAuth();
-            navigation?.reset?.({ index: 0, routes: [{ name: 'Signin' }] });
+            navigation?.reset?.({ index: 0, routes: [{ name: 'Onboarding' }] });
           },
         },
       ]

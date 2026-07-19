@@ -780,7 +780,7 @@ export default function Home({ navigation }) {
 
   const handleLogout = async () => {
     await clearAuth();
-    navigation.replace('Signin');
+    navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
   };
 
   const markNotifRead = async (id) => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, BASE_URL } from '../api/client';
 import { saveAuth } from '../storage/auth';
 
 export default function Signin({ navigation }) {
@@ -23,6 +23,37 @@ export default function Signin({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [warming, setWarming] = useState(false);
+
+  // Ping backend on mount to wake Render free tier from sleep
+  useEffect(() => {
+    let cancelled = false;
+    const warmUp = async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/health`, { method: 'GET' });
+        if (!res.ok && !cancelled) setWarming(false);
+      } catch {
+        // server was sleeping — show warming message
+        if (!cancelled) {
+          setWarming(true);
+          // retry every 3s until it responds
+          const interval = setInterval(async () => {
+            try {
+              const r = await fetch(`${BASE_URL}/api/health`, { method: 'GET' });
+              if (r.ok && !cancelled) {
+                setWarming(false);
+                clearInterval(interval);
+              }
+            } catch {}
+          }, 3000);
+          // clear after 90s max
+          setTimeout(() => { clearInterval(interval); if (!cancelled) setWarming(false); }, 90000);
+        }
+      }
+    };
+    warmUp();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSignin = async () => {
     setError('');
@@ -70,6 +101,13 @@ export default function Signin({ navigation }) {
 
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to continue to Mneva AI</Text>
+
+        {warming ? (
+          <View style={styles.warmingBanner}>
+            <ActivityIndicator size="small" color="#7B5FE8" />
+            <Text style={styles.warmingText}>  Waking up server… first login may take ~30s</Text>
+          </View>
+        ) : null}
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -245,5 +283,21 @@ const styles = StyleSheet.create({
     color: '#7B5FE8',
     fontSize: 14,
     fontWeight: '700',
+  },
+  warmingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F0FF',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+    width: '100%',
+  },
+  warmingText: {
+    fontSize: 12,
+    color: '#7B5FE8',
+    fontWeight: '600',
+    flexShrink: 1,
   },
 });
