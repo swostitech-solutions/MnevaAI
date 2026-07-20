@@ -18,7 +18,6 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
-import Voice from "@react-native-voice/voice";
 import * as Speech from "expo-speech";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -462,33 +461,53 @@ export default function AskAI({ navigation }) {
     }
   };
 
-  // ── Voice recording (native SpeechRecognition — same as web browser API) ──────
-  useEffect(() => {
-    Voice.onSpeechStart = () => setRecording(true);
-    Voice.onSpeechEnd = () => { setRecording(false); setTranscribing(true); };
-    Voice.onSpeechError = (e) => {
-      setRecording(false);
-      setTranscribing(false);
-      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Could not understand. Please try again.' });
-    };
-    Voice.onSpeechResults = async (e) => {
-      setTranscribing(false);
-      const text = e.value?.[0];
-      if (text) await handleSend(text);
-    };
-    return () => { Voice.destroy().then(Voice.removeAllListeners).catch(() => {}); };
-  }, [messages]);
-
+  // ── Voice recording (expo-audio → backend transcription) ──────────────────
   const startRecording = async () => {
     try {
-      await Voice.start('en-IN');
+      const status = await AudioModule.requestRecordingPermissionsAsync();
+      if (!status.granted) {
+        addMessage({ id: String(Date.now()), sender: 'ai', text: 'Microphone permission denied. Please enable it in Settings.' });
+        return;
+      }
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setRecording(true);
     } catch {
-      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Could not start voice input. Please try again.' });
+      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Could not start recording. Please try again.' });
     }
   };
 
   const stopRecording = async () => {
-    try { await Voice.stop(); } catch {}
+    setRecording(false);
+    setTranscribing(true);
+    try {
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
+      if (!uri) throw new Error('No recording URI');
+
+      const { token } = await getStoredAuth();
+      const formData = new FormData();
+      formData.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' });
+
+      const res = await fetch(`${BASE_URL}/api/agent/transcribe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data?.text) {
+        await handleSend(data.text);
+      } else {
+        const errMsg = data?.error || 'Could not transcribe audio.';
+        addMessage({ id: String(Date.now()), sender: 'ai', text: errMsg.includes('GROQ_API_KEY')
+          ? 'Voice transcription needs a free Groq API key on the server. For now, please type your message.'
+          : 'Could not transcribe audio. Please type your message instead.' });
+      }
+    } catch {
+      addMessage({ id: String(Date.now()), sender: 'ai', text: 'Transcription failed. Please type your message.' });
+    } finally {
+      setTranscribing(false);
+    }
   };
 
   const handleMicPress = () => {
@@ -504,8 +523,6 @@ export default function AskAI({ navigation }) {
     try {
       const { token } = await getStoredAuth();
       const formData = new FormData();
-      // Always include the filename with extension so backend can detect type
-      // React Native sometimes sends wrong mimeType — backend uses extension
       formData.append("file", { uri, name, type: mimeType || "application/octet-stream" });
 
       const res = await fetch(`${BASE_URL}/api/documents/upload`, {
@@ -517,12 +534,14 @@ export default function AskAI({ navigation }) {
       let data = {};
       try { data = await res.json(); } catch {}
 
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+      if (!res.ok) {
+        throw new Error(data.error || `Server error ${res.status}`);
+      }
 
       const chunks = data.chunks || 0;
       const msg = chunks > 0
-        ? `\u2705 Uploaded **${name}** (${chunks} chunk${chunks > 1 ? 's' : ''}). You can now ask me questions about its content.`
-        : `Uploaded ${name}. ${data.note || 'No readable text found in the file.'}`;
+        ? `\u2705 Uploaded and indexed **${name}** (${chunks} chunk${chunks > 1 ? 's' : ''}). You can now ask me questions about its content.`
+        : `Uploaded ${name}. ${data.note || 'No readable text was found in the file.'}`;
 
       setMessages(prev => {
         const copy = [...prev];

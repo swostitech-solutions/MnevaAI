@@ -18,6 +18,7 @@
       "userInterfaceStyle": "light",
       "bundleIdentifier": "com.swostitech.mneva",
       "infoPlist": {
+        "NSMicrophoneUsageDescription": "Mneva uses your microphone to record voice messages for AI transcription.",
         "NSLocationWhenInUseUsageDescription": "Mneva uses your location to show local weather on the dashboard.",
         "NSCameraUsageDescription": "Mneva uses your camera to capture images for AI analysis.",
         "NSPhotoLibraryUsageDescription": "Mneva accesses your photo library to upload images for AI analysis."
@@ -46,7 +47,10 @@
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "backgroundColor": "#FAFAFC",
       "adaptiveIcon": {

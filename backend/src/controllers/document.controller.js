@@ -31,16 +31,11 @@ async function persistFile(file) {
     return `s3://${process.env.AWS_S3_BUCKET}/uploads/${filename}`
   }
 
-  // Local disk — best effort, non-fatal on Render ephemeral filesystem
-  try {
-    const uploadDir = path.resolve(process.cwd(), 'storage', 'uploads')
-    await fs.mkdir(uploadDir, { recursive: true })
-    const localPath = path.join(uploadDir, filename)
-    await fs.writeFile(localPath, file.buffer)
-    return localPath
-  } catch {
-    return filename // store just the filename, parsing already done from buffer
-  }
+  // Local disk fallback
+  const uploadDir = path.resolve(process.cwd(), 'storage', 'uploads')
+  const localPath = path.join(uploadDir, filename)
+  await fs.writeFile(localPath, file.buffer)
+  return localPath
 }
 
 async function deletePersistedFile(filePath) {

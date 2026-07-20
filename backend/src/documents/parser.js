@@ -4,13 +4,10 @@ import path from 'node:path'
 export async function parseFile(filePath, mimetype, buffer) {
   const ext = path.extname(filePath).toLowerCase()
 
-  // Normalise mimetype — mobile (React Native) often sends null or
-  // 'application/octet-stream' regardless of actual file type.
-  // Always trust the file extension over the mimetype.
   const isImageExt = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp'].includes(ext)
   const isZipExt = ext === '.zip'
 
-  if (ext === '.pdf' || (!ext && mimetype === 'application/pdf')) {
+  if (mimetype === 'application/pdf' || ext === '.pdf') {
     const pdfParse = (await import('pdf-parse')).default
     const data = buffer || await fs.readFile(filePath)
     const result = await pdfParse(data)
@@ -21,7 +18,7 @@ export async function parseFile(filePath, mimetype, buffer) {
     return parseZipArchive(filePath, buffer)
   }
 
-  if (ext === '.docx' || mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+  if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === '.docx') {
     const mammoth = (await import('mammoth')).default
     const data = buffer || await fs.readFile(filePath)
     const result = await mammoth.extractRawText({ buffer: data })
@@ -34,21 +31,13 @@ export async function parseFile(filePath, mimetype, buffer) {
     return { text, type: 'image', ocr }
   }
 
-  const textExts = ['.txt', '.md', '.csv', '.json', '.js', '.ts', '.py', '.log', '.xml', '.yaml', '.yml']
+  const textExts = ['.txt', '.md', '.csv', '.json', '.js', '.ts', '.py']
   if (textExts.includes(ext) || mimetype?.startsWith('text/')) {
     const data = buffer ? buffer.toString('utf8') : await fs.readFile(filePath, 'utf8')
     return { text: data, type: 'text' }
   }
 
-  // Last resort — try reading as plain text (handles octet-stream from mobile)
-  if (buffer) {
-    try {
-      const text = buffer.toString('utf8')
-      if (text && text.length > 0) return { text, type: 'text' }
-    } catch {}
-  }
-
-  throw new Error(`Unsupported file type: ${ext || '(no extension)'} — supported: PDF, DOCX, TXT, CSV, JSON, images`)
+  throw new Error(`Unsupported file type: ${ext} (${mimetype})`)
 }
 
 async function parseZipArchive(filePath, buffer) {
