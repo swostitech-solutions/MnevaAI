@@ -29,6 +29,7 @@ import { useSocket } from '../services/socket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import * as Speech from 'expo-speech';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // NOTE: This screen expects your app root to be wrapped in
 // <SafeAreaProvider> (from react-native-safe-area-context) so that
@@ -352,10 +353,11 @@ function VoiceOrb({ visible, onClose, navigation }) {
       const uri = audioRecorder.uri;
       if (!uri) throw new Error('no uri');
       const { token } = await getStoredAuth();
-      const form = new FormData();
-      form.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' });
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       const tRes = await fetch(`${BASE_URL}/api/agent/transcribe`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioBase64: base64, fileName: 'voice.m4a', mimeType: 'audio/m4a' }),
       });
       const tData = await tRes.json();
       const text = tData?.text || '';

@@ -22,6 +22,7 @@ import * as Speech from "expo-speech";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as FileSystem from "expo-file-system/legacy";
 import { apiFetch, BASE_URL } from "../api/client";
 import { getStoredAuth } from "../storage/auth";
 import { useSocket } from "../services/socket";
@@ -486,22 +487,21 @@ export default function AskAI({ navigation }) {
       if (!uri) throw new Error('No recording URI');
 
       const { token } = await getStoredAuth();
-      const formData = new FormData();
-      formData.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' });
-
+      // Read as base64 and send as JSON — avoids React Native FormData binary issues
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       const res = await fetch(`${BASE_URL}/api/agent/transcribe`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ audioBase64: base64, fileName: 'voice.m4a', mimeType: 'audio/m4a' }),
       });
       const data = await res.json();
       if (data?.text) {
         await handleSend(data.text);
       } else {
-        const errMsg = data?.error || 'Could not transcribe audio.';
-        addMessage({ id: String(Date.now()), sender: 'ai', text: errMsg.includes('GROQ_API_KEY')
-          ? 'Voice transcription needs a free Groq API key on the server. For now, please type your message.'
-          : 'Could not transcribe audio. Please type your message instead.' });
+        addMessage({ id: String(Date.now()), sender: 'ai', text: 'Could not transcribe audio. Please type your message instead.' });
       }
     } catch {
       addMessage({ id: String(Date.now()), sender: 'ai', text: 'Transcription failed. Please type your message.' });
@@ -522,21 +522,21 @@ export default function AskAI({ navigation }) {
     addMessage({ id: String(Date.now()), sender: "ai", text: `Uploading ${name}\u2026` });
     try {
       const { token } = await getStoredAuth();
-      const formData = new FormData();
-      formData.append("file", { uri, name, type: mimeType || "application/octet-stream" });
-
+      // Read file as base64 and send as JSON — avoids React Native FormData binary issues
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       const res = await fetch(`${BASE_URL}/api/documents/upload`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fileBase64: base64, fileName: name, mimeType: mimeType || 'application/octet-stream' }),
       });
 
       let data = {};
       try { data = await res.json(); } catch {}
 
-      if (!res.ok) {
-        throw new Error(data.error || `Server error ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
 
       const chunks = data.chunks || 0;
       const msg = chunks > 0

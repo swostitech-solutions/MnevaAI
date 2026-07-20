@@ -129,8 +129,23 @@ agentRouter.post('/researcher', async (req, res) => {
 
 agentRouter.post('/transcribe', upload.single('audio'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'audio file is required' })
-    const result = await transcribeAudio(req.file)
+    let file = req.file
+
+    // React Native sends base64 JSON instead of multipart FormData
+    if (!file && req.body?.audioBase64) {
+      const base64 = String(req.body.audioBase64).replace(/^data:[^;]+;base64,/, '')
+      const buffer = Buffer.from(base64, 'base64')
+      if (!buffer.length) return res.status(400).json({ error: 'Empty audio data received' })
+      file = {
+        buffer,
+        originalname: req.body.fileName || 'voice.m4a',
+        mimetype: req.body.mimeType || 'audio/m4a',
+        size: buffer.length,
+      }
+    }
+
+    if (!file) return res.status(400).json({ error: 'audio file is required' })
+    const result = await transcribeAudio(file)
     res.json(result)
   } catch (err) {
     res.status(500).json({ error: err.message })
