@@ -76,8 +76,8 @@ const agentLimiter = rateLimit({
 })
 app.use('/api/agent/chat', agentLimiter)
 app.use('/api/agent/draft', agentLimiter)
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: '50mb' }))
+app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(morgan('short', { stream: { write: m => logger.info(m.trim()) } }))
 
 // ── Public ──────────────────────────────────────────────────────────────────

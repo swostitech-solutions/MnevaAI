@@ -401,7 +401,13 @@ export default function AskAI({ navigation }) {
   const speakText = (text) => {
     if (!voiceEnabledRef.current) return;
     Speech.stop();
-    const clean = text.replace(/[*_`#~]/g, '').trim();
+    const clean = text
+      .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA9F}\u{FE00}-\u{FEFF}]/gu, '')
+      .replace(/[*_`#~>|\-=+\[\]{}\\^]/g, '')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (!clean) return;
     setSpeaking(true);
     Speech.speak(clean, {
       language: 'en-IN',
@@ -511,8 +517,13 @@ export default function AskAI({ navigation }) {
   };
 
   const handleMicPress = () => {
-    if (recording) stopRecording();
-    else startRecording();
+    if (recording) {
+      stopRecording();
+    } else {
+      Speech.stop();
+      setSpeaking(false);
+      startRecording();
+    }
   };
 
   // ── Shared upload handler (same as web's handleFileChange) ─────────────────

@@ -3,6 +3,7 @@ import path from 'node:path'
 import { prisma } from '../config/prisma.js'
 import { memoryService } from '../services/memory.service.js'
 import { qdrantService } from '../services/qdrant.service.js'
+import { logger } from '../config/logger.js'
 
 const SUPPORTED_DOCUMENT_TYPES = ['pdf', 'docx', 'text', 'zip', 'image']
 
@@ -91,7 +92,7 @@ export async function uploadDocument(req, res) {
     })
 
     if (parsed.type === 'image' && parsed.ocr === false) {
-      const detail = parsed.error || 'No readable text found in the image. OCR failed or there was no extractable text.'
+      const detail = parsed.error || 'No readable text found in the image.'
       return res.status(201).json({
         document, chunks: 0,
         preview: parsed.text ? parsed.text.slice(0, 500) : '',
@@ -105,29 +106,41 @@ export async function uploadDocument(req, res) {
       fileType: parsed.type,
     })
 
-    const stored = []
-    for (const chunk of chunks) {
-      const result = await memoryService.store({
-        userId: req.user.id,
-        text: chunk.text,
-        type: 'document',
-        metadata: {
-          documentId: document.id,
-          fileName: req.file.originalname,
-          chunkIndex: chunk.chunkIndex,
-          totalChunks: chunks.length,
-        },
-      })
-      stored.push(result)
-    }
-
+    // Respond immediately so Render's 30s timeout is not hit
+    // Then index chunks in the background
     res.status(201).json({
-      document, chunks: chunks.length,
+      document,
+      chunks: chunks.length,
       preview: parsed.text.slice(0, 500),
-      fileType: parsed.type, stored,
+      fileType: parsed.type,
+      stored: [],
     })
+
+    // Background indexing — does not block the response
+    setImmediate(async () => {
+      try {
+        for (const chunk of chunks) {
+          await memoryService.store({
+            userId: req.user.id,
+            text: chunk.text,
+            type: 'document',
+            metadata: {
+              documentId: document.id,
+              fileName: req.file.originalname,
+              chunkIndex: chunk.chunkIndex,
+              totalChunks: chunks.length,
+            },
+          })
+        }
+      } catch (err) {
+        logger.warn(`Background indexing failed for doc ${document.id}: ${err.message}`)
+      }
+    })
+
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message })
+    }
   }
 }
 

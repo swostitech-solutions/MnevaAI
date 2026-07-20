@@ -5,7 +5,7 @@
     "scheme": "mneva",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/mneva.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FAFAFC",
     "splash": {
@@ -56,7 +56,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/mneva.png",
+        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       }
     },

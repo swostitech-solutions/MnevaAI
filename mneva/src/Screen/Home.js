@@ -388,7 +388,13 @@ function VoiceOrb({ visible, onClose, navigation }) {
       setReply(aiText);
       setPhaseSync('speaking');
       Vibration.vibrate(30);
-      Speech.speak(aiText.replace(/[*_`#~]/g, '').trim(), {
+      const cleanReply = aiText
+        .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA9F}\u{FE00}-\u{FEFF}]/gu, '')
+        .replace(/[*_`#~>|\-=+\[\]{}\\^]/g, '')
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      Speech.speak(cleanReply, {
         language: 'en-IN', pitch: 1.0, rate: 0.95,
         onDone: () => setPhaseSync('idle'),
         onError: () => setPhaseSync('idle'),
