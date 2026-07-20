@@ -70,27 +70,21 @@ async function parseZipArchive(filePath, buffer) {
 async function parseImage(filePath, buffer) {
   try {
     const { createWorker } = await import('tesseract.js')
-    // On Render (Docker), Tesseract is installed system-wide via apk.
-    // TESSDATA_PREFIX points to the system tessdata dir; falls back to local.
-    const langPath = process.env.TESSDATA_PREFIX || '/usr/share/tessdata'
-    const worker = await createWorker({ logger: () => {}, langPath })
+    // Let tesseract.js manage its own language data download
+    // Do NOT point to system tessdata — it may not exist on all hosts
+    const worker = await createWorker('eng', 1, { logger: () => {} })
 
     try {
-      await worker.loadLanguage('eng')
-      await worker.initialize('eng')
       const { data } = await worker.recognize(buffer || filePath)
       const text = String(data?.text || '').trim()
-
-      if (!text) {
-        return { text: '', ocr: false, error: 'No readable text found in the image.' }
-      }
-
+      if (!text) return { text: '', ocr: false, error: 'No readable text found in the image.' }
       return { text, ocr: true }
     } finally {
       await worker.terminate().catch(() => {})
     }
   } catch (error) {
+    // OCR failure must never crash the server — return graceful fallback
     const message = error?.message || 'unknown OCR error'
-    return { text: `OCR failed: ${message}`, ocr: false, error: message }
+    return { text: '', ocr: false, error: `OCR unavailable: ${message}` }
   }
 }

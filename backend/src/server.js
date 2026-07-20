@@ -244,11 +244,13 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception:', err)
-  process.exit(1)
+  // Only exit for truly fatal errors, not OCR/file-not-found issues
+  if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+    process.exit(1)
+  }
 })
 process.on('unhandledRejection', (err) => {
   logger.error('Unhandled rejection:', err)
-  process.exit(1)
 })
 
 export default app
