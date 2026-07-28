@@ -37,7 +37,6 @@
     "prisma": "^6.19.3",
     "resend": "^6.17.2",
     "socket.io": "^4.7.5",
-    "tesseract.js": "^4.1.4",
     "uuid": "^9.0.1",
     "voyageai": "^0.0.5",
     "winston": "^3.13.0"

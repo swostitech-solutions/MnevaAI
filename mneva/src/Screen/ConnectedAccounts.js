@@ -283,14 +283,11 @@ export default function ConnectedAccounts({ navigation }) {
                 ) : isConnected ? (
                   <TouchableOpacity
                     style={styles.disconnectBtn}
-                    onPress={() => {
-                      if (intg.id === 'contacts') { navigation?.navigate?.('Contacts'); return; }
-                      handleDisconnect(intg);
-                    }}
+                    onPress={() => handleDisconnect(intg)}
                     disabled={isLoading}
                   >
                     <Text style={styles.disconnectBtnText}>
-                      {isLoading ? '…' : intg.id === 'contacts' ? 'Open' : 'Disconnect'}
+                      {isLoading ? '…' : 'Disconnect'}
                     </Text>
                   </TouchableOpacity>
                 ) : (

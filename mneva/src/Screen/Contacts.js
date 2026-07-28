@@ -184,18 +184,26 @@ export default function Contacts({ navigation }) {
   }, []);
 
   useEffect(() => {
-    checkStatus().then(ok => { if (ok) loadContacts(); });
+    const init = async () => {
+      const ok = await checkStatus();
+      if (ok) await loadContacts();
+      else setLoading(false);
+    };
+    init();
   }, []);
 
   // Refresh when app comes back to foreground (returning from OAuth browser)
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
-        checkStatus().then(ok => { if (ok) loadContacts(); });
+        checkStatus().then(ok => {
+          if (ok) loadContacts(true, query);
+          else setLoading(false);
+        });
       }
     });
     return () => sub.remove();
-  }, []);
+  }, [query]);
 
   // Re-check status when returning from OAuth
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   useWindowDimensions,
   Animated,
   Linking,
+  Image,
+  AppState,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -408,9 +410,25 @@ export default function AskAI({ navigation }) {
       .replace(/\s{2,}/g, ' ')
       .trim();
     if (!clean) return;
+
+    // Auto-detect language from response text
+    const detectLang = (t) => {
+      if (/[\u0900-\u097F]/.test(t)) return 'hi-IN';  // Hindi/Devanagari
+      if (/[\u0C00-\u0C7F]/.test(t)) return 'te-IN';  // Telugu
+      if (/[\u0B80-\u0BFF]/.test(t)) return 'ta-IN';  // Tamil
+      if (/[\u0C80-\u0CFF]/.test(t)) return 'kn-IN';  // Kannada
+      if (/[\u0D00-\u0D7F]/.test(t)) return 'ml-IN';  // Malayalam
+      if (/[\u0980-\u09FF]/.test(t)) return 'bn-IN';  // Bengali
+      if (/[\u0A00-\u0A7F]/.test(t)) return 'pa-IN';  // Punjabi
+      if (/[\u0B00-\u0B7F]/.test(t)) return 'or-IN';  // Odia
+      if (/[\u0900-\u097F]/.test(t)) return 'mr-IN';  // Marathi
+      return 'en-IN';
+    };
+    const lang = detectLang(clean);
+
     setSpeaking(true);
     Speech.speak(clean, {
-      language: 'en-IN',
+      language: lang,
       pitch: 1.0,
       rate: 0.95,
       onDone: () => setSpeaking(false),
@@ -431,8 +449,25 @@ export default function AskAI({ navigation }) {
     if (!next) stopSpeaking();
   };
 
-  // Stop speech when screen unmounts
-  useEffect(() => () => Speech.stop(), []);
+  // Stop speech on unmount, navigation away, or app going to background
+  useEffect(() => {
+    const stopAll = () => { Speech.stop(); setSpeaking(false); };
+
+    // App goes to background (home button / switch app)
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state !== 'active') stopAll();
+    });
+
+    // Navigate away to another tab/screen
+    const unsubBlur = navigation?.addListener?.('blur', stopAll);
+
+    // Component unmounts
+    return () => {
+      stopAll();
+      appStateSub.remove();
+      unsubBlur?.();
+    };
+  }, [navigation]);
 
   const handleSend = async (text) => {
     const content = (text || input).trim();
@@ -775,11 +810,11 @@ export default function AskAI({ navigation }) {
 
         {/* Tab bar */}
         <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
-          <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
+          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Home"); }}>
             <Ionicons name="home" size={22} color="#9AA1AE" />
             <Text style={styles.tabLabel}>HOME</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Priorities")}>
+          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Priorities"); }}>
             <Feather name="calendar" size={22} color="#9AA1AE" />
             <Text style={styles.tabLabel}>PRIORITIES</Text>
           </TouchableOpacity>
@@ -787,11 +822,11 @@ export default function AskAI({ navigation }) {
             <Feather name="mic" size={22} color="#1F7A54" />
             <Text style={[styles.tabLabel, styles.tabLabelActive]}>ASK AI</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Space")}>
+          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Space"); }}>
             <Feather name="folder" size={22} color="#9AA1AE" />
             <Text style={styles.tabLabel}>SPACE</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
+          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Profile"); }}>
             <Feather name="user" size={22} color="#9AA1AE" />
             <Text style={styles.tabLabel}>PROFILE</Text>
           </TouchableOpacity>
