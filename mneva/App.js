@@ -20,6 +20,12 @@ import Health from './src/Screen/Health';
 import LifeOps from './src/Screen/LifeOps';
 import TwinDiary from './src/Screen/TwinDiary';
 import ConnectedAccounts from './src/Screen/ConnectedAccounts';
+import Tasks from './src/Screen/Tasks';
+import GoogleWorkspace from './src/Screen/GoogleWorkspace';
+import Docs from './src/Screen/Docs';
+import Sheets from './src/Screen/Sheets';
+import Slides from './src/Screen/Slides';
+import GoogleDrive from './src/Screen/GoogleDrive';
 import AIProfile from './src/Screen/AIProfile';
 import Settings from './src/Screen/Settings';
 import Search from './src/Screen/Search';
@@ -36,6 +42,7 @@ const DEEP_LINK_ROUTES = {
   gmail:     'Communications',
   calendar:  'Priorities',
   googlefit: 'Health',
+  settings:  'ConnectedAccounts',
 };
 
 const AppTheme = {
@@ -59,7 +66,13 @@ export default function App() {
       try {
         const path = url.replace(/^[a-z]+:\/\//, '').split('?')[0];
         const screen = DEEP_LINK_ROUTES[path];
-        if (screen) navigationRef.current.navigate(screen);
+        // For OAuth callbacks (drive, tasks, fit, contacts etc.) — go to ConnectedAccounts
+        const isOAuthCallback = url.includes('connected') || url.includes('=error');
+        if (screen) {
+          navigationRef.current.navigate(screen);
+        } else if (isOAuthCallback) {
+          navigationRef.current.navigate('ConnectedAccounts');
+        }
       } catch {}
     };
     const sub = Linking.addEventListener('url', handleUrl);
@@ -119,6 +132,12 @@ export default function App() {
           <Stack.Screen name="Search" component={Search} />
           <Stack.Screen name="MorningBriefing" component={MorningBriefing} />
           <Stack.Screen name="Contacts" component={Contacts} />
+          <Stack.Screen name="Tasks" component={Tasks} />
+          <Stack.Screen name="GoogleWorkspace" component={GoogleWorkspace} />
+          <Stack.Screen name="Docs" component={Docs} />
+          <Stack.Screen name="Sheets" component={Sheets} />
+          <Stack.Screen name="Slides" component={Slides} />
+          <Stack.Screen name="GoogleDrive" component={GoogleDrive} />
         </Stack.Navigator>
         <ReminderAlert />
       </NavigationContainer>

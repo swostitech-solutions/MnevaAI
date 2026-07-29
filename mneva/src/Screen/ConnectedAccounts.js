@@ -36,6 +36,66 @@ const INTEGRATIONS = [
     connectMethod: 'oauth',
   },
   {
+    id: 'drive',
+    title: 'Google Drive',
+    subtitle: 'Files, folders & AI search',
+    icon: 'hard-drive',
+    color: '#F5A623',
+    bg: '#FEF3C7',
+    statusEndpoint: '/api/gdrive/status',
+    connectEndpoint: '/api/gdrive/connect',
+    disconnectEndpoint: '/api/gdrive/disconnect',
+    connectMethod: 'oauth',
+  },
+  {
+    id: 'docs',
+    title: 'Google Docs',
+    subtitle: 'Read & summarise documents',
+    icon: 'file-text',
+    color: '#4FA6E8',
+    bg: '#EAF3FD',
+    statusEndpoint: '/api/gdrive/status',
+    connectEndpoint: '/api/gdrive/connect',
+    disconnectEndpoint: '/api/gdrive/disconnect',
+    connectMethod: 'oauth',
+  },
+  {
+    id: 'sheets',
+    title: 'Google Sheets',
+    subtitle: 'Read & analyse spreadsheets',
+    icon: 'grid',
+    color: '#1F9A5A',
+    bg: '#EFFDF6',
+    statusEndpoint: '/api/gdrive/status',
+    connectEndpoint: '/api/gdrive/connect',
+    disconnectEndpoint: '/api/gdrive/disconnect',
+    connectMethod: 'oauth',
+  },
+  {
+    id: 'slides',
+    title: 'Google Slides',
+    subtitle: 'Read & summarise presentations',
+    icon: 'monitor',
+    color: '#F5A623',
+    bg: '#FEF3C7',
+    statusEndpoint: '/api/gdrive/status',
+    connectEndpoint: '/api/gdrive/connect',
+    disconnectEndpoint: '/api/gdrive/disconnect',
+    connectMethod: 'oauth',
+  },
+  {
+    id: 'tasks',
+    title: 'Google Tasks',
+    subtitle: 'Sync tasks & to-dos with AI',
+    icon: 'check-square',
+    color: '#615FF8',
+    bg: '#EEEDFE',
+    statusEndpoint: '/api/gtasks/status',
+    connectEndpoint: '/api/gtasks/connect',
+    disconnectEndpoint: '/api/gtasks/disconnect',
+    connectMethod: 'oauth',
+  },
+  {
     id: 'googlefit',
     title: 'Google Fit',
     subtitle: 'Steps, heart rate & sleep',
@@ -172,17 +232,25 @@ export default function ConnectedAccounts({ navigation }) {
     return () => sub.remove();
   }, [loadStatuses]);
 
-  // Handle deep link callback from OAuth (mneva://googlefit?fit=connected)
+  // Handle deep link callback from OAuth — refresh statuses on any connect/error
   useEffect(() => {
     const handleUrl = ({ url }) => {
+      if (!url) return;
       if (
-        (url?.includes('googlefit') && url?.includes('fit=connected')) ||
-        (url?.includes('contacts')  && url?.includes('contacts=connected'))
+        url.includes('connected') ||
+        url.includes('drive=') ||
+        url.includes('tasks=') ||
+        url.includes('fit=') ||
+        url.includes('contacts=') ||
+        url.includes('gmail=') ||
+        url.includes('calendar=')
       ) {
         loadStatuses(true);
       }
     };
     const sub = Linking.addEventListener('url', handleUrl);
+    // Also check on mount in case app was cold-started via deep link
+    Linking.getInitialURL().then(url => { if (url) handleUrl({ url }); }).catch(() => {});
     return () => sub.remove();
   }, [loadStatuses]);
 

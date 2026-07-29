@@ -12,7 +12,6 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
-
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const MODULES = [
@@ -70,6 +69,15 @@ const MODULES = [
     iconBg: "#F3EFFE",
     screen: "ConnectedAccounts",
   },
+  {
+    id: "7",
+    title: "Google Workspace",
+    subtitle: "Tasks, Docs, Sheets & more",
+    icon: "grid",
+    iconColor: "#4285F4",
+    iconBg: "#E8F0FE",
+    screen: null, // opens bottom sheet
+  },
 ];
 
 export default function Space({ navigation }) {
@@ -81,16 +89,17 @@ export default function Space({ navigation }) {
   const cardGap = 12;
   const cardWidth = (width - horizontalPad * 2 - cardGap) / 2;
 
+  const handleModulePress = (mod) => {
+    navigation?.navigate?.(mod.screen === null ? "GoogleWorkspace" : mod.screen);
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={[
           styles.scrollContent,
-          {
-            paddingHorizontal: horizontalPad,
-            paddingBottom: tabBarHeight + 24,
-          },
+          { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -105,14 +114,9 @@ export default function Space({ navigation }) {
               key={mod.id}
               style={[styles.categoryCard, { width: cardWidth }]}
               activeOpacity={0.8}
-              onPress={() => navigation?.navigate?.(mod.screen)}
+              onPress={() => handleModulePress(mod)}
             >
-              <View
-                style={[
-                  styles.categoryIconWrap,
-                  { backgroundColor: mod.iconBg },
-                ]}
-              >
+              <View style={[styles.categoryIconWrap, { backgroundColor: mod.iconBg }]}>
                 <Feather name={mod.icon} size={20} color={mod.iconColor} />
               </View>
               <Text style={styles.categoryTitle}>{mod.title}</Text>
@@ -123,25 +127,17 @@ export default function Space({ navigation }) {
       </ScrollView>
 
       {/* Bottom tab bar */}
+
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("Home")}
-        >
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
           <Ionicons name="home" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("Priorities")}
-        >
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Priorities")}>
           <Feather name="calendar" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("AskAI")}
-        >
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("AskAI")}>
           <Feather name="mic" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
@@ -149,45 +145,23 @@ export default function Space({ navigation }) {
           <Feather name="folder" size={22} color="#1F7A54" />
           <Text style={[styles.tabLabel, styles.tabLabelActive]}>SPACE</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("Profile")}
-        >
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
           <Feather name="user" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F9FAFC",
-  },
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingTop: 16,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#14171F",
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: "#9AA1AE",
-    marginBottom: 20,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
+  safe: { flex: 1, backgroundColor: "#F9FAFC" },
+  container: { flex: 1 },
+  scrollContent: { paddingTop: 16 },
+  headerTitle: { fontSize: 32, fontWeight: "800", color: "#14171F", marginBottom: 4 },
+  headerSubtitle: { fontSize: 14, color: "#9AA1AE", marginBottom: 20 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   categoryCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
@@ -202,16 +176,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 14,
   },
-  categoryTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#14171F",
-    marginBottom: 4,
-  },
-  categorySubtitle: {
-    fontSize: 12,
-    color: "#9AA1AE",
-  },
+  categoryTitle: { fontSize: 15, fontWeight: "700", color: "#14171F", marginBottom: 4 },
+  categorySubtitle: { fontSize: 12, color: "#9AA1AE" },
   tabBar: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
@@ -219,18 +185,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#EEF0F3",
     paddingTop: 10,
   },
-  tabItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  tabLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#9AA1AE",
-    marginTop: 4,
-    letterSpacing: 0.3,
-  },
-  tabLabelActive: {
-    color: "#1F7A54",
-  },
+  tabItem: { flex: 1, alignItems: "center" },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
+  tabLabelActive: { color: "#1F7A54" },
 });

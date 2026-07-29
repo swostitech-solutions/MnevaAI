@@ -33,6 +33,8 @@ import gmailRoutes, { gmailCallbackHandler } from './routes/gmail.js'
 import calendarRoutes, { calendarCallbackHandler } from './routes/calendar.js'
 import googleFitRoutes, { googleFitCallbackHandler } from './routes/googlefit.js'
 import contactsRoutes, { googleContactsCallbackHandler } from './routes/contacts.js'
+import gdriveRoutes, { gdriveCallbackHandler } from './routes/gdrive.js'
+import gtasksRoutes, { gtasksCallbackHandler } from './routes/gtasks.js'
 import { smsRouter } from './routes/_allRoutes.js'
 import notifyRoutes from './routes/notify.js'
 import { onboardingRouter as onboardingRoutes } from './routes/onboarding.js'
@@ -128,6 +130,8 @@ app.get('/api/gmail/callback', gmailCallbackHandler)
 app.get('/api/calendar/callback', calendarCallbackHandler)
 app.get('/api/googlefit/callback', googleFitCallbackHandler)
 app.get('/api/contacts/callback', googleContactsCallbackHandler)
+app.get('/api/gdrive/callback', gdriveCallbackHandler)
+app.get('/api/gtasks/callback', gtasksCallbackHandler)
 app.get('/api/gmail/config-status', (req, res) => {
   // proxy to the router handler without auth
   const configured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET &&
@@ -138,6 +142,8 @@ app.use('/api/gmail', authMiddleware, gmailRoutes)
 app.use('/api/calendar', authMiddleware, calendarRoutes)
 app.use('/api/googlefit', authMiddleware, googleFitRoutes)
 app.use('/api/contacts', authMiddleware, contactsRoutes)
+app.use('/api/gdrive', authMiddleware, gdriveRoutes)
+app.use('/api/gtasks', authMiddleware, gtasksRoutes)
 
 app.use('/api/conversations', authMiddleware, conversationRoutes)
 app.use('/api/messages', authMiddleware, messageRoutes)
