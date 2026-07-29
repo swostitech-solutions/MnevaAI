@@ -15,10 +15,9 @@ function getOAuthClient(redirectUri) {
   )
 }
 
-export function createCalendarAuthUrl(userId, redirectUri) {
+export function createCalendarAuthUrl(userId, redirectUri, platform = 'web') {
   const oauth2 = getOAuthClient(redirectUri)
-  // use URL-safe base64 for state and request consent so refresh_token is returned
-  const rawState = JSON.stringify({ userId, ts: Date.now() })
+  const rawState = JSON.stringify({ userId, ts: Date.now(), platform })
   const state = Buffer.from(rawState).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   const opts = { access_type: 'offline', prompt: 'consent', scope: CALENDAR_SCOPES, state }
   if (redirectUri) opts.redirect_uri = redirectUri

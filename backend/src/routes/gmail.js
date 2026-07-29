@@ -41,8 +41,17 @@ export async function gmailCallbackHandler(req, res) {
     await saveGmailTokens(user.id, tokens, gmailEmail)
     await saveCalendarTokens(user.id, tokens, gmailEmail)
     logger.info('Combined Gmail+Calendar tokens saved for user', { userId: user.id })
+
+    const isMobile = decoded.platform === 'mobile'
+    const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
+    if (isMobile) {
+      return res.redirect(`${mobileScheme}://settings?gmail=connected`)
+    }
     return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5174'}/settings?gmail=connected`)
   } catch (err) {
+    const isMobile = req.query.state && (() => { try { return JSON.parse(Buffer.from(req.query.state, 'base64').toString()).platform === 'mobile' } catch { return false } })()
+    const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
+    if (isMobile) return res.redirect(`${mobileScheme}://settings?gmail=error&msg=${encodeURIComponent(err.message)}`)
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174'
     return res.redirect(`${frontendUrl}/settings?gmail=error&msg=${encodeURIComponent(err.message)}`)
   }
@@ -57,7 +66,8 @@ router.get('/config-status', (_req, res) => {
 router.get('/connect', async (req, res) => {
   try {
     const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${req.protocol}://${req.get('host')}/api/gmail/callback`
-    const url = createGmailAuthUrl(req.user.id, redirectUri)
+    const platform = req.query.platform || 'web'
+    const url = createGmailAuthUrl(req.user.id, redirectUri, platform)
     res.json({ url })
   } catch (err) {
     res.status(500).json({ error: err.message })

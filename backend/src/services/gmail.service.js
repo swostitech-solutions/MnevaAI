@@ -23,10 +23,9 @@ function createOAuthClient(redirectUri) {
   return client
 }
 
-export function createGmailAuthUrl(userId, redirectUri) {
+export function createGmailAuthUrl(userId, redirectUri, platform = 'web') {
   const oauth2Client = createOAuthClient(redirectUri)
-  // use URL-safe base64 for state to avoid '+' '/' issues when round-tripping via query params
-  const rawState = JSON.stringify({ userId, ts: Date.now() })
+  const rawState = JSON.stringify({ userId, ts: Date.now(), platform })
   const state = Buffer.from(rawState).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   const opts = {
     access_type: 'offline',

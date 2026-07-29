@@ -15,6 +15,7 @@ import {
   Animated,
   Easing,
   Vibration,
+  AppState,
 } from "react-native";
 import {
   SafeAreaView,
@@ -332,7 +333,21 @@ function VoiceOrb({ visible, onClose, navigation }) {
   const stopAll = () => {
     rippleLoop.current?.forEach(l => l.stop());
     Speech.stop();
+    setPhaseSync('idle');
   };
+
+  // Stop speech when app goes to background or screen navigates away
+  useEffect(() => {
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state !== 'active') stopAll();
+    });
+    const unsubBlur = navigation?.addListener?.('blur', stopAll);
+    return () => {
+      appStateSub.remove();
+      unsubBlur?.();
+      stopAll();
+    };
+  }, [navigation]);
 
   const startListening = async () => {
     try {
@@ -624,6 +639,20 @@ export default function Home({ navigation }) {
   };
 
   useEffect(() => { loadData(); }, []);
+
+  // Stop all speech when navigating away or app goes to background
+  useEffect(() => {
+    const stopSpeech = () => Speech.stop();
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state !== 'active') stopSpeech();
+    });
+    const unsubBlur = navigation?.addListener?.('blur', stopSpeech);
+    return () => {
+      stopSpeech();
+      appStateSub.remove();
+      unsubBlur?.();
+    };
+  }, [navigation]);
 
   // Real-time socket listeners for live notifications
   const { on } = useSocket();
@@ -1483,28 +1512,28 @@ export default function Home({ navigation }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("Priorities")}
+          onPress={() => { Speech.stop(); navigation?.navigate?.("Priorities"); }}
         >
           <Feather name="calendar" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("AskAI")}
+          onPress={() => { Speech.stop(); navigation?.navigate?.("AskAI"); }}
         >
           <Feather name="mic" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("Space")}
+          onPress={() => { Speech.stop(); navigation?.navigate?.("Space"); }}
         >
           <Feather name="folder" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => navigation?.navigate?.("Profile")}
+          onPress={() => { Speech.stop(); navigation?.navigate?.("Profile"); }}
         >
           <Feather name="user" size={22} color="#9AA1AE" />
           <Text style={styles.tabLabel}>PROFILE</Text>

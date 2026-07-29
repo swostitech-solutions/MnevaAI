@@ -45,8 +45,14 @@ export async function calendarCallbackHandler(req, res) {
 
     await saveCalendarTokens(user.id, tokens, calendarEmail)
     logger.info('Calendar tokens saved', { userId: user.id, hasRefresh: !!tokens.refresh_token, tokenKeys: Object.keys(tokens || {}) })
+    const isMobile = decoded.platform === 'mobile'
+    const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
+    if (isMobile) return res.redirect(`${mobileScheme}://settings?calendar=connected`)
     return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5174'}/settings?calendar=connected`)
   } catch (err) {
+    const isMobile = (() => { try { let s = req.query.state?.replace(/-/g,'+').replace(/_/g,'/'); while(s?.length%4) s+='='; return JSON.parse(Buffer.from(s,'base64').toString()).platform==='mobile' } catch { return false } })()
+    const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
+    if (isMobile) return res.redirect(`${mobileScheme}://settings?calendar=error&msg=${encodeURIComponent(err.message)}`)
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174'
     return res.redirect(`${frontendUrl}/settings?calendar=error&msg=${encodeURIComponent(err.message)}`)
   }
@@ -60,7 +66,8 @@ router.get('/config-status', (_req, res) => {
 router.get('/connect', async (req, res) => {
   try {
     const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || `${req.protocol}://${req.get('host')}/api/calendar/callback`
-    const url = createCalendarAuthUrl(req.user.id, redirectUri)
+    const platform = req.query.platform || 'web'
+    const url = createCalendarAuthUrl(req.user.id, redirectUri, platform)
     res.json({ url })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
