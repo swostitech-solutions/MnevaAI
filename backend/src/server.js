@@ -85,6 +85,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(morgan('short', { stream: { write: m => logger.info(m.trim()) } }))
 
 // ── Public ──────────────────────────────────────────────────────────────────
+app.get('/privacy', (_, res) => res.send('<html><body><h1>Privacy Policy</h1><p>Mneva AI collects only data necessary to provide its services. We use OAuth 2.0 and never store your passwords. Contact: sbehera807@gmail.com</p></body></html>'))
+app.get('/terms', (_, res) => res.send('<html><body><h1>Terms of Service</h1><p>By using Mneva AI you agree to use the service responsibly. Contact: sbehera807@gmail.com</p></body></html>'))
+
 app.get('/api/health', (_, res) => res.json({
   status: 'ok', service: 'Mneva AI v2', version: '2.0.0',
   ai: isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY),
