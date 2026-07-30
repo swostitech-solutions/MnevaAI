@@ -146,6 +146,16 @@ export const contactsApi = {
   disconnect: ()    => api.post('/contacts/disconnect').then(r => r.data),
   list:       (p)   => api.get(`/contacts?${new URLSearchParams({ pageSize: p?.pageSize || 50, ...(p?.query && { query: p.query }), ...(p?.pageToken && { pageToken: p.pageToken }) })}`).then(r => r.data),
 }
+export const gdriveApi = {
+  connect:    () => api.get('/gdrive/connect').then(r => r.data),
+  status:     () => api.get('/gdrive/status').then(r => r.data),
+  disconnect: () => api.post('/gdrive/disconnect').then(r => r.data),
+}
+export const gtasksApi = {
+  connect:    () => api.get('/gtasks/connect').then(r => r.data),
+  status:     () => api.get('/gtasks/status').then(r => r.data),
+  disconnect: () => api.post('/gtasks/disconnect').then(r => r.data),
+}
 export const trustApi = {
   status: () => api.get('/trust/status').then(r => r.data),
   settings: () => api.get('/trust/settings').then(r => r.data),

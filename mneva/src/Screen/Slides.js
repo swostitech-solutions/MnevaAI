@@ -53,7 +53,7 @@ export default function SlidesScreen({ navigation }) {
 
   const handleConnect = async () => {
     try {
-      const res = await apiFetch('/api/gdrive/connect?platform=mobile');
+      const res = await apiFetch('/api/gdrive/connect?platform=mobile&from=Slides');
       if (res.url) await Linking.openURL(res.url);
     } catch {}
   };

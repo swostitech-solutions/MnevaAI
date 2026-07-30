@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth, useOnboarding } from '../../store'
 import AvatarPic from '../common/AvatarPic'
-import { preferenceApi, trustApi, gmailApi, calendarApi, googleFitApi, contactsApi } from '../../services/api'
+import { preferenceApi, trustApi, gmailApi, calendarApi, googleFitApi, contactsApi, gdriveApi, gtasksApi } from '../../services/api'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
@@ -72,11 +72,17 @@ export default function Settings() {
   const { data: calendarStatus, refetch: refetchCalendarStatus } = useQuery({ queryKey: ['calendarStatus'], queryFn: calendarApi.status, staleTime: 60000 })
   const { data: fitStatus, refetch: refetchFitStatus } = useQuery({ queryKey: ['fitStatus'], queryFn: googleFitApi.status, staleTime: 60000 })
   const { data: contactsStatus, refetch: refetchContactsStatus } = useQuery({ queryKey: ['contactsStatus'], queryFn: contactsApi.status, staleTime: 60000 })
+  const { data: driveStatus, refetch: refetchDriveStatus } = useQuery({ queryKey: ['driveStatus'], queryFn: gdriveApi.status, staleTime: 60000 })
+  const { data: tasksStatus, refetch: refetchTasksStatus } = useQuery({ queryKey: ['tasksStatus'], queryFn: gtasksApi.status, staleTime: 60000 })
 
   const fitConnected = fitStatus?.connected || false
   const fitEmail = fitStatus?.email || ''
   const contactsConnected = contactsStatus?.connected || false
   const contactsEmail = contactsStatus?.email || ''
+  const driveConnected = driveStatus?.connected || false
+  const driveEmail = driveStatus?.email || ''
+  const tasksConnected = tasksStatus?.connected || false
+  const tasksEmail = tasksStatus?.email || ''
   const currentTrustLevel = trustStatus?.currentLevel || user?.trustLevel || 1
   const trustScore = trustStatus?.trustScore ?? 0
   const gmailConnected = gmailStatus?.connected || false
@@ -98,9 +104,15 @@ export default function Settings() {
     if (calendarResult === 'connected') { toast.success('Google Calendar connected!'); refetchCalendarStatus(); setActiveTab('integrations') }
     else if (calendarResult === 'error') { toast.error(errMsg ? decodeURIComponent(errMsg) : 'Calendar connection failed'); setActiveTab('integrations') }
     const contactsResult = searchParams.get('contacts')
+    const driveResult = searchParams.get('drive')
+    const tasksResult = searchParams.get('tasks')
     if (contactsResult === 'connected') { toast.success('Google Contacts connected!'); refetchContactsStatus(); setActiveTab('integrations') }
     else if (contactsResult === 'error') { toast.error(errMsg ? decodeURIComponent(errMsg) : 'Contacts connection failed'); setActiveTab('integrations') }
-    if (gmailResult || calendarResult || contactsResult || errMsg) window.history.replaceState({}, '', window.location.pathname)
+    if (driveResult === 'connected') { toast.success('Google Drive connected!'); refetchDriveStatus(); setActiveTab('integrations') }
+    else if (driveResult === 'error') { toast.error(errMsg ? decodeURIComponent(errMsg) : 'Drive connection failed'); setActiveTab('integrations') }
+    if (tasksResult === 'connected') { toast.success('Google Tasks connected!'); refetchTasksStatus(); setActiveTab('integrations') }
+    else if (tasksResult === 'error') { toast.error(errMsg ? decodeURIComponent(errMsg) : 'Tasks connection failed'); setActiveTab('integrations') }
+    if (gmailResult || calendarResult || contactsResult || driveResult || tasksResult || errMsg) window.history.replaceState({}, '', window.location.pathname)
   }, [searchParams, refetchGmailStatus, refetchCalendarStatus, refetchContactsStatus])
 
   useEffect(() => {
@@ -209,6 +221,8 @@ export default function Settings() {
                     { icon: '📈', name: 'Zerodha Kite',    status: 'Not linked', detail: 'Connect portfolio access', color: 'var(--ink3)' },
                     { icon: '❤️', name: 'Google Fit', status: fitConnected ? 'Connected' : 'Not linked', detail: fitConnected ? `Syncing steps, heart rate, sleep · ${fitEmail}` : 'Connect Google Fit for real-time health data', color: fitConnected ? 'var(--go)' : 'var(--ink3)' },
                     { icon: '👥', name: 'Google Contacts', status: contactsConnected ? 'Connected' : 'Not linked', detail: contactsConnected ? `Contacts synced · ${contactsEmail}` : 'Connect Google Contacts — AI knows your relationships', color: contactsConnected ? 'var(--go)' : 'var(--ink3)' },
+                    { icon: '🗂️', name: 'Google Drive', status: driveConnected ? 'Connected' : 'Not linked', detail: driveConnected ? `Drive synced · ${driveEmail}` : 'Connect Drive to browse Docs, Sheets, Slides & files', color: driveConnected ? 'var(--go)' : 'var(--ink3)' },
+                    { icon: '✅', name: 'Google Tasks', status: tasksConnected ? 'Connected' : 'Not linked', detail: tasksConnected ? `Tasks synced · ${tasksEmail}` : 'Connect Google Tasks to sync your to-dos with AI', color: tasksConnected ? 'var(--go)' : 'var(--ink3)' },
                     { icon: '🚗', name: 'Ola / Uber',      status: 'Not linked', detail: 'Connect ride provider', color: 'var(--ink3)' },
                     { icon: '🍛', name: 'Swiggy / Zomato', status: 'Not linked', detail: 'Connect food provider', color: 'var(--ink3)' },
                     { icon: '🏠', name: 'MyGate',          status: 'Not linked', detail: 'Connect visitor provider', color: 'var(--ink3)' },

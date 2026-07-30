@@ -53,7 +53,7 @@ export default function SheetsScreen({ navigation }) {
 
   const handleConnect = async () => {
     try {
-      const res = await apiFetch('/api/gdrive/connect?platform=mobile');
+      const res = await apiFetch('/api/gdrive/connect?platform=mobile&from=Sheets');
       if (res.url) await Linking.openURL(res.url);
     } catch {}
   };

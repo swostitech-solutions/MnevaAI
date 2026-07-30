@@ -45,6 +45,14 @@ const DEEP_LINK_ROUTES = {
   settings:  'ConnectedAccounts',
 };
 
+// Maps drive OAuth callback query params → screen to return to
+const DRIVE_CALLBACK_SCREENS = {
+  GoogleDrive: 'GoogleDrive',
+  Docs:        'Docs',
+  Sheets:      'Sheets',
+  Slides:      'Slides',
+};
+
 const AppTheme = {
   ...DefaultTheme,
   colors: {
@@ -65,10 +73,14 @@ export default function App() {
       if (!url || !navigationRef.current) return;
       try {
         const path = url.replace(/^[a-z]+:\/\//, '').split('?')[0];
+        const params = Object.fromEntries(new URLSearchParams(url.split('?')[1] || ''));
         const screen = DEEP_LINK_ROUTES[path];
-        // For OAuth callbacks (drive, tasks, fit, contacts etc.) — go to ConnectedAccounts
         const isOAuthCallback = url.includes('connected') || url.includes('=error');
-        if (screen) {
+        // Drive OAuth callback — return to the originating screen
+        if (params.drive !== undefined) {
+          const returnScreen = DRIVE_CALLBACK_SCREENS[params.from] || 'GoogleDrive';
+          navigationRef.current.navigate(returnScreen);
+        } else if (screen) {
           navigationRef.current.navigate(screen);
         } else if (isOAuthCallback) {
           navigationRef.current.navigate('ConnectedAccounts');

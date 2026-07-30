@@ -4,14 +4,13 @@ import { logger } from '../config/logger.js'
 
 const router = express.Router()
 
-// Only use scopes that Gmail already uses — these are proven to work
-// drive.file = sensitive (not restricted) — works in Testing mode
-// documents/spreadsheets/presentations readonly = sensitive — works in Testing mode
+// drive.readonly allows listing all files the user owns
+// documents/spreadsheets/presentations readonly for content access
 const DRIVE_SCOPES = [
   'openid',
   'email',
   'profile',
-  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/documents.readonly',
   'https://www.googleapis.com/auth/spreadsheets.readonly',
   'https://www.googleapis.com/auth/presentations.readonly',
@@ -63,11 +62,17 @@ export async function gdriveCallbackHandler(req, res) {
     await prisma.user.update({ where: { id: user.id }, data: { preferences: prefs } })
     logger.info(`Google Drive connected for user ${user.id}`)
 
-    if (decoded.platform === 'mobile') return res.redirect(`${mobileScheme}://settings?drive=connected`)
+    if (decoded.platform === 'mobile') {
+      const fromParam = decoded.from ? `&from=${decoded.from}` : ''
+      return res.redirect(`${mobileScheme}://settings?drive=connected${fromParam}`)
+    }
     return res.redirect(`${frontendUrl}/settings?drive=connected`)
   } catch (err) {
-    const isMobile = (() => { try { let s = req.query.state?.replace(/-/g,'+').replace(/_/g,'/'); while(s?.length%4) s+='='; return JSON.parse(Buffer.from(s,'base64').toString()).platform==='mobile' } catch { return false } })()
-    if (isMobile) return res.redirect(`${mobileScheme}://settings?drive=error&msg=${encodeURIComponent(err.message)}`)
+    const isMobile = (() => { try { let s = req.query.state?.replace(/-/g,'+').replace(/_/g,'/'); while(s?.length%4) s+='='; const d = JSON.parse(Buffer.from(s,'base64').toString()); return { mobile: d.platform==='mobile', from: d.from||null } } catch { return { mobile: false, from: null } } })()
+    if (isMobile.mobile) {
+      const fromParam = isMobile.from ? `&from=${isMobile.from}` : ''
+      return res.redirect(`${mobileScheme}://settings?drive=error&msg=${encodeURIComponent(err.message)}${fromParam}`)
+    }
     return res.redirect(`${getFrontendUrl()}/settings?drive=error&msg=${encodeURIComponent(err.message)}`)
   }
 }
@@ -82,7 +87,8 @@ router.get('/connect', async (req, res) => {
       redirectUri,
     )
     const platform = req.query.platform || 'web'
-    const rawState = JSON.stringify({ userId: req.user.id, ts: Date.now(), platform })
+    const from = req.query.from || null
+    const rawState = JSON.stringify({ userId: req.user.id, ts: Date.now(), platform, ...(from ? { from } : {}) })
     const state = Buffer.from(rawState).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
