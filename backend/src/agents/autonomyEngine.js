@@ -206,6 +206,11 @@ export const MNEVA_TOOLS = [
     }
   },
   {
+    name: 'get_connected_accounts',
+    description: 'Get the status of all connected accounts and integrations — Gmail, Google Calendar, Google Drive, Google Contacts, Google Fit, Google Tasks. Use this when the user asks which accounts are connected, what is linked, or about their integrations.',
+    input_schema: { type: 'object', properties: {}, required: [] }
+  },
+  {
     name: 'personal_search',
     description: 'Search across the user\'s connected data — emails, payments, commitments, health records, documents.',
     input_schema: { type: 'object', properties: { query: { type: 'string' }, domains: { type: 'array', items: { type: 'string' } } }, required: ['query'] }
@@ -371,6 +376,26 @@ export async function executeTool(name, input, userId) {
       } catch (err) {
         if (err.message === 'contacts_not_connected') return { error: 'Google Contacts not connected.' }
         return { error: err.message }
+      }
+    }
+    case 'get_connected_accounts': {
+      const { userStore: _us } = await import('../models/userStore.js')
+      const _u = await _us.getById(userId)
+      const p = _u?.preferences || {}
+      const cal = p.calendar || {}
+      const gmail = p.gmail || {}
+      const drive = p.googleDrive || {}
+      const contacts = p.contacts || {}
+      const fit = p.googleFit || {}
+      const tasks = p.googleTasks || {}
+      const isConnected = (obj) => !obj?.disconnected && !!(obj?.tokens?.access_token || obj?.tokens?.refresh_token)
+      return {
+        gmail:    { connected: isConnected(gmail),    email: gmail.email    || null },
+        calendar: { connected: isConnected(cal) || isConnected(gmail), email: cal.email || gmail.email || null },
+        drive:    { connected: isConnected(drive),    email: drive.email    || null },
+        contacts: { connected: isConnected(contacts), email: contacts.email || null },
+        googleFit:{ connected: isConnected(fit),      email: fit.email      || null },
+        tasks:    { connected: isConnected(tasks),    email: tasks.email    || null },
       }
     }
     case 'personal_search': {
@@ -570,12 +595,36 @@ function buildLiveDataContext(liveData = {}) {
   return `\n\n══ LIVE CONNECTED DATA (use this to answer questions about health, contacts, calendar, emails) ══\n${lines.join('\n\n')}\n══ END LIVE DATA ══`
 }
 
+function buildConnectionStatus(user) {
+  const p = user?.preferences || {}
+  const cal = p.calendar || {}
+  const gmail = p.gmail || {}
+  const drive = p.googleDrive || {}
+  const contacts = p.contacts || {}
+  const fit = p.googleFit || {}
+  const tasks = p.googleTasks || {}
+  const ok = (obj) => !obj?.disconnected && !!(obj?.tokens?.access_token || obj?.tokens?.refresh_token)
+  const fmt = (name, obj, email) => {
+    const connected = ok(obj)
+    return `  • ${name}: ${connected ? `✅ Connected${email ? ` (${email})` : ''}` : '❌ Not connected'}`
+  }
+  const calConnected = ok(cal) || ok(gmail)
+  return `CONNECTED ACCOUNTS (real-time status — use this to answer any question about integrations):
+${fmt('Gmail', gmail, gmail.email)}
+  • Google Calendar: ${calConnected ? `✅ Connected${(cal.email || gmail.email) ? ` (${cal.email || gmail.email})` : ''}` : '❌ Not connected'}
+${fmt('Google Drive', drive, drive.email)}
+${fmt('Google Contacts', contacts, contacts.email)}
+${fmt('Google Fit / Health', fit, fit.email)}
+${fmt('Google Tasks', tasks, tasks.email)}`
+}
+
 function buildSystemPrompt(user, context = {}) {
   const sessionContext = context.sessionContext || {}
   const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
   const memorySummary = buildMemoryContext(recentMemory)
   const profileSummary = buildProfileContext(context.onboardingContext)
   const liveDataSummary = buildLiveDataContext(context.liveData)
+  const connectionStatus = buildConnectionStatus(user)
 
   return `You are Mneva, an autonomous AI Chief of Staff for ${user.name || 'the user'}.
 
@@ -603,6 +652,7 @@ CRITICAL RULES:
 11. Only call get_daily_brief when the user explicitly asks for their daily brief or morning summary. For reminders, scheduling, or any other task — use the appropriate tool directly.
 12. When the user asks to set a reminder or schedule something, call set_reminder or schedule_event immediately — do not call get_daily_brief first.
 13. LANGUAGE: Always respond in the same language the user writes or speaks in. If the user writes in Hindi, respond in Hindi. If in Tamil, respond in Tamil. Match their language exactly.
+14. CONNECTED ACCOUNTS: You always know which accounts are connected from the CONNECTED ACCOUNTS section below. Answer questions about integrations directly from that — never say you don't know. If an account is not connected, tell the user to go to Settings → Connected Accounts to connect it.
 
 USER PROFILE (registered account details — answer any personal questions from this):
 - Full Name: ${user.name || 'Not set'}
@@ -619,6 +669,8 @@ USER CONTEXT:
 - Session context: ${JSON.stringify(sessionContext).slice(0, 1200)}
 
 ${profileSummary ? `${profileSummary}\n\n` : ''}${memorySummary}${liveDataSummary}
+
+${connectionStatus}
 
 Today: ${new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 Time: ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} IST`
