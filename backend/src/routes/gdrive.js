@@ -8,10 +8,8 @@ const DRIVE_SCOPES = [
   'openid',
   'email',
   'profile',
-  'https://www.googleapis.com/auth/drive.readonly',
-  'https://www.googleapis.com/auth/documents.readonly',
-  'https://www.googleapis.com/auth/spreadsheets.readonly',
-  'https://www.googleapis.com/auth/presentations.readonly',
+  'https://www.googleapis.com/auth/drive.metadata.readonly',
+  'https://www.googleapis.com/auth/drive.file',
 ]
 
 const getRedirectUri = () =>
