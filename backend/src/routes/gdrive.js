@@ -4,13 +4,14 @@ import { logger } from '../config/logger.js'
 
 const router = express.Router()
 
+// Only use scopes that Gmail already uses — these are proven to work
+// drive.file = sensitive (not restricted) — works in Testing mode
+// documents/spreadsheets/presentations readonly = sensitive — works in Testing mode
 const DRIVE_SCOPES = [
   'openid',
   'email',
   'profile',
   'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/drive.appdata',
-  'https://www.googleapis.com/auth/drive.metadata',
   'https://www.googleapis.com/auth/documents.readonly',
   'https://www.googleapis.com/auth/spreadsheets.readonly',
   'https://www.googleapis.com/auth/presentations.readonly',
