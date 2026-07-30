@@ -8,8 +8,8 @@ const DRIVE_SCOPES = [
   'openid',
   'email',
   'profile',
-  'https://www.googleapis.com/auth/drive.metadata.readonly',
   'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.appdata',
 ]
 
 const getRedirectUri = () =>
@@ -123,23 +123,21 @@ router.get('/files', async (req, res) => {
     )
     oauth2Client.setCredentials(cfg.tokens)
 
+    const type = req.query.type || 'drive'
+    const drive = google.drive({ version: 'v3', auth: oauth2Client })
+    const result = await drive.files.list({
+      pageSize: 50,
+      fields: 'files(id,name,mimeType,modifiedTime,webViewLink)',
+      orderBy: 'modifiedTime desc',
+    })
+    const allFiles = result.data.files || []
     const mimeFilter = {
       docs:   'application/vnd.google-apps.document',
       sheets: 'application/vnd.google-apps.spreadsheet',
       slides: 'application/vnd.google-apps.presentation',
-      drive:  null,
     }
-    const type = req.query.type || 'drive'
-    const q = mimeFilter[type] ? `mimeType='${mimeFilter[type]}'` : undefined
-
-    const drive = google.drive({ version: 'v3', auth: oauth2Client })
-    const result = await drive.files.list({
-      pageSize: 20,
-      fields: 'files(id,name,mimeType,modifiedTime,webViewLink)',
-      ...(q ? { q } : {}),
-      orderBy: 'modifiedTime desc',
-    })
-    res.json({ files: result.data.files || [] })
+    const filtered = type === 'drive' ? allFiles : allFiles.filter(f => f.mimeType === mimeFilter[type])
+    res.json({ files: filtered })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
