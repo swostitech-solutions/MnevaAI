@@ -5,6 +5,9 @@ import { logger } from '../config/logger.js'
 const router = express.Router()
 
 const DRIVE_SCOPES = [
+  'openid',
+  'email',
+  'profile',
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/documents.readonly',
   'https://www.googleapis.com/auth/spreadsheets.readonly',

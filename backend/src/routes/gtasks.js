@@ -4,7 +4,12 @@ import { logger } from '../config/logger.js'
 
 const router = express.Router()
 
-const TASKS_SCOPES = ['https://www.googleapis.com/auth/tasks']
+const TASKS_SCOPES = [
+  'openid',
+  'email',
+  'profile',
+  'https://www.googleapis.com/auth/tasks',
+]
 
 const getRedirectUri = () =>
   process.env.GOOGLE_TASKS_REDIRECT_URI ||
