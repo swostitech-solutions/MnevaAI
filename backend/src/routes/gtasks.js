@@ -6,13 +6,16 @@ const router = express.Router()
 
 const TASKS_SCOPES = ['https://www.googleapis.com/auth/tasks']
 
-const REDIRECT_URI = () =>
+const getRedirectUri = () =>
   process.env.GOOGLE_TASKS_REDIRECT_URI ||
   `${process.env.PUBLIC_URL || 'http://localhost:3001'}/api/gtasks/callback`
 
+const getFrontendUrl = () =>
+  process.env.FRONTEND_URL_WEB || process.env.FRONTEND_URL || 'http://localhost:5174'
+
 export async function gtasksCallbackHandler(req, res) {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174'
   const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
+  const frontendUrl = getFrontendUrl()
   try {
     const { code, state, error } = req.query
     if (error) return res.redirect(`${frontendUrl}/settings?tasks=error&msg=${encodeURIComponent(error)}`)
@@ -29,7 +32,7 @@ export async function gtasksCallbackHandler(req, res) {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      REDIRECT_URI(),
+      getRedirectUri(),
     )
     const { tokens } = await oauth2Client.getToken(code)
     oauth2Client.setCredentials(tokens)
@@ -54,14 +57,14 @@ export async function gtasksCallbackHandler(req, res) {
   } catch (err) {
     const isMobile = (() => { try { let s = req.query.state?.replace(/-/g,'+').replace(/_/g,'/'); while(s?.length%4) s+='='; return JSON.parse(Buffer.from(s,'base64').toString()).platform==='mobile' } catch { return false } })()
     if (isMobile) return res.redirect(`${mobileScheme}://settings?tasks=error&msg=${encodeURIComponent(err.message)}`)
-    return res.redirect(`${frontendUrl}/settings?tasks=error&msg=${encodeURIComponent(err.message)}`)
+    return res.redirect(`${getFrontendUrl()}/settings?tasks=error&msg=${encodeURIComponent(err.message)}`)
   }
 }
 
 router.get('/connect', async (req, res) => {
   try {
     const { google } = await import('googleapis')
-    const redirectUri = REDIRECT_URI()
+    const redirectUri = getRedirectUri()
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
@@ -110,7 +113,7 @@ router.get('/list', async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      REDIRECT_URI(),
+      getRedirectUri(),
     )
     oauth2Client.setCredentials(cfg.tokens)
     const tasks = google.tasks({ version: 'v1', auth: oauth2Client })
