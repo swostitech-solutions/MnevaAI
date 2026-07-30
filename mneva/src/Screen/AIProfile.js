@@ -286,7 +286,7 @@ export default function AIProfile({ navigation }) {
   const [saved, setSaved] = useState({});
   const [completionPct, setCompletionPct] = useState(0);
   const [completedSections, setCompletedSections] = useState([]);
-  const [toast, setToast] = useState(null); // { title, subtitle }
+  const [toast, setToast] = useState(null); // { title, subtitle, isError }
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef(null);
 
@@ -308,9 +308,9 @@ export default function AIProfile({ navigation }) {
 
   useEffect(() => { loadProfile(); }, []);
 
-  const showToast = (title, subtitle) => {
+  const showToast = (title, subtitle, isError = false) => {
     clearTimeout(toastTimer.current);
-    setToast({ title, subtitle });
+    setToast({ title, subtitle, isError });
     toastAnim.setValue(0);
     Animated.spring(toastAnim, { toValue: 1, useNativeDriver: true, tension: 180, friction: 12 }).start();
     toastTimer.current = setTimeout(() => {
@@ -331,9 +331,9 @@ export default function AIProfile({ navigation }) {
       const newSections = Array.isArray(res.completedSections) ? res.completedSections : completedSections;
       setCompletedSections(newSections);
       setSaved(prev => ({ ...prev, [sec.key]: true }));
-      showToast(`${sec.title} saved ✓`, 'Your profile has been updated successfully');
+      showToast(`${sec.title} saved ✓`, 'Your profile has been updated successfully', false);
     } catch (err) {
-      showToast('Save failed', err?.message || 'Please try again');
+      showToast('Save failed', err?.message || 'Please try again', true);
     } finally {
       setSaving(null);
     }
@@ -408,9 +408,9 @@ export default function AIProfile({ navigation }) {
           styles.toast,
           { opacity: toastAnim, transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) }] },
         ]}>
-          <LinearGradient colors={['#1F9A5A', '#27AE6A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.toastGrad}>
+          <LinearGradient colors={toast.isError ? ['#E0546E', '#C0394F'] : ['#1F9A5A', '#27AE6A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.toastGrad}>
             <View style={styles.toastIconWrap}>
-              <Feather name="check-circle" size={22} color="#FFFFFF" />
+              <Feather name={toast.isError ? 'alert-circle' : 'check-circle'} size={22} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.toastTitle}>{toast.title}</Text>

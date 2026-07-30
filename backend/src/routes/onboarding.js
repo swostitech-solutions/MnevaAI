@@ -89,12 +89,15 @@ onboardingRouter.post('/section', async (req, res) => {
 
     const profile = await prisma.userProfile.upsert({
       where:  { userId: req.user.id },
-      update: { ...fields, completedSections, completionPct, updatedAt: new Date() },
+      update: { ...fields, completedSections, completionPct },
       create: { userId: req.user.id, ...fields, completedSections, completionPct },
     })
 
     res.json({ profile, completionPct, completedSections })
-  } catch (err) { res.status(500).json({ error: err.message }) }
+  } catch (err) {
+    console.error('onboarding/section error:', err.message, err.code)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // POST /api/onboarding/memory — append AI memory entries for this user only
