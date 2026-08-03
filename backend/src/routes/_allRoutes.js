@@ -207,11 +207,21 @@ dashboardRouter.get('/brief', async (req, res) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const [notifications, completed, pendingTasks] = await Promise.all([
+    const [externalNotifs, completed, pendingTasks] = await Promise.all([
       prisma.notification.findMany({
-        where: { userId: req.user.id, read: false },
+        where: {
+          userId: req.user.id,
+          read: false,
+          OR: [
+            { title: { startsWith: '\u{1F4E7}' } },
+            { title: { startsWith: '\u{1F4F1}' } },
+            { message: { contains: '"source":"email"' } },
+            { message: { contains: '"source":"sms"' } },
+            { message: { contains: '"source":"calendar"' } },
+          ],
+        },
         orderBy: { createdAt: 'desc' },
-        take: 10,
+        take: 5,
       }),
       prisma.agentLedger.findMany({
         where: {
@@ -229,58 +239,86 @@ dashboardRouter.get('/brief', async (req, res) => {
       }),
     ]);
 
+    const ledgerTitles = new Set(
+      completed.map(e => {
+        try {
+          const p = JSON.parse(e.action);
+          return (p.input?.message || p.input?.title || '').toLowerCase().trim();
+        } catch { return ''; }
+      }).filter(Boolean)
+    );
+
+    const filteredTasks = pendingTasks.filter(t => {
+      const title = (t.title || '').trim();
+      if (!title || title.length < 3) return false;
+      if (/^[a-z_]+:[a-z0-9]+$/i.test(title)) return false;
+      if (/^meeting_done:/i.test(title)) return false;
+      if (ledgerTitles.has(title.toLowerCase())) return false;
+      return true;
+    });
+
+    const makeLabel = (entry, input) => {
+      const map = {
+        schedule_event:       'Scheduled: ' + (input.title || 'Meeting'),
+        set_reminder:         'Reminder set: ' + (input.message || input.title || 'Done'),
+        initiate_payment:     'Payment \u20b9' + (input.amount || '') + ' to ' + (input.payee || ''),
+        send_email:           'Email sent to ' + (input.recipient || ''),
+        draft_reply:          'Draft reply prepared',
+        book_cab:             'Cab: ' + (input.pickup || '') + ' \u2192 ' + (input.destination || ''),
+        order_food:           'Food ordered from ' + (input.restaurant || ''),
+        get_daily_brief:      'Daily brief generated',
+        get_portfolio:        'Portfolio snapshot fetched',
+        get_spending_summary: 'Spending summary checked',
+        get_health_data:      'Health data synced',
+        query_bills:          'Bills checked',
+        personal_search:      'Search: "' + (input.query || '') + '"',
+      };
+      return map[entry.tool] || entry.tool.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    };
+
     res.json({
       generatedAt: new Date().toISOString(),
-      greeting: `Hello, ${req.user.name || 'there'}`,
-      summary: notifications.length
-        ? `${notifications.length} item${notifications.length > 1 ? 's' : ''} need your attention.`
-        : pendingTasks.length
-          ? `${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} pending today.`
-          : 'All clear — your AI twin is standing by.',
+      greeting: 'Hello, ' + (req.user.name || 'there'),
+      summary: completed.length
+        ? completed.length + ' action' + (completed.length > 1 ? 's' : '') + ' completed by your AI twin today.'
+        : filteredTasks.length
+          ? filteredTasks.length + ' task' + (filteredTasks.length > 1 ? 's' : '') + ' pending.'
+          : 'All clear \u2014 your AI twin is standing by.',
       weather: null,
-      pendingActions: notifications.map(n => ({
-        id: n.id,
-        type: 'notification',
-        urgency: 'medium',
-        title: n.title,
-        detail: n.message,
-        domain: 'notifications',
-      })),
+      pendingActions: externalNotifs.map(n => {
+        let meta = {};
+        try { meta = JSON.parse(n.message); } catch {}
+        return {
+          id: n.id,
+          type: 'notification',
+          urgency: 'medium',
+          title: n.title,
+          detail: meta.preview || meta.body || '',
+          domain: 'notifications',
+        };
+      }),
       autoCompleted: completed.map(entry => {
         let input = {}, result = {};
         try { const p = JSON.parse(entry.action); input = p.input || {}; result = p.result || {}; } catch {}
-        const TOOL_LABELS = {
-          schedule_event:       `Scheduled: ${input.title || 'Meeting'}`,
-          set_reminder:         `Reminder: ${input.message || 'Set'}`,
-          initiate_payment:     `Payment \u20b9${input.amount || ''} to ${input.payee || ''}`,
-          send_email:           `Email sent to ${input.recipient || ''}`,
-          draft_reply:          `Draft reply prepared`,
-          book_cab:             `Cab: ${input.pickup || ''} \u2192 ${input.destination || ''}`,
-          order_food:           `Food ordered from ${input.restaurant || ''}`,
-          get_daily_brief:      `Daily brief generated`,
-          get_portfolio:        `Portfolio snapshot fetched`,
-          get_spending_summary: `Spending summary checked`,
-          get_health_data:      `Health data synced`,
-          query_bills:          `Bills checked`,
-          personal_search:      `Search: "${input.query || ''}"`,
-        };
-        const label = TOOL_LABELS[entry.tool] || entry.tool.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        const detail = entry.tool === 'schedule_event'
-          ? `${input.attendees?.length ? `With ${input.attendees[0]}` : ''}${input.start ? ` \u00b7 ${new Date(input.start).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}`.trim()
-          : entry.tool === 'initiate_payment' ? `Status: ${result.status || 'done'}`
-          : entry.tool === 'book_cab' ? `Est. fare: ${result.fare || 'N/A'}`
-          : '';
-        return {
-          title: label,
-          detail,
-          tool: entry.tool,
-          time: entry.createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        };
+        const label = makeLabel(entry, input);
+        let detail = '';
+        if (entry.tool === 'schedule_event') {
+          const w = input.attendees && input.attendees.length ? 'With ' + input.attendees[0] : '';
+          const t = input.start ? ' \u00b7 ' + new Date(input.start).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+          detail = (w + t).trim();
+        } else if (entry.tool === 'initiate_payment') {
+          detail = 'Status: ' + (result.status || 'done');
+        } else if (entry.tool === 'book_cab') {
+          detail = 'Est. fare: ' + (result.fare || 'N/A');
+        } else if (entry.tool === 'set_reminder') {
+          detail = 'Saved \u00b7 ' + entry.createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        }
+        return { title: label, detail, tool: entry.tool, time: entry.createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) };
       }),
       commitments: [],
       followUpRadar: [],
       insights: [],
-      pendingTasks: pendingTasks.map(t => ({ id: t.id, title: t.title, description: t.description, createdAt: t.createdAt })),
+      pendingTasks: filteredTasks.map(t => ({ id: t.id, title: t.title, description: t.description, createdAt: t.createdAt })),
       stats: { actionsAuto: completed.length, trustScore: 0 },
     });
   } catch (err) {

@@ -639,7 +639,8 @@ export default function Home({ navigation }) {
       if (me)     setUser(me);
       if (notifs) {
         setUnreadCount(notifs.unreadCount || 0);
-        setRecentNotifs((notifs.notifications || []).filter(n => !n.read).slice(0, 4));
+        // Recent Inbox: only email and sms — not AI reminders/tasks
+        setRecentNotifs((notifs.notifications || []).filter(n => !n.read && (n.type === 'email' || n.type === 'sms')).slice(0, 4));
       }
       if (briefData) setBrief(briefData);
       if (profileRes2) {
@@ -755,10 +756,13 @@ export default function Home({ navigation }) {
     });
     const addNotif = (raw) => {
       const notif = normalise(raw);
-      setRecentNotifs(prev => {
-        if (prev.find(x => x.id === notif.id)) return prev;
-        return [notif, ...prev].slice(0, 4);
-      });
+      // Only add email/sms to Recent Inbox
+      if (notif.type === 'email' || notif.type === 'sms') {
+        setRecentNotifs(prev => {
+          if (prev.find(x => x.id === notif.id)) return prev;
+          return [notif, ...prev].slice(0, 4);
+        });
+      }
       setUnreadCount(prev => prev + 1);
     };
     const offGmail   = on('gmail:notification',    addNotif);
@@ -789,7 +793,7 @@ export default function Home({ navigation }) {
     const interval = setInterval(async () => {
       try {
         const notifs = await apiFetch('/api/notifications');
-        const unread = (notifs.notifications || []).filter(n => !n.read).slice(0, 4);
+        const unread = (notifs.notifications || []).filter(n => !n.read && (n.type === 'email' || n.type === 'sms')).slice(0, 4);
         setRecentNotifs(unread);
         setUnreadCount(notifs.unreadCount || 0);
       } catch {}
@@ -1001,12 +1005,19 @@ export default function Home({ navigation }) {
 
   // Merge backend tasks + locally added priorities + meetings
   const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
+  // Titles already shown in Recent Logs — don't duplicate in Today's Priorities
+  const loggedTitles = new Set(
+    (brief?.autoCompleted || []).map(l => (l.title || '').toLowerCase().trim())
+  );
+
   const backendTasks = (brief?.pendingTasks || [])
     .filter(t => {
       const title = (t.title || '').trim();
       if (/^[a-z_]+:[a-z0-9]+$/i.test(title)) return false;
       if (/^[a-z]+(_[a-z]+)+$/.test(title)) return false;
       if (!title || title.length < 3) return false;
+      // Don't show if already in Recent Logs
+      if (loggedTitles.has(title.toLowerCase())) return false;
       return true;
     })
     .map((t, i) => ({
