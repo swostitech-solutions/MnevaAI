@@ -193,7 +193,7 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
         </View>
         <View style={[styles.sectionPctBadge, { backgroundColor: saved ? '#EFFDF6' : fillPct > 0 ? sec.bg : '#F3F4F6' }]}>
           <Text style={[styles.sectionPctText, { color: saved ? '#1F9A5A' : fillPct > 0 ? sec.color : '#9AA1AE' }]}>
-            {saved ? '✓' : `${Math.round((fillPct / 100) * 10)}%`}
+            {saved ? '✓' : `${fillPct}%`}
           </Text>
         </View>
         <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#C7CBD3" style={{ marginLeft: 8 }} />

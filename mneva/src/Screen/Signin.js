@@ -16,6 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, BASE_URL } from '../api/client';
 import { saveAuth } from '../storage/auth';
+import { resetSocket, getSocket } from '../services/socket';
 
 export default function Signin({ navigation }) {
   const [email, setEmail] = useState('');
@@ -23,36 +24,10 @@ export default function Signin({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [warming, setWarming] = useState(false);
 
-  // Ping backend on mount to wake Render free tier from sleep
+  // Fire-and-forget warmup — wakes Render server silently while user types
   useEffect(() => {
-    let cancelled = false;
-    const warmUp = async () => {
-      try {
-        const res = await fetch(`${BASE_URL}/api/health`, { method: 'GET' });
-        if (!res.ok && !cancelled) setWarming(false);
-      } catch {
-        // server was sleeping — show warming message
-        if (!cancelled) {
-          setWarming(true);
-          // retry every 3s until it responds
-          const interval = setInterval(async () => {
-            try {
-              const r = await fetch(`${BASE_URL}/api/health`, { method: 'GET' });
-              if (r.ok && !cancelled) {
-                setWarming(false);
-                clearInterval(interval);
-              }
-            } catch {}
-          }, 3000);
-          // clear after 90s max
-          setTimeout(() => { clearInterval(interval); if (!cancelled) setWarming(false); }, 90000);
-        }
-      }
-    };
-    warmUp();
-    return () => { cancelled = true; };
+    fetch(`${BASE_URL}/api/health`, { method: 'GET' }).catch(() => {});
   }, []);
 
   const handleSignin = async () => {
@@ -68,11 +43,14 @@ export default function Signin({ navigation }) {
         method: 'POST',
         body: { email: email.trim().toLowerCase(), password },
       });
+      // Save auth and navigate immediately — don't wait for socket
       await saveAuth(data.token, data.user);
       navigation.replace('Home');
+      // Reset + reconnect socket in background after navigation
+      resetSocket();
+      getSocket();
     } catch (err) {
       if (err.status === 403) {
-        // Email not verified — go to OTP screen
         navigation.navigate('VerifyOtp', { email: email.trim().toLowerCase() });
       } else {
         setError(err.message || 'Invalid email or password');
@@ -102,13 +80,6 @@ export default function Signin({ navigation }) {
 
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to continue to Mneva AI</Text>
-
-        {warming ? (
-          <View style={styles.warmingBanner}>
-            <ActivityIndicator size="small" color="#7B5FE8" />
-            <Text style={styles.warmingText}>  Waking up server… first login may take ~30s</Text>
-          </View>
-        ) : null}
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -284,21 +255,5 @@ const styles = StyleSheet.create({
     color: '#7B5FE8',
     fontSize: 14,
     fontWeight: '700',
-  },
-  warmingBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F0FF',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 16,
-    width: '100%',
-  },
-  warmingText: {
-    fontSize: 12,
-    color: '#7B5FE8',
-    fontWeight: '600',
-    flexShrink: 1,
   },
 });

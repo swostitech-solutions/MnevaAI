@@ -203,79 +203,89 @@ agentRouter.post('/deny', async (req, res) => {
 // dashboard.js
 export const dashboardRouter = express.Router()
 dashboardRouter.get('/brief', async (req, res) => {
-  const [notifications, completed, pendingTasks] = await Promise.all([
-    prisma.notification.findMany({
-      where: { userId: req.user.id, read: false },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    }),
-    prisma.agentLedger.findMany({
-      where: {
-        userId: req.user.id,
-        status: 'completed',
-        createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    }),
-    prisma.task.findMany({
-      where: { userId: req.user.id, status: 'PENDING' },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    }),
-  ])
-  res.json({
-    generatedAt: new Date().toISOString(),
-    greeting: `Hello, ${req.user.name || 'there'}`,
-    summary: notifications.length ? `${notifications.length} items need your attention.` : 'No pending items from your connected data yet.',
-    weather: null,
-    pendingActions: notifications
-      .filter(n => !n.title?.startsWith('\ud83d\udce7'))
-      .map(n => ({
-      id: n.id,
-      type: 'notification',
-      urgency: 'medium',
-      title: n.title,
-      detail: n.message,
-      domain: 'notifications',
-    })),
-    autoCompleted: completed.map(entry => {
-      let input = {}, result = {}
-      try { const p = JSON.parse(entry.action); input = p.input || {}; result = p.result || {} } catch {}
-      const TOOL_LABELS = {
-        schedule_event:       `📅 ${input.title || 'Meeting scheduled'}`,
-        set_reminder:         `🔔 ${input.message || 'Reminder set'}`,
-        initiate_payment:     `💸 Payment ₹${input.amount || ''} to ${input.payee || ''}`,
-        send_email:           `📧 Email sent to ${input.recipient || ''}`,
-        draft_reply:          `✏️ Draft reply prepared`,
-        book_cab:             `🚗 Cab booked: ${input.pickup || ''} → ${input.destination || ''}`,
-        order_food:           `🍔 Food ordered from ${input.restaurant || ''}`,
-        get_daily_brief:      `💡 Daily brief generated`,
-        get_portfolio:        `📈 Portfolio snapshot fetched`,
-        get_spending_summary: `💰 Spending summary checked`,
-        get_health_data:      `🏥 Health data synced`,
-        query_bills:          `🧾 Bills checked`,
-        personal_search:      `🔍 Search: "${input.query || ''}"`,
-      }
-      const label = TOOL_LABELS[entry.tool] || entry.tool.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      const detail = entry.tool === 'schedule_event'
-        ? `${input.attendees?.length ? `With ${input.attendees[0]}` : ''}${input.start ? ` · ${new Date(input.start).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}`.trim()
-        : entry.tool === 'initiate_payment' ? `Status: ${result.status || 'done'}`
-        : entry.tool === 'book_cab' ? `Est. fare: ${result.fare || 'N/A'}`
-        : ''
-      return {
-        title: label,
-        detail,
-        tool: entry.tool,
-        time: entry.createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-      }
-    }),
-    commitments: [],
-    followUpRadar: [],
-    insights: [],
-    pendingTasks: pendingTasks.map(t => ({ id: t.id, title: t.title, description: t.description, createdAt: t.createdAt })),
-    stats: { actionsAuto: completed.length, trustScore: 0 },
-  })
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [notifications, completed, pendingTasks] = await Promise.all([
+      prisma.notification.findMany({
+        where: { userId: req.user.id, read: false },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      prisma.agentLedger.findMany({
+        where: {
+          userId: req.user.id,
+          status: 'completed',
+          createdAt: { gte: todayStart },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      prisma.task.findMany({
+        where: { userId: req.user.id, status: 'PENDING' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      greeting: `Hello, ${req.user.name || 'there'}`,
+      summary: notifications.length
+        ? `${notifications.length} item${notifications.length > 1 ? 's' : ''} need your attention.`
+        : pendingTasks.length
+          ? `${pendingTasks.length} task${pendingTasks.length > 1 ? 's' : ''} pending today.`
+          : 'All clear — your AI twin is standing by.',
+      weather: null,
+      pendingActions: notifications.map(n => ({
+        id: n.id,
+        type: 'notification',
+        urgency: 'medium',
+        title: n.title,
+        detail: n.message,
+        domain: 'notifications',
+      })),
+      autoCompleted: completed.map(entry => {
+        let input = {}, result = {};
+        try { const p = JSON.parse(entry.action); input = p.input || {}; result = p.result || {}; } catch {}
+        const TOOL_LABELS = {
+          schedule_event:       `Scheduled: ${input.title || 'Meeting'}`,
+          set_reminder:         `Reminder: ${input.message || 'Set'}`,
+          initiate_payment:     `Payment \u20b9${input.amount || ''} to ${input.payee || ''}`,
+          send_email:           `Email sent to ${input.recipient || ''}`,
+          draft_reply:          `Draft reply prepared`,
+          book_cab:             `Cab: ${input.pickup || ''} \u2192 ${input.destination || ''}`,
+          order_food:           `Food ordered from ${input.restaurant || ''}`,
+          get_daily_brief:      `Daily brief generated`,
+          get_portfolio:        `Portfolio snapshot fetched`,
+          get_spending_summary: `Spending summary checked`,
+          get_health_data:      `Health data synced`,
+          query_bills:          `Bills checked`,
+          personal_search:      `Search: "${input.query || ''}"`,
+        };
+        const label = TOOL_LABELS[entry.tool] || entry.tool.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const detail = entry.tool === 'schedule_event'
+          ? `${input.attendees?.length ? `With ${input.attendees[0]}` : ''}${input.start ? ` \u00b7 ${new Date(input.start).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}`.trim()
+          : entry.tool === 'initiate_payment' ? `Status: ${result.status || 'done'}`
+          : entry.tool === 'book_cab' ? `Est. fare: ${result.fare || 'N/A'}`
+          : '';
+        return {
+          title: label,
+          detail,
+          tool: entry.tool,
+          time: entry.createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        };
+      }),
+      commitments: [],
+      followUpRadar: [],
+      insights: [],
+      pendingTasks: pendingTasks.map(t => ({ id: t.id, title: t.title, description: t.description, createdAt: t.createdAt })),
+      stats: { actionsAuto: completed.length, trustScore: 0 },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 })
 dashboardRouter.get('/sidebar-counts', async (req, res) => {
   try {

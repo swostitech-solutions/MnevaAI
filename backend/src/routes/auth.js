@@ -26,11 +26,15 @@ router.post('/login',
     const errs = validationResult(req)
     if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid email or password format' })
     const { email, password } = req.body
-    const user = await userStore.get(email)
+    // Single DB query — select only the fields we need for login
+    const user = await prisma.user.findUnique({
+      where: { email: email?.toLowerCase()?.trim() },
+      select: { id: true, email: true, name: true, passwordHash: true, emailVerified: true, trustLevel: true, onboardingDone: true },
+    })
     if (!user) return res.status(401).json({ error: 'Invalid credentials' })
+    if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
     const ok = await bcrypt.compare(password, user.passwordHash)
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
-    if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
     res.json({ token: sign(user), user: toPublicUser(user) })
   }
 )
@@ -54,7 +58,7 @@ router.post('/register',
     const { email, password, name } = req.body
     if (await userStore.has(email)) return res.status(409).json({ error: 'Email already registered' })
 
-    const hash = await bcrypt.hash(password, 12)
+    const hash = await bcrypt.hash(password, 10)
     const otp = generateOtp()
     const exp = new Date(Date.now() + 10 * 60 * 1000) // 10 min
 

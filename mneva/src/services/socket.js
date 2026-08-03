@@ -5,35 +5,54 @@ import { getStoredAuth } from '../storage/auth';
 
 let _socket = null;
 let _connecting = false;
-let _listeners = []; // queued listeners before socket is ready
+// Callbacks to notify when socket reconnects so hooks can re-register listeners
+let _reconnectCallbacks = new Set();
+
+export function onSocketReconnect(cb) {
+  _reconnectCallbacks.add(cb);
+  return () => _reconnectCallbacks.delete(cb);
+}
 
 export async function getSocket() {
   if (_socket?.connected) return _socket;
+
   if (_connecting) {
-    // wait up to 5s for connection
     return new Promise((resolve) => {
       const t = setInterval(() => {
-        if (_socket?.connected) { clearInterval(t); resolve(_socket); }
+        if (_socket?.connected || !_connecting) {
+          clearInterval(t);
+          resolve(_socket);
+        }
       }, 100);
-      setTimeout(() => { clearInterval(t); resolve(_socket); }, 5000);
+      // Safety timeout — never block forever
+      setTimeout(() => { clearInterval(t); _connecting = false; resolve(_socket); }, 8000);
     });
   }
 
   const { token } = await getStoredAuth();
   if (!token) return null;
 
-  if (_socket) { _socket.disconnect(); _socket = null; }
+  // Clean up any dead socket
+  if (_socket) { _socket.removeAllListeners(); _socket.disconnect(); _socket = null; }
 
   _connecting = true;
   _socket = io(BASE_URL, {
     auth: { token },
     transports: ['websocket'],
-    reconnectionAttempts: 5,
-    reconnectionDelay: 2000,
+    // Unlimited reconnection — socket.io will keep trying with backoff
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 30000,
     timeout: 10000,
   });
 
-  _socket.on('connect', () => { _connecting = false; });
+  _socket.on('connect', () => {
+    _connecting = false;
+    // Notify all hooks to re-register their listeners after reconnect
+    _reconnectCallbacks.forEach(cb => cb(_socket));
+  });
+
   _socket.on('connect_error', () => { _connecting = false; });
   _socket.on('disconnect', () => { _connecting = false; });
 
@@ -41,30 +60,52 @@ export async function getSocket() {
 }
 
 export function disconnectSocket() {
-  _socket?.disconnect();
+  if (_socket) { _socket.removeAllListeners(); _socket.disconnect(); }
+  _socket = null;
+  _connecting = false;
+  _reconnectCallbacks.clear();
+}
+
+export function resetSocket() {
+  if (_socket) { _socket.removeAllListeners(); _socket.disconnect(); }
   _socket = null;
   _connecting = false;
 }
 
-/** Hook — returns { on, emit } with reliable listener registration */
+/** Hook — returns { on, emit } with automatic re-registration on reconnect */
 export function useSocket() {
   const socketRef = useRef(null);
-  const readyRef = useRef(false);
+  // Store all active listeners so we can re-register them after reconnect
+  const listenersRef = useRef([]); // [{ event, handler }]
 
   useEffect(() => {
     let mounted = true;
+
     getSocket().then(s => {
-      if (mounted && s) {
-        socketRef.current = s;
-        readyRef.current = true;
-      }
+      if (mounted && s) socketRef.current = s;
     });
-    return () => { mounted = false; };
+
+    // Re-register all listeners whenever socket reconnects
+    const unsubReconnect = onSocketReconnect((s) => {
+      if (!mounted) return;
+      socketRef.current = s;
+      listenersRef.current.forEach(({ event, handler }) => {
+        s.off(event, handler); // avoid duplicates
+        s.on(event, handler);
+      });
+    });
+
+    return () => {
+      mounted = false;
+      unsubReconnect();
+    };
   }, []);
 
   const on = useCallback((event, handler) => {
-    // Register immediately if socket exists, otherwise wait
-    const register = (s) => { if (s) s.on(event, handler); };
+    // Track this listener for reconnect re-registration
+    listenersRef.current = [...listenersRef.current, { event, handler }];
+
+    const register = (s) => { if (s) { s.off(event, handler); s.on(event, handler); } };
 
     if (socketRef.current) {
       register(socketRef.current);
@@ -77,6 +118,7 @@ export function useSocket() {
 
     return () => {
       socketRef.current?.off(event, handler);
+      listenersRef.current = listenersRef.current.filter(l => l.handler !== handler);
     };
   }, []);
 

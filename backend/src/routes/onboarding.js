@@ -21,12 +21,8 @@ const ALL_FIELDS = [
   'height','weight','bloodGroup','diet','exerciseLevel','allergies','medicalConditions',
   // finance (5)
   'monthlyBudget','upiApps','investmentTypes','investmentPlatforms','financeCountry',
-  // family (5)
-  'familyReminders','familyMembers','schoolReminders','medicineReminders','vaccinationReminders',
-  // aiprefs (4)
-  'aiPersonality','responseLength','enableMemory','proactiveSuggestions',
-  // connections (1)
-  'connectedApps',
+  // aiprefs (2) — only non-toggle fields
+  'aiPersonality','responseLength',
 ]
 const TOTAL_FIELDS = ALL_FIELDS.length
 
@@ -36,7 +32,6 @@ function calcCompletionPct(profile) {
     const v = profile[key]
     if (v === null || v === undefined || v === '') return
     if (Array.isArray(v) && v.length === 0) return
-    if (typeof v === 'boolean') { if (v) filled++; return }
     filled++
   })
   return Math.round((filled / TOTAL_FIELDS) * 100)
@@ -66,6 +61,10 @@ onboardingRouter.get('/profile', async (req, res) => {
       prisma.user.findUnique({ where: { id: req.user.id }, select: { onboardingDone: true } }),
     ])
     const completionPct = profile ? calcCompletionPct(profile) : 0
+    // Always persist the freshly calculated pct so it stays in sync
+    if (profile && profile.completionPct !== completionPct) {
+      prisma.userProfile.update({ where: { userId: req.user.id }, data: { completionPct } }).catch(() => {})
+    }
     res.json({ profile: profile ? { ...profile, completionPct } : null, onboardingDone: user?.onboardingDone || false })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -92,6 +91,12 @@ onboardingRouter.post('/section', async (req, res) => {
       update: { ...fields, completedSections, completionPct },
       create: { userId: req.user.id, ...fields, completedSections, completionPct },
     })
+
+    // Emit real-time update so Home screen ring refreshes instantly
+    const io = req.app?.get?.('io')
+    if (io) {
+      io.to(`u:${req.user.id}`).emit('profile:updated', { completionPct, completedSections })
+    }
 
     res.json({ profile, completionPct, completedSections })
   } catch (err) {

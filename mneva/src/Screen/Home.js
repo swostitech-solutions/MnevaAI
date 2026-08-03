@@ -25,8 +25,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle } from "react-native-svg";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { clearAuth, getStoredAuth } from '../storage/auth';
-import { apiFetch, BASE_URL } from '../api/client';
-import { useSocket } from '../services/socket';
+import { apiFetch, BASE_URL, onSessionExpired } from '../api/client';
+import { useSocket, resetSocket } from '../services/socket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import * as Speech from 'expo-speech';
@@ -557,15 +557,31 @@ export default function Home({ navigation }) {
   const [profileCity, setProfileCity] = useState(null);
 
   const loadWeather = async (cityOverride = null, countryOverride = null) => {
-    try {
-      const cached = await AsyncStorage.getItem('mneva_weather');
-      if (cached) setWeather(JSON.parse(cached));
-    } catch {}
-
     if (!cityOverride) {
-      setWeather(w => w || { temp: '--', feelsLike: '--', high: '--', low: '--', humidity: '--', wind: '--', code: 0, city: 'Set city in AI Profile' });
+      // Try to show cached weather even without city
+      try {
+        const cached = await AsyncStorage.getItem('mneva_weather');
+        if (cached) setWeather(JSON.parse(cached));
+        else setWeather({ temp: '--', feelsLike: '--', high: '--', low: '--', humidity: '--', wind: '--', code: 0, city: 'Set city in AI Profile' });
+      } catch {
+        setWeather({ temp: '--', feelsLike: '--', high: '--', low: '--', humidity: '--', wind: '--', code: 0, city: 'Set city in AI Profile' });
+      }
       return;
     }
+
+    // Check cache — keyed by city so stale city data is never shown
+    const cacheKey = `mneva_weather_${cityOverride.toLowerCase()}`;
+    try {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Use cache only if it's less than 30 minutes old
+        if (parsed._ts && Date.now() - parsed._ts < 30 * 60 * 1000) {
+          setWeather(parsed);
+          return;
+        }
+      }
+    } catch {}
 
     try {
       const q = countryOverride ? `${cityOverride}, ${countryOverride}` : cityOverride;
@@ -573,7 +589,7 @@ export default function Home({ navigation }) {
       const geoData = await geoRes.json();
       const place   = geoData?.results?.[0];
       if (!place) {
-        setWeather(w => w || { temp: '--', feelsLike: '--', high: '--', low: '--', humidity: '--', wind: '--', code: 0, city: cityOverride });
+        setWeather({ temp: '--', feelsLike: '--', high: '--', low: '--', humidity: '--', wind: '--', code: 0, city: cityOverride });
         return;
       }
       const { latitude: lat, longitude: lon, name } = place;
@@ -589,8 +605,11 @@ export default function Home({ navigation }) {
         low:       Math.round(data.daily?.temperature_2m_min?.[0] ?? 20),
         code:      data.current?.weather_code ?? 0,
         city:      name || cityOverride,
+        _ts:       Date.now(),
       };
       setWeather(fresh);
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(fresh));
+      // Also update the generic key for fallback
       await AsyncStorage.setItem('mneva_weather', JSON.stringify(fresh));
     } catch {
       setWeather(w => w || { temp: '--', feelsLike: '--', high: '--', low: '--', humidity: '--', wind: '--', code: 0, city: cityOverride || 'Unavailable' });
@@ -601,36 +620,67 @@ export default function Home({ navigation }) {
     if (!isRefresh) setBriefLoading(true);
     try {
       const { user: stored } = await getStoredAuth();
-      if (stored && !isRefresh) setUser(stored);
-      const [me, notifs, briefData, ledgerData, portfolio, spending, healthMetrics, profileRes] = await Promise.all([
+      // Show stored user immediately so greeting renders before API responds
+      if (stored) setUser(stored);
+
+      // Phase 1 — critical data: render the screen fast
+      const [meRes, notifsRes, briefRes, profileRes] = await Promise.allSettled([
         apiFetch('/api/auth/me'),
         apiFetch('/api/notifications'),
         apiFetch('/api/dashboard/brief'),
+        apiFetch('/api/onboarding/profile'),
+      ]);
+
+      const me      = meRes.status      === 'fulfilled' ? meRes.value      : null;
+      const notifs  = notifsRes.status  === 'fulfilled' ? notifsRes.value  : null;
+      const briefData = briefRes.status === 'fulfilled' ? briefRes.value   : null;
+      const profileRes2 = profileRes.status === 'fulfilled' ? profileRes.value : null;
+
+      if (me)     setUser(me);
+      if (notifs) {
+        setUnreadCount(notifs.unreadCount || 0);
+        setRecentNotifs((notifs.notifications || []).filter(n => !n.read).slice(0, 4));
+      }
+      if (briefData) setBrief(briefData);
+      if (profileRes2) {
+        const city    = profileRes2?.profile?.city    || null;
+        const country = profileRes2?.profile?.country || null;
+        setProfilePct(profileRes2?.profile?.completionPct ?? 0);
+        setProfileCity(city);
+        loadWeather(city, country);
+      }
+
+      // Screen is now rendered — stop the loading skeleton
+      setBriefLoading(false);
+
+      // Phase 2 — secondary data: load in background without blocking UI
+      const [ledgerRes, portfolioRes, spendingRes, healthRes] = await Promise.allSettled([
         apiFetch('/api/agent/ledger'),
         apiFetch('/api/finance/portfolio'),
         apiFetch('/api/finance/spending'),
         apiFetch('/api/health-data/metrics'),
-        apiFetch('/api/onboarding/profile'),
       ]);
-      setUser(me);
-      setUnreadCount(notifs.unreadCount || 0);
-      const unread = (notifs.notifications || []).filter(n => !n.read).slice(0, 4);
-      setRecentNotifs(unread);
-      setBrief(briefData);
-      const pending = (ledgerData.entries || []).filter(e => e.status === 'pending_approval');
-      setPendingActions(pending);
-      const netWorth = portfolio?.netWorth || portfolio?.totalCurrent || 0;
-      const spent = spending?.total || 0;
-      setFinanceSnap({ netWorth, spent, savingsRate: spending?.savingsRate || 0 });
-      const prefs = healthMetrics;
-      const steps = prefs?.steps?.value ?? prefs?.healthSync?.steps ?? null;
-      const sleep = prefs?.sleep?.value ?? prefs?.healthSync?.sleep ?? null;
-      setHealthSnap({ steps, sleep });
-      const city    = profileRes?.profile?.city    || null;
-      const country = profileRes?.profile?.country || null;
-      setProfilePct(profileRes?.profile?.completionPct ?? 0);
-      setProfileCity(city);
-      loadWeather(city, country);
+
+      if (ledgerRes.status === 'fulfilled') {
+        const pending = (ledgerRes.value.entries || []).filter(e => e.status === 'pending_approval');
+        setPendingActions(pending);
+      }
+      if (portfolioRes.status === 'fulfilled' || spendingRes.status === 'fulfilled') {
+        const portfolio = portfolioRes.status === 'fulfilled' ? portfolioRes.value : null;
+        const spending  = spendingRes.status  === 'fulfilled' ? spendingRes.value  : null;
+        setFinanceSnap({
+          netWorth:    portfolio?.netWorth || portfolio?.totalCurrent || 0,
+          spent:       spending?.total || 0,
+          savingsRate: spending?.savingsRate || 0,
+        });
+      }
+      if (healthRes.status === 'fulfilled') {
+        const h = healthRes.value;
+        setHealthSnap({
+          steps: h?.steps?.value ?? h?.healthSync?.steps ?? null,
+          sleep: h?.sleep?.value ?? h?.healthSync?.sleep ?? null,
+        });
+      }
     } catch {}
     finally {
       setBriefLoading(false);
@@ -640,16 +690,54 @@ export default function Home({ navigation }) {
 
   useEffect(() => { loadData(); }, []);
 
+  // Re-fetch ALL data when app comes back to foreground after being backgrounded
+  useEffect(() => {
+    let lastActiveAt = Date.now();
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        // Only reload if app was in background for more than 30 seconds
+        if (Date.now() - lastActiveAt > 30000) {
+          loadData(true);
+        }
+      } else {
+        lastActiveAt = Date.now();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Auto-logout + redirect when JWT expires (401 from any API call)
+  useEffect(() => {
+    const unsub = onSessionExpired(async () => {
+      await clearAuth();
+      resetSocket();
+      navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
+    });
+    return () => unsub();
+  }, [navigation]);
+
+  // Re-fetch profile completion % whenever this screen comes into focus
+  useEffect(() => {
+    const unsubFocus = navigation?.addListener?.('focus', () => {
+      apiFetch('/api/onboarding/profile')
+        .then(profileRes => {
+          const city    = profileRes?.profile?.city    || null;
+          const country = profileRes?.profile?.country || null;
+          setProfilePct(profileRes?.profile?.completionPct ?? 0);
+          setProfileCity(city);
+          loadWeather(city, country);
+        })
+        .catch(() => {});
+    });
+    return () => unsubFocus?.();
+  }, [navigation]);
+
   // Stop all speech when navigating away or app goes to background
   useEffect(() => {
     const stopSpeech = () => Speech.stop();
-    const appStateSub = AppState.addEventListener('change', state => {
-      if (state !== 'active') stopSpeech();
-    });
     const unsubBlur = navigation?.addListener?.('blur', stopSpeech);
     return () => {
       stopSpeech();
-      appStateSub.remove();
       unsubBlur?.();
     };
   }, [navigation]);
@@ -688,7 +776,12 @@ export default function Home({ navigation }) {
       });
     });
 
-    return () => { offGmail?.(); offCreated?.(); offSms?.(); offTask?.(); };
+    // Real-time profile completion update
+    const offProfile = on('profile:updated', ({ completionPct: pct }) => {
+      if (pct != null) setProfilePct(pct);
+    });
+
+    return () => { offGmail?.(); offCreated?.(); offSms?.(); offTask?.(); offProfile?.(); };
   }, [on]);
 
   // Polling fallback — silently refresh notifications every 30s
@@ -701,6 +794,24 @@ export default function Home({ navigation }) {
         setUnreadCount(notifs.unreadCount || 0);
       } catch {}
     }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Polling — refresh brief + tasks every 60s for live feel
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const [briefData, ledgerData] = await Promise.allSettled([
+          apiFetch('/api/dashboard/brief'),
+          apiFetch('/api/agent/ledger'),
+        ]);
+        if (briefData.status === 'fulfilled') setBrief(briefData.value);
+        if (ledgerData.status === 'fulfilled') {
+          const pending = (ledgerData.value.entries || []).filter(e => e.status === 'pending_approval');
+          setPendingActions(pending);
+        }
+      } catch {}
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
   useEffect(() => {
@@ -727,13 +838,12 @@ export default function Home({ navigation }) {
     setCheckedIds({});
     setActedIds({});
     loadData(true);
-    loadWeather(profileCity);
   };
 
   const handleAction = async (actionId, type) => {
     setActedIds(prev => ({ ...prev, [actionId]: type }));
     try {
-      await apiFetch(`/api/agent/${type}`, { method: 'POST', body: JSON.stringify({ actionId }) });
+      await apiFetch(`/api/agent/${type}`, { method: 'POST', body: { actionId } });
     } catch {}
     setTimeout(() => {
       setPendingActions(prev => prev.filter(a => a.id !== actionId));
@@ -817,6 +927,7 @@ export default function Home({ navigation }) {
 
   const handleLogout = async () => {
     await clearAuth();
+    resetSocket();
     navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
   };
 
@@ -890,23 +1001,20 @@ export default function Home({ navigation }) {
 
   // Merge backend tasks + locally added priorities + meetings
   const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const backendTasks = (brief?.pendingTasks || [])
     .filter(t => {
       const title = (t.title || '').trim();
       if (/^[a-z_]+:[a-z0-9]+$/i.test(title)) return false;
       if (/^[a-z]+(_[a-z]+)+$/.test(title)) return false;
       if (!title || title.length < 3) return false;
-      // only today or future tasks
-      if (t.createdAt && new Date(t.createdAt) < todayStart) return false;
       return true;
     })
     .map((t, i) => ({
-    id: t.id,
-    color: STRIPE_COLORS[i % STRIPE_COLORS.length],
-    title: t.title,
-    subtitle: t.description || 'Pending · AI tracked',
-  }));
+      id: t.id,
+      color: STRIPE_COLORS[i % STRIPE_COLORS.length],
+      title: t.title,
+      subtitle: t.description || 'Pending · AI tracked',
+    }));
   const meetingTasks = meetings
     .filter(m => {
       if (!m.meetLink) return false;
