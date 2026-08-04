@@ -252,3 +252,93 @@ export async function sendEmail(user, recipient, subject, body) {
 
   return result.data
 }
+
+// Meeting request detection keywords
+const MEETING_KEYWORDS = [
+  'can we meet', 'let\'s meet', 'lets meet', 'schedule a call', 'schedule a meeting',
+  'hop on a call', 'quick call', 'catch up', 'sync up', 'sync call', 'connect with you',
+  'set up a meeting', 'book a meeting', 'arrange a meeting', 'meeting request',
+  'would you be available', 'are you available', 'free for a call', 'free to talk',
+  'discuss over a call', 'zoom call', 'google meet', 'teams call', 'video call',
+  'interview', 'demo call', 'product demo', 'introductory call', 'intro call',
+  'follow-up call', 'follow up call', 'check-in call', 'check in call',
+]
+
+export function detectMeetingRequest(subject, snippet, from) {
+  const text = `${subject} ${snippet}`.toLowerCase()
+  const hit = MEETING_KEYWORDS.find(kw => text.includes(kw))
+  if (!hit) return null
+  // Extract sender name from "Name <email>" format
+  const nameMatch = from.match(/^([^<]+)</)
+  const senderName = nameMatch ? nameMatch[1].trim() : from.replace(/<.*>/, '').trim()
+  const senderEmail = (from.match(/<([^>]+)>/) || [])[1] || from.trim()
+  return { senderName, senderEmail, keyword: hit }
+}
+
+// Urgency keywords — subject/snippet match raises score
+const URGENT_KEYWORDS = [
+  'urgent', 'asap', 'action required', 'action needed', 'immediate', 'immediately',
+  'deadline', 'due today', 'overdue', 'past due', 'final notice', 'last chance',
+  'meeting', 'interview', 'appointment', 'call scheduled', 'zoom', 'google meet',
+  'invoice', 'payment due', 'payment failed', 'transaction', 'otp', 'verification',
+  'confirm', 'approval needed', 'approve', 'sign', 'contract', 'offer letter',
+  'follow up', 'follow-up', 'reminder', 'important', 'priority', 'critical',
+  'alert', 'warning', 'security', 'password', 'account', 'suspended', 'blocked',
+]
+
+function scoreEmail(subject, snippet) {
+  const text = `${subject} ${snippet}`.toLowerCase()
+  let score = 0
+  for (const kw of URGENT_KEYWORDS) {
+    if (text.includes(kw)) score += 1
+  }
+  // Boost for multiple keyword hits
+  return score
+}
+
+// Fetch today's unread primary emails and return only urgent ones (score >= 1)
+export async function getUrgentEmails(user, maxResults = 20) {
+  try {
+    const authClient = await getAuthenticatedGmailClient(user)
+    const gmail = google.gmail({ version: 'v1', auth: authClient })
+
+    // today's unread primary inbox emails
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
+    const q = `in:inbox is:unread after:${todayStr} category:primary`
+
+    const listRes = await gmail.users.messages.list({
+      userId: 'me',
+      q,
+      maxResults,
+    })
+
+    const messages = listRes.data.messages || []
+    if (!messages.length) return []
+
+    const emails = await Promise.all(messages.map(async (msg) => {
+      const data = await gmail.users.messages.get({
+        userId: 'me',
+        id: msg.id,
+        format: 'metadata',
+        metadataHeaders: ['Subject', 'From', 'Date'],
+      })
+      const headers = data.data.payload?.headers || []
+      const subject = getHeaderValue(headers, 'Subject') || '(No subject)'
+      const from    = getHeaderValue(headers, 'From')    || 'Unknown'
+      const snippet = data.data.snippet || ''
+      const internalDate = data.data.internalDate
+      const ts = internalDate ? Number(internalDate) : Date.now()
+      const time = new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+      const urgencyScore = scoreEmail(subject, snippet)
+      return { id: msg.id, subject, from, snippet, time, urgencyScore }
+    }))
+
+    // Return only emails with at least 1 urgency keyword hit, sorted by score desc
+    return emails
+      .filter(e => e.urgencyScore >= 1)
+      .sort((a, b) => b.urgencyScore - a.urgencyScore)
+      .slice(0, 5)
+  } catch {
+    return []
+  }
+}

@@ -10,6 +10,7 @@ import { transcribeAudio } from '../services/transcription.service.js'
 import { listEmails, getEmailBody, sendEmail } from '../services/gmail.service.js'
 import { createEventIfConnected } from '../services/calendar.service.js'
 import multer from 'multer'
+import { createDeviceToken, hashToken } from './deviceNotifications.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 
@@ -207,7 +208,7 @@ dashboardRouter.get('/brief', async (req, res) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const [externalNotifs, completed, pendingTasks] = await Promise.all([
+    const [externalNotifs, completedRaw, pendingTasks] = await Promise.all([
       prisma.notification.findMany({
         where: {
           userId: req.user.id,
@@ -218,6 +219,8 @@ dashboardRouter.get('/brief', async (req, res) => {
             { message: { contains: '"source":"email"' } },
             { message: { contains: '"source":"sms"' } },
             { message: { contains: '"source":"calendar"' } },
+            { message: { contains: '"source":"reminder"' } },
+            { priority: { gte: 85 } },
           ],
         },
         orderBy: { createdAt: 'desc' },
@@ -239,21 +242,54 @@ dashboardRouter.get('/brief', async (req, res) => {
       }),
     ]);
 
-    const ledgerTitles = new Set(
-      completed.map(e => {
-        try {
-          const p = JSON.parse(e.action);
-          return (p.input?.message || p.input?.title || '').toLowerCase().trim();
-        } catch { return ''; }
-      }).filter(Boolean)
-    );
+    // Retries from an AI turn can leave identical ledger rows. Keep one action
+    // in the briefing rather than presenting the same reminder/meeting twice.
+    const completedActionKeys = new Set()
+    const completed = completedRaw.filter(entry => {
+      let input = {}
+      try { input = JSON.parse(entry.action).input || {} } catch {}
+      const key = entry.tool === 'set_reminder'
+        ? `reminder:${String(input.message || '').trim().toLowerCase()}:${input.time || ''}`
+        : entry.tool === 'schedule_event'
+          ? `meeting:${String(input.title || '').trim().toLowerCase()}:${input.start || ''}`
+          : entry.id
+      if (completedActionKeys.has(key)) return false
+      completedActionKeys.add(key)
+      return true
+    })
+
+    // Fetch urgent emails in parallel — fail silently if Gmail not connected
+    let urgentEmails = [];
+    let suggestedMeetings = [];
+    try {
+      const { getUrgentEmails: _getUrgent, detectMeetingRequest } = await import('../services/gmail.service.js');
+      const { userStore: _us } = await import('../models/userStore.js');
+      const _user = await _us.getById(req.user.id);
+      urgentEmails = await _getUrgent(_user, 20);
+      // Scan urgent emails for meeting requests
+      suggestedMeetings = urgentEmails
+        .map(e => {
+          const info = detectMeetingRequest(e.subject, e.snippet, e.from);
+          if (!info) return null;
+          return {
+            emailId: e.id,
+            subject: e.subject,
+            senderName: info.senderName,
+            senderEmail: info.senderEmail,
+            snippet: e.snippet,
+            time: e.time,
+            urgencyScore: e.urgencyScore,
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 3);
+    } catch { urgentEmails = []; suggestedMeetings = []; }
 
     const filteredTasks = pendingTasks.filter(t => {
       const title = (t.title || '').trim();
       if (!title || title.length < 3) return false;
       if (/^[a-z_]+:[a-z0-9]+$/i.test(title)) return false;
       if (/^meeting_done:/i.test(title)) return false;
-      if (ledgerTitles.has(title.toLowerCase())) return false;
       return true;
     });
 
@@ -320,6 +356,15 @@ dashboardRouter.get('/brief', async (req, res) => {
       insights: [],
       pendingTasks: filteredTasks.map(t => ({ id: t.id, title: t.title, description: t.description, createdAt: t.createdAt })),
       stats: { actionsAuto: completed.length, trustScore: 0 },
+      urgentEmails: urgentEmails.map(e => ({
+        id: e.id,
+        subject: e.subject,
+        from: e.from,
+        snippet: e.snippet,
+        time: e.time,
+        urgencyScore: e.urgencyScore,
+      })),
+      suggestedMeetings,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -539,6 +584,72 @@ lifeopsRouter.post('/food',    async (req, res) => {
   res.json({ orderId: entry.id, status: 'pending_provider_connection', ...req.body })
 })
 
+// meetings.js
+export const meetingsRouter = express.Router()
+
+// POST /api/meetings/suggest-approve
+// Called when user approves a suggested meeting from an urgent email
+meetingsRouter.post('/suggest-approve', async (req, res) => {
+  try {
+    const { emailId, senderName, senderEmail, subject, start, end, title } = req.body
+    if (!senderEmail || !start) return res.status(400).json({ error: 'senderEmail and start are required' })
+
+    const { createMeetingWithGoogleMeet } = await import('../services/calendar.service.js')
+    const startDt = new Date(start)
+    if (isNaN(startDt.getTime())) return res.status(400).json({ error: 'Invalid start datetime' })
+    const endDt = end ? new Date(end) : new Date(startDt.getTime() + 60 * 60 * 1000)
+
+    const meetingTitle = title || `Meeting with ${senderName || senderEmail}`
+    const meeting = await createMeetingWithGoogleMeet(req.user.id, {
+      title: meetingTitle,
+      start: startDt.toISOString(),
+      end: endDt.toISOString(),
+      description: `Meeting requested via email: "${subject || ''}"`,
+      attendees: [senderEmail],
+    })
+
+    // Add to ledger
+    const ledgerEntry = await ledger.add({
+      userId: req.user.id,
+      tool: 'schedule_event',
+      input: { title: meetingTitle, start: startDt.toISOString(), end: endDt.toISOString(), attendees: [senderEmail] },
+      result: meeting,
+      status: 'completed',
+    })
+
+    // Notify
+    await prisma.notification.create({
+      data: {
+        userId: req.user.id,
+        title: `📅 Meeting scheduled: ${meetingTitle}`,
+        message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink, preview: `With ${senderName || senderEmail}`, start: startDt.toISOString() }),
+      },
+    })
+
+    // A suggested meeting is also a pending priority, just like meetings made
+    // directly in Ask AI. Without this record it only exists in Calendar.
+    const meetingTask = await prisma.task.create({
+      data: {
+        userId: req.user.id,
+        title: meetingTitle,
+        description: `Meeting · ${startDt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`,
+        status: 'PENDING',
+      },
+    })
+
+    const io = req.app.get('io')
+    if (io) {
+      io.to(`u:${req.user.id}`).emit('task:created', meetingTask)
+      io.to(`u:${req.user.id}`).emit('ledger:updated', ledgerEntry)
+      io.to(`u:${req.user.id}`).emit('meeting:created', { ...meeting, title: meetingTitle, start: startDt.toISOString(), end: endDt.toISOString() })
+    }
+
+    res.json({ success: true, meeting: { ...meeting, title: meetingTitle } })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // twin.js
 export const twinRouter = express.Router()
 twinRouter.get('/diary', async (req, res) => res.json({ entries: await ledger.getByUser(req.user.id) }))
@@ -546,6 +657,15 @@ twinRouter.get('/ledger',async (req, res) => res.json({ entries: await ledger.ge
 
 // notifications.js
 export const notifRouter = express.Router()
+notifRouter.post('/device-token', async (req, res) => {
+  const plainToken = createDeviceToken()
+  await prisma.deviceNotificationToken.create({ data: { userId: req.user.id, tokenHash: hashToken(plainToken) } })
+  res.status(201).json({ deviceToken: plainToken })
+})
+notifRouter.delete('/device-token', async (req, res) => {
+  await prisma.deviceNotificationToken.deleteMany({ where: { userId: req.user.id } })
+  res.json({ success: true })
+})
 notifRouter.get('/', async (req, res) => {
   const notifications = await prisma.notification.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' } })
   res.json({

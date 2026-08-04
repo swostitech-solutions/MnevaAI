@@ -35,9 +35,10 @@ import googleFitRoutes, { googleFitCallbackHandler } from './routes/googlefit.js
 import contactsRoutes, { googleContactsCallbackHandler } from './routes/contacts.js'
 import gdriveRoutes, { gdriveCallbackHandler } from './routes/gdrive.js'
 import gtasksRoutes, { gtasksCallbackHandler } from './routes/gtasks.js'
-import { smsRouter } from './routes/_allRoutes.js'
+import { smsRouter, meetingsRouter } from './routes/_allRoutes.js'
 import notifyRoutes from './routes/notify.js'
 import { onboardingRouter as onboardingRoutes } from './routes/onboarding.js'
+import deviceNotificationRoutes from './routes/deviceNotifications.js'
 import { connectDatabase, disconnectDatabase } from './config/prisma.js'
 import { connectQdrant } from './config/qdrant.js'
 import { connectRedis, disconnectRedis } from './config/redis.js'
@@ -129,6 +130,7 @@ app.get('/api/debug/deepseek', async (_req, res) => {
   }
 })
 app.use('/api/auth', authRoutes)
+app.use('/api/device-notifications', deviceNotificationRoutes)
 app.get('/api/gmail/callback', gmailCallbackHandler)
 app.get('/api/calendar/callback', calendarCallbackHandler)
 app.get('/api/googlefit/callback', googleFitCallbackHandler)
@@ -168,6 +170,7 @@ app.use('/api/search',        authMiddleware, searchRoutes)
 
 import tasksRoutes from './routes/tasks.js'
 app.use('/api/tasks', authMiddleware, tasksRoutes)
+app.use('/api/meetings', authMiddleware, meetingsRouter)
 app.use('/api/sms', smsRouter)
 app.use('/api/notify', notifyRoutes)
 app.use('/api/onboarding', authMiddleware, onboardingRoutes)
@@ -240,6 +243,13 @@ server.on('listening', () => {
   logger.info(`🧠 Qdrant: ${qdrantClient ? '✅ Ready' : '⚠️  Not reachable'}`)
   logger.info(`🤖 DeepSeek AI: ${isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY) ? '✅ Ready' : '⚠️  Set DEEPSEEK_API_KEY'}`)
   logger.info(`📡 Socket.IO ready`)
+
+  // Self-ping every 10 minutes to prevent Render free-tier cold starts
+  // Render spins down after 15 minutes of inactivity — this keeps it warm
+  const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${listenPort}`
+  setInterval(() => {
+    fetch(`${SELF_URL}/api/health`).catch(() => {})
+  }, 10 * 60 * 1000) // every 10 minutes
 })
 
 server.on('error', (err) => {

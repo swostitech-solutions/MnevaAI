@@ -42,6 +42,7 @@ model User {
   createdAt        DateTime       @default(now())
 
   notifications Notification[]
+  deviceNotificationTokens DeviceNotificationToken[]
   agentLedgers  AgentLedger[]
   trustScore    TrustScore?
   userProfile   UserProfile?
@@ -254,6 +255,21 @@ model Notification {
   userId    String
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceId  String?
+  priority  Int      @default(0)
+
+  @@index([userId])
+  @@unique([userId, sourceId])
+}
+
+model DeviceNotificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

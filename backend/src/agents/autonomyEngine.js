@@ -1,8 +1,61 @@
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
 import { prisma } from '../config/prisma.js'
+import { emitToUser } from '../services/realtime.js'
 
 const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat'
+
+function validTimeZone(value) {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: value }).format()
+    return value
+  } catch {
+    return 'Asia/Kolkata'
+  }
+}
+
+function timeZoneOffsetAt(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {})
+  const localAsUtc = Date.UTC(parts.year, Number(parts.month) - 1, parts.day, parts.hour, parts.minute, parts.second)
+  return localAsUtc - date.getTime()
+}
+
+// Tool calls often contain a local ISO value without an offset. Node parses
+// that in the server timezone (UTC on Render), which shifts the user's alarm.
+function normalizeScheduledTime(value, timeZone) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+
+  // Offset/Z timestamps already identify an exact instant.
+  if (/(Z|[+-]\d{2}:?\d{2})$/i.test(raw)) {
+    const instant = new Date(raw)
+    return Number.isNaN(instant.getTime()) ? null : instant
+  }
+
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?$/)
+  if (!match) return null
+  const [, year, month, day, hour, minute, second = '0'] = match
+  const utcGuess = new Date(Date.UTC(+year, +month - 1, +day, +hour, +minute, +second))
+  let instant = new Date(utcGuess.getTime() - timeZoneOffsetAt(utcGuess, timeZone))
+  // Recalculate once to handle daylight-saving transitions in non-Indian zones.
+  instant = new Date(utcGuess.getTime() - timeZoneOffsetAt(instant, timeZone))
+  return Number.isNaN(instant.getTime()) ? null : instant
+}
+
+async function getUserTimeZone(userId) {
+  const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } }).catch(() => null)
+  return validTimeZone(profile?.timezone || 'Asia/Kolkata')
+}
+
+function actionIdentity(name, input = {}) {
+  if (name === 'set_reminder') return `${name}:${String(input.message || '').trim().toLowerCase()}:${input.time || ''}`
+  if (name === 'schedule_event') return `${name}:${String(input.title || '').trim().toLowerCase()}:${input.start || ''}`
+  return null
+}
 
 export function isDeepSeekConfigured(apiKey = process.env.DEEPSEEK_API_KEY) {
   const value = String(apiKey || '').trim()
@@ -187,8 +240,8 @@ export const MNEVA_TOOLS = [
   },
   {
     name: 'set_reminder',
-    description: 'Set a reminder or commitment tracker entry.',
-    input_schema: { type: 'object', properties: { message: { type: 'string' }, time: { type: 'string', description: 'ISO datetime string e.g. 2026-07-08T10:00:00' }, repeat: { type: 'string', enum: ['once','daily','weekly','monthly'] }, domain: { type: 'string' } }, required: ['message', 'time'] }
+    description: 'Set a reminder or commitment tracker entry. time must be a complete future ISO datetime; include a UTC offset when known (e.g. 2026-07-08T10:00:00+05:30), never a time-only value.',
+    input_schema: { type: 'object', properties: { message: { type: 'string' }, time: { type: 'string', description: 'Future ISO datetime, e.g. 2026-07-08T10:00:00+05:30' }, repeat: { type: 'string', enum: ['once','daily','weekly','monthly'] }, domain: { type: 'string' } }, required: ['message', 'time'] }
   },
   {
     name: 'schedule_event',
@@ -197,8 +250,8 @@ export const MNEVA_TOOLS = [
       type: 'object',
       properties: {
         title: { type: 'string', description: 'Event title / meeting name' },
-        start: { type: 'string', description: 'Start datetime in ISO format e.g. 2026-07-08T10:00:00' },
-        end: { type: 'string', description: 'End datetime in ISO format. If not provided, defaults to 1 hour after start.' },
+        start: { type: 'string', description: 'Future start datetime in ISO format with UTC offset, e.g. 2026-07-08T10:00:00+05:30' },
+        end: { type: 'string', description: 'End datetime in ISO format with UTC offset. If not provided, defaults to 1 hour after start.' },
         description: { type: 'string', description: 'Optional event description or agenda' },
         attendees: { type: 'array', items: { type: 'string' }, description: 'Optional list of attendee email addresses' },
       },
@@ -287,22 +340,30 @@ export async function executeTool(name, input, userId) {
     case 'book_cab':             return { bookingId: `cab_${Date.now()}`, status: 'pending_provider_connection', ...input }
     case 'order_food':           return { orderId: `ord_${Date.now()}`, status: 'pending_provider_connection', ...input }
     case 'set_reminder': {
+      const timeZone = await getUserTimeZone(userId)
+      const scheduledAt = normalizeScheduledTime(input.time, timeZone)
+      if (!scheduledAt || scheduledAt.getTime() <= Date.now()) {
+        return { success: false, error: 'Please provide a valid future date and time for this reminder.' }
+      }
+      const scheduled = scheduledAt.toISOString()
       const { enqueueReminder } = await import('../queues/reminder.queue.js')
       const job = await enqueueReminder({
         userId,
         message: input.message,
-        time: input.time,
+        time: scheduled,
         domain: input.domain || 'general',
         repeat: input.repeat || 'once',
       })
       await prisma.notification.create({
-        data: { userId, title: '🔔 Reminder set', message: `"${input.message}" scheduled for ${input.time}` },
+        data: {
+          userId,
+          title: '🔔 Reminder set',
+          message: JSON.stringify({ source: 'reminder', preview: input.message, start: scheduled, repeat: input.repeat || 'once' }),
+        },
       })
       // Also create a Task so it shows on Home + Priorities
-      const reminderTimeStr = input.time
-        ? new Date(input.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
-        : ''
-      await prisma.task.create({
+      const reminderTimeStr = scheduledAt.toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })
+      const reminderTask = await prisma.task.create({
         data: {
           userId,
           title: input.message,
@@ -310,9 +371,11 @@ export async function executeTool(name, input, userId) {
           status: 'PENDING',
         },
       })
+      // Real-time push so Home + Priorities update instantly without polling
+      emitToUser(userId, 'task:created', reminderTask)
       try {
         const { createEventIfConnected } = await import('../services/calendar.service.js')
-        const startDt = new Date(input.time)
+        const startDt = scheduledAt
         if (!isNaN(startDt.getTime())) {
           const endDt = new Date(startDt.getTime() + 30 * 60 * 1000)
           await createEventIfConnected(userId, {
@@ -325,7 +388,8 @@ export async function executeTool(name, input, userId) {
       } catch { /* calendar push is best-effort */ }
       return {
         reminderId: job?.id || `rem_${Date.now()}`,
-        scheduled: input.time,
+        taskId: reminderTask.id,
+        scheduled,
         message: input.message,
         repeat: input.repeat || 'once',
         queued: true,
@@ -334,9 +398,11 @@ export async function executeTool(name, input, userId) {
     case 'schedule_event': {
       try {
         const { createMeetingWithGoogleMeet } = await import('../services/calendar.service.js')
-        const startDt = new Date(input.start)
-        if (isNaN(startDt.getTime())) return { success: false, error: 'Invalid start datetime' }
-        const endDt = input.end ? new Date(input.end) : new Date(startDt.getTime() + 60 * 60 * 1000)
+        const timeZone = await getUserTimeZone(userId)
+        const startDt = normalizeScheduledTime(input.start, timeZone)
+        if (!startDt || startDt.getTime() <= Date.now()) return { success: false, error: 'Please provide a valid future start date and time.' }
+        const endDt = input.end ? normalizeScheduledTime(input.end, timeZone) : new Date(startDt.getTime() + 60 * 60 * 1000)
+        if (!endDt || endDt <= startDt) return { success: false, error: 'Meeting end time must be after its start time.' }
         const meeting = await createMeetingWithGoogleMeet(userId, {
           title: input.title,
           start: startDt.toISOString(),
@@ -351,7 +417,18 @@ export async function executeTool(name, input, userId) {
             message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink, preview: input.description || input.title, start: startDt.toISOString() }),
           },
         })
-        return { success: true, ...meeting }
+        // Create a Task so it shows on Priorities + Dashboard
+        const meetingTask = await prisma.task.create({
+          data: {
+            userId,
+            title: input.title,
+            description: `Meeting · ${startDt.toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })}`,
+            status: 'PENDING',
+          },
+        })
+        emitToUser(userId, 'task:created', meetingTask)
+        emitToUser(userId, 'meeting:created', { ...meeting, title: input.title, start: startDt.toISOString(), end: endDt.toISOString() })
+        return { success: true, taskId: meetingTask.id, ...meeting }
       } catch (err) {
         return { success: false, error: err.message }
       }
@@ -653,6 +730,7 @@ CRITICAL RULES:
 12. When the user asks to set a reminder or schedule something, call set_reminder or schedule_event immediately — do not call get_daily_brief first.
 13. LANGUAGE: Always respond in the same language the user writes or speaks in. If the user writes in Hindi, respond in Hindi. If in Tamil, respond in Tamil. Match their language exactly.
 14. CONNECTED ACCOUNTS: You always know which accounts are connected from the CONNECTED ACCOUNTS section below. Answer questions about integrations directly from that — never say you don't know. If an account is not connected, tell the user to go to Settings → Connected Accounts to connect it.
+15. SCHEDULING: The current time is ${new Date().toISOString()}. For every reminder or meeting, use a complete future date and time. Call the scheduling tools only once per requested action and include an ISO UTC offset in the tool value whenever possible.
 
 USER PROFILE (registered account details — answer any personal questions from this):
 - Full Name: ${user.name || 'Not set'}
@@ -709,6 +787,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   const topMemory = recentMemory.slice(0, 3)
   const agentMsgs = [...messages]
   const allToolResults = []
+  const executedActionResults = new Map()
   let iterations = 0
 
   if (topMemory.length) {
@@ -757,11 +836,17 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     const toolResults = []
     for (const tb of toolBlocks) {
       logger.info(`  → Tool: ${tb.name}`)
-      const result = await executeTool(tb.name, tb.input, user.id)
+      const identity = actionIdentity(tb.name, tb.input)
+      const result = identity && executedActionResults.has(identity)
+        ? executedActionResults.get(identity)
+        : await executeTool(tb.name, tb.input, user.id)
+      if (identity) executedActionResults.set(identity, result)
 
       const actionTools = ['initiate_payment','send_email','book_cab','order_food','set_reminder','schedule_event']
-      if (actionTools.includes(tb.name)) {
-        await ledger.add({ userId: user.id, tool: tb.name, input: tb.input, result })
+      if (actionTools.includes(tb.name) && !(identity && allToolResults.some(entry => actionIdentity(entry.tool, entry.input) === identity))) {
+        const ledgerEntry = await ledger.add({ userId: user.id, tool: tb.name, input: tb.input, result })
+        // Push the action ledger to every active client immediately.
+        emitToUser(user.id, 'ledger:updated', ledgerEntry)
       }
 
       allToolResults.push({ tool: tb.name, input: tb.input, result })

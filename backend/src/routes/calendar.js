@@ -3,6 +3,8 @@ import { createCalendarAuthUrl, exchangeCodeForTokens, saveCalendarTokens, listE
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
+import { prisma } from '../config/prisma.js'
+import { emitToUser } from '../services/realtime.js'
 
 const router = express.Router()
 
@@ -98,14 +100,13 @@ router.post('/meetings', async (req, res) => {
     if (!title || !start) return res.status(400).json({ error: 'title and start are required' })
     const endTime = end || new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString()
     const meeting = await createMeetingWithGoogleMeet(req.user.id, { title, start, end: endTime, description, attendees: attendees || [] })
-    await ledger.add({
+    const ledgerEntry = await ledger.add({
       userId: req.user.id,
       tool: 'schedule_event',
       input: { title, start, end: endTime, description, attendees: attendees || [] },
       result: { success: true, ...meeting },
       status: 'completed',
     })
-    const { prisma } = await import('../config/prisma.js')
     await prisma.notification.create({
       data: {
         userId: req.user.id,
@@ -113,6 +114,19 @@ router.post('/meetings', async (req, res) => {
         message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink || null, preview: title, start, end: endTime, description: description || null, attendees: attendees || [] }),
       },
     })
+    // Calendar meetings created from the Ask AI sheet must use the same task
+    // source as meetings created through the AI tool, so all dashboards see it.
+    const meetingTask = await prisma.task.create({
+      data: {
+        userId: req.user.id,
+        title,
+        description: `Meeting · ${new Date(start).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`,
+        status: 'PENDING',
+      },
+    })
+    emitToUser(req.user.id, 'task:created', meetingTask)
+    emitToUser(req.user.id, 'ledger:updated', ledgerEntry)
+    emitToUser(req.user.id, 'meeting:created', { ...meeting, title, start, end: endTime })
     res.json({ success: true, meeting })
   } catch (err) {
     res.status(400).json({ success: false, error: err.message })

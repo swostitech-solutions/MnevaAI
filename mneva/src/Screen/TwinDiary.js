@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, useWindowDimensions,
@@ -6,6 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import { useSocket } from '../services/socket';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -57,6 +58,23 @@ const TOOL_BG = {
   personal_search: '#EEEDFE',
 };
 
+function actionKey(entry) {
+  const input = entry?.input || {};
+  if (entry?.tool === 'set_reminder') return `reminder:${String(input.message || '').trim().toLowerCase()}:${input.time || ''}`;
+  if (entry?.tool === 'schedule_event') return `meeting:${String(input.title || '').trim().toLowerCase()}:${input.start || ''}`;
+  return `entry:${entry?.id || ''}`;
+}
+
+function uniqueEntries(entries) {
+  const seen = new Set();
+  return (entries || []).filter(entry => {
+    const key = actionKey(entry);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function statusColor(status) {
   if (status === 'completed') return '#1F9A5A';
   if (status === 'pending_approval') return '#D97706';
@@ -88,17 +106,41 @@ export default function TwinDiary({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  const isMountedRef = useRef(false);
 
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
       const data = await apiFetch('/api/twin/diary');
-      setEntries(data.entries || []);
+      setEntries(uniqueEntries(data.entries));
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
 
   useEffect(() => { loadData(); }, []);
+
+  // Re-fetch when navigating back from AskAI
+  useEffect(() => {
+    const unsub = navigation?.addListener?.('focus', () => {
+      if (!isMountedRef.current) { isMountedRef.current = true; return; }
+      loadData(true);
+    });
+    return () => unsub?.();
+  }, [navigation]);
+
+  const { on } = useSocket();
+
+  // Real-time: when AI executes any action, refresh ledger immediately
+  useEffect(() => {
+    const off = on('ledger:updated', (entry) => {
+      if (!entry?.id) return;
+      setEntries(prev => {
+        if (prev.find(e => e.id === entry.id || actionKey(e) === actionKey(entry))) return prev;
+        return uniqueEntries([entry, ...prev]);
+      });
+    });
+    return () => off?.();
+  }, [on]);
 
   const completedCount = entries.filter(e => e.status === 'completed').length;
   const pendingCount = entries.filter(e => e.status === 'pending_approval').length;
@@ -179,7 +221,7 @@ export default function TwinDiary({ navigation }) {
                   </View>
                   <View style={styles.entryTextWrap}>
                     <Text style={styles.entryTool}>{(entry.tool || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</Text>
-                    <Text style={styles.entryTime}>{formatTime(entry.createdAt)}</Text>
+                    <Text style={styles.entryTime}>{formatTime(entry.ts)}</Text>
                   </View>
                   <View style={[styles.entryStatusBadge, { backgroundColor: statusBg(entry.status) }]}>
                     <Text style={[styles.entryStatusText, { color: statusColor(entry.status) }]}>

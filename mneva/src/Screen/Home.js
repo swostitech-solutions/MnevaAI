@@ -550,6 +550,7 @@ export default function Home({ navigation }) {
   const [weather, setWeather] = useState(null);
   const [pendingActions, setPendingActions] = useState([]);
   const [actedIds, setActedIds] = useState({});
+  const [meetingSuggestActed, setMeetingSuggestActed] = useState({});
   const [financeSnap, setFinanceSnap] = useState(null);
   const [healthSnap, setHealthSnap] = useState(null);
   const [meetings, setMeetings] = useState([]);
@@ -616,30 +617,36 @@ export default function Home({ navigation }) {
     }
   };
 
+  const isMountedRef = useRef(false);
+  const isLoadingRef = useRef(false);
+
   const loadData = async (isRefresh = false) => {
+    // Prevent concurrent loads
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
     if (!isRefresh) setBriefLoading(true);
     try {
       const { user: stored } = await getStoredAuth();
-      // Show stored user immediately so greeting renders before API responds
       if (stored) setUser(stored);
 
-      // Phase 1 — critical data: render the screen fast
-      const [meRes, notifsRes, briefRes, profileRes] = await Promise.allSettled([
+      // Phase 1 — critical data + tasks all in one shot
+      const [meRes, notifsRes, briefRes, profileRes, tasksRes] = await Promise.allSettled([
         apiFetch('/api/auth/me'),
         apiFetch('/api/notifications'),
         apiFetch('/api/dashboard/brief'),
         apiFetch('/api/onboarding/profile'),
+        apiFetch('/api/tasks'),
       ]);
 
-      const me      = meRes.status      === 'fulfilled' ? meRes.value      : null;
-      const notifs  = notifsRes.status  === 'fulfilled' ? notifsRes.value  : null;
-      const briefData = briefRes.status === 'fulfilled' ? briefRes.value   : null;
+      const me        = meRes.status      === 'fulfilled' ? meRes.value      : null;
+      const notifs    = notifsRes.status  === 'fulfilled' ? notifsRes.value  : null;
+      const briefData = briefRes.status   === 'fulfilled' ? briefRes.value   : null;
       const profileRes2 = profileRes.status === 'fulfilled' ? profileRes.value : null;
+      const tasksData = tasksRes.status   === 'fulfilled' ? tasksRes.value   : null;
 
       if (me)     setUser(me);
       if (notifs) {
         setUnreadCount(notifs.unreadCount || 0);
-        // Recent Inbox: only email and sms — not AI reminders/tasks
         setRecentNotifs((notifs.notifications || []).filter(n => !n.read && (n.type === 'email' || n.type === 'sms')).slice(0, 4));
       }
       if (briefData) setBrief(briefData);
@@ -651,10 +658,25 @@ export default function Home({ navigation }) {
         loadWeather(city, country);
       }
 
-      // Screen is now rendered — stop the loading skeleton
+      // Seed localPriorities from DB tasks — source of truth
+      if (tasksData) {
+        const allTasks = Array.isArray(tasksData) ? tasksData : [];
+        const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
+        const seeded = allTasks
+          .filter(t => t.status === 'PENDING' && t.title && !t.title.startsWith('meeting_done:'))
+          .map((t, i) => ({
+            id: t.id,
+            color: STRIPE_COLORS[i % STRIPE_COLORS.length],
+            title: t.title,
+            subtitle: t.description || 'Pending · AI tracked',
+            isLocal: false,
+          }));
+        setLocalPriorities(seeded);
+      }
+
       setBriefLoading(false);
 
-      // Phase 2 — secondary data: load in background without blocking UI
+      // Phase 2 — secondary data in background
       const [ledgerRes, portfolioRes, spendingRes, healthRes] = await Promise.allSettled([
         apiFetch('/api/agent/ledger'),
         apiFetch('/api/finance/portfolio'),
@@ -684,20 +706,32 @@ export default function Home({ navigation }) {
       }
     } catch {}
     finally {
+      isLoadingRef.current = false;
       setBriefLoading(false);
       setRefreshing(false);
     }
   };
 
+  // Single mount load
   useEffect(() => { loadData(); }, []);
 
-  // Re-fetch ALL data when app comes back to foreground after being backgrounded
+  // Re-fetch when screen comes back into focus (after navigating away)
+  // Skip the very first focus event which fires right after mount
+  useEffect(() => {
+    const unsubFocus = navigation?.addListener?.('focus', () => {
+      if (!isMountedRef.current) { isMountedRef.current = true; return; }
+      loadData(true);
+    });
+    return () => unsubFocus?.();
+  }, [navigation]);
+
+  // Re-fetch when app comes back to foreground after being backgrounded
   useEffect(() => {
     let lastActiveAt = Date.now();
     const sub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        // Only reload if app was in background for more than 30 seconds
-        if (Date.now() - lastActiveAt > 30000) {
+        // Only reload if app was backgrounded for more than 5 minutes
+        if (Date.now() - lastActiveAt > 5 * 60 * 1000) {
           loadData(true);
         }
       } else {
@@ -715,22 +749,6 @@ export default function Home({ navigation }) {
       navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
     });
     return () => unsub();
-  }, [navigation]);
-
-  // Re-fetch profile completion % whenever this screen comes into focus
-  useEffect(() => {
-    const unsubFocus = navigation?.addListener?.('focus', () => {
-      apiFetch('/api/onboarding/profile')
-        .then(profileRes => {
-          const city    = profileRes?.profile?.city    || null;
-          const country = profileRes?.profile?.country || null;
-          setProfilePct(profileRes?.profile?.completionPct ?? 0);
-          setProfileCity(city);
-          loadWeather(city, country);
-        })
-        .catch(() => {});
-    });
-    return () => unsubFocus?.();
   }, [navigation]);
 
   // Stop all speech when navigating away or app goes to background
@@ -772,11 +790,29 @@ export default function Home({ navigation }) {
     // real-time task sync — when another device or AI creates a task
     const offTask = on('task:created', (task) => {
       if (!task?.id || !task?.title) return;
+      // Add to priorities immediately
       setLocalPriorities(prev => {
         if (prev.find(p => p.id === task.id)) return prev;
-        const category = task.description || 'General';
-        const color = CATEGORY_COLORS[category] || '#44BA82';
-        return [{ id: task.id, color, title: task.title, subtitle: category, isLocal: false }, ...prev];
+        const color = CATEGORY_COLORS[task.description] || '#44BA82';
+        return [{ id: task.id, color, title: task.title, subtitle: task.description || 'Pending · AI tracked', isLocal: false }, ...prev];
+      });
+      // Also refresh brief so stats + briefing card update
+      apiFetch('/api/dashboard/brief').then(b => { if (b) setBrief(b); }).catch(() => {});
+    });
+
+    // Real-time ledger update — refresh brief so autoCompleted section updates
+    const offLedger = on('ledger:updated', () => {
+      apiFetch('/api/dashboard/brief').then(b => { if (b) setBrief(b); }).catch(() => {});
+    });
+
+    // Keep the calendar-backed priority list current without waiting for a
+    // screen remount or the next manual refresh.
+    const offMeeting = on('meeting:created', (meeting) => {
+      if (!meeting?.start) return;
+      setMeetings(prev => {
+        const key = meeting.eventId || meeting.id;
+        if (prev.some(item => (item.eventId || item.id) === key)) return prev;
+        return [{ ...meeting, id: meeting.id || key }, ...prev];
       });
     });
 
@@ -785,7 +821,7 @@ export default function Home({ navigation }) {
       if (pct != null) setProfilePct(pct);
     });
 
-    return () => { offGmail?.(); offCreated?.(); offSms?.(); offTask?.(); offProfile?.(); };
+    return () => { offGmail?.(); offCreated?.(); offSms?.(); offTask?.(); offLedger?.(); offMeeting?.(); offProfile?.(); };
   }, [on]);
 
   // Polling fallback — silently refresh notifications every 30s
@@ -841,7 +877,36 @@ export default function Home({ navigation }) {
     setRefreshing(true);
     setCheckedIds({});
     setActedIds({});
+    setLocalPriorities([]);
     loadData(true);
+  };
+
+  const handleMeetingSuggest = async (emailId, action, suggestion) => {
+    setMeetingSuggestActed(prev => ({ ...prev, [emailId]: action }));
+    if (action === 'approve') {
+      try {
+        // Default: schedule 1 hour from now, rounded to next hour
+        const now = new Date();
+        now.setMinutes(0, 0, 0);
+        now.setHours(now.getHours() + 1);
+        await apiFetch('/api/meetings/suggest-approve', {
+          method: 'POST',
+          body: {
+            emailId: suggestion.emailId,
+            senderName: suggestion.senderName,
+            senderEmail: suggestion.senderEmail,
+            subject: suggestion.subject,
+            start: now.toISOString(),
+          },
+        });
+      } catch {}
+    }
+    setTimeout(() => {
+      setBrief(prev => prev ? {
+        ...prev,
+        suggestedMeetings: (prev.suggestedMeetings || []).filter(m => m.emailId !== emailId),
+      } : prev);
+    }, 800);
   };
 
   const handleAction = async (actionId, type) => {
@@ -1032,6 +1097,10 @@ export default function Home({ navigation }) {
       const t = (m.title || '').trim();
       if (!t || t.length < 3) return false;
       if (/^[0-9a-f-]{8,}$/i.test(t)) return false;
+      // Ask AI stores one meeting as a task and a calendar event. The task is
+      // the dashboard priority; don't render its calendar mirror a second time.
+      const taskTitles = new Set([...localPriorities, ...backendTasks].map(p => (p.title || '').trim().toLowerCase()));
+      if (taskTitles.has(t.toLowerCase())) return false;
       return true;
     })
     .map((m) => {
@@ -1303,23 +1372,89 @@ export default function Home({ navigation }) {
                   : brief?.summary || 'Your AI twin is standing by'}
               </Text>
 
-              {/* Item rows */}
-              {(brief?.autoCompleted?.length ? brief.autoCompleted : brief?.pendingActions || []).slice(0, 3).map((item, i) => (
-                <View key={i} style={styles.briefingItemRow}>
-                  <View style={styles.briefingIconWrap}>
-                    <Feather name={brief?.autoCompleted?.length ? 'check' : 'clock'} size={12} color="#1F7A54" />
-                  </View>
-                  <View style={styles.briefingItemTextWrap}>
-                    <Text style={styles.briefingItemText} numberOfLines={1}>{item.title}</Text>
-                    {item.detail ? <Text style={styles.briefingItemDetail} numberOfLines={1}>{item.detail}</Text> : null}
-                  </View>
-                  <View style={styles.briefingItemBadge}>
-                    <Text style={styles.briefingItemBadgeText}>{brief?.autoCompleted?.length ? 'AI' : 'NEW'}</Text>
-                  </View>
-                </View>
-              ))}
+              {/* Item rows — suggested meetings first, then urgent emails, then AI actions */}
+              {(() => {
+                const suggestedMeetings = (brief?.suggestedMeetings || []).slice(0, 2);
+                const urgentEmails = (brief?.urgentEmails || []).slice(0, suggestedMeetings.length > 0 ? 1 : 2);
+                const aiItems = (brief?.autoCompleted?.length ? brief.autoCompleted : brief?.pendingActions || []).slice(0, suggestedMeetings.length > 0 ? 0 : urgentEmails.length > 0 ? 1 : 3);
+                return (
+                  <>
+                    {suggestedMeetings.map((mtg) => {
+                      const acted = meetingSuggestActed[mtg.emailId];
+                      return (
+                        <View key={mtg.emailId} style={[styles.briefingItemRow, { flexDirection: 'column', gap: 8, alignItems: 'stretch' }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View style={[styles.briefingIconWrap, { backgroundColor: 'rgba(97,95,248,0.15)' }]}>
+                              <Feather name="calendar" size={12} color="#A5B4FC" />
+                            </View>
+                            <View style={styles.briefingItemTextWrap}>
+                              <Text style={styles.briefingItemText} numberOfLines={1}>{mtg.senderName} wants to meet</Text>
+                              <Text style={styles.briefingItemDetail} numberOfLines={1}>{mtg.subject}</Text>
+                            </View>
+                            <View style={[styles.briefingItemBadge, { backgroundColor: 'rgba(97,95,248,0.25)' }]}>
+                              <Text style={[styles.briefingItemBadgeText, { color: '#C7D2FE' }]}>MEETING</Text>
+                            </View>
+                          </View>
+                          {!acted ? (
+                            <View style={{ flexDirection: 'row', gap: 8, paddingLeft: 38 }}>
+                              <TouchableOpacity
+                                style={[styles.briefingSuggestBtn, { backgroundColor: 'rgba(224,84,110,0.25)' }]}
+                                onPress={() => handleMeetingSuggest(mtg.emailId, 'deny', mtg)}
+                              >
+                                <Feather name="x" size={12} color="#FFCDD5" />
+                                <Text style={[styles.briefingSuggestBtnText, { color: '#FFCDD5' }]}>Skip</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.briefingSuggestBtn, { backgroundColor: 'rgba(255,255,255,0.2)', flex: 1 }]}
+                                onPress={() => handleMeetingSuggest(mtg.emailId, 'approve', mtg)}
+                              >
+                                <Feather name="calendar" size={12} color="#FFFFFF" />
+                                <Text style={styles.briefingSuggestBtnText}>Schedule Meeting</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <View style={{ paddingLeft: 38 }}>
+                              <Text style={{ color: acted === 'approve' ? '#A5F3C4' : 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600' }}>
+                                {acted === 'approve' ? '✓ Meeting scheduled' : '✗ Skipped'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                    {urgentEmails.map((email, i) => (
+                      <View key={`email_${i}`} style={styles.briefingItemRow}>
+                        <View style={[styles.briefingIconWrap, { backgroundColor: 'rgba(224,84,110,0.15)' }]}>
+                          <Feather name="mail" size={12} color="#E0546E" />
+                        </View>
+                        <View style={styles.briefingItemTextWrap}>
+                          <Text style={styles.briefingItemText} numberOfLines={1}>{email.subject}</Text>
+                          <Text style={styles.briefingItemDetail} numberOfLines={1}>From: {email.from.replace(/<.*>/, '').trim()}</Text>
+                        </View>
+                        <View style={[styles.briefingItemBadge, { backgroundColor: 'rgba(224,84,110,0.25)' }]}>
+                          <Text style={[styles.briefingItemBadgeText, { color: '#FFCDD5' }]}>URGENT</Text>
+                        </View>
+                      </View>
+                    ))}
+                    {aiItems.map((item, i) => (
+                      <View key={`ai_${i}`} style={styles.briefingItemRow}>
+                        <View style={styles.briefingIconWrap}>
+                          <Feather name={brief?.autoCompleted?.length ? 'check' : 'clock'} size={12} color="#1F7A54" />
+                        </View>
+                        <View style={styles.briefingItemTextWrap}>
+                          <Text style={styles.briefingItemText} numberOfLines={1}>{item.title}</Text>
+                          {item.detail ? <Text style={styles.briefingItemDetail} numberOfLines={1}>{item.detail}</Text> : null}
+                        </View>
+                        <View style={styles.briefingItemBadge}>
+                          <Text style={styles.briefingItemBadgeText}>{brief?.autoCompleted?.length ? 'AI' : 'NEW'}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                );
+              })()}
 
-              {!brief?.autoCompleted?.length && !brief?.pendingActions?.length && (
+              {!brief?.autoCompleted?.length && !brief?.pendingActions?.length && !brief?.urgentEmails?.length && !brief?.suggestedMeetings?.length && (
                 <View style={styles.briefingEmptyRow}>
                   <Feather name="check-circle" size={15} color="rgba(255,255,255,0.5)" />
                   <Text style={styles.briefingEmptyText}>All clear — no pending actions</Text>
@@ -1995,6 +2130,11 @@ const styles = StyleSheet.create({
     borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3,
   },
   briefingItemBadgeText: { fontSize: 9, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.4 },
+  briefingSuggestBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 5, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12,
+  },
+  briefingSuggestBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
   briefingEmptyRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 10, opacity: 0.7,

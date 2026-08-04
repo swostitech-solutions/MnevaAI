@@ -7,8 +7,10 @@ import { prisma } from '../config/prisma.js'
 import { startGmailPoller, stopGmailPoller, sendGmailReply } from './gmailPoller.js'
 import { startCalendarPoller, stopCalendarPoller } from './calendarPoller.js'
 import { startContactsPoller, stopContactsPoller } from './contactsPoller.js'
+import { setSocketServer } from './realtime.js'
 
 export function setupSocket(io) {
+  setSocketServer(io)
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token
     if (!token) return next(new Error('Auth required'))

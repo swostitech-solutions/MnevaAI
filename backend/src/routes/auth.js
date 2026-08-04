@@ -26,15 +26,21 @@ router.post('/login',
     const errs = validationResult(req)
     if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid email or password format' })
     const { email, password } = req.body
-    // Single DB query — select only the fields we need for login
+    // Single DB query — select only the fields needed for login + JWT
     const user = await prisma.user.findUnique({
       where: { email: email?.toLowerCase()?.trim() },
       select: { id: true, email: true, name: true, passwordHash: true, emailVerified: true, trustLevel: true, onboardingDone: true },
     })
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' })
+    // Return same error for missing user and wrong password — prevents user enumeration
+    if (!user) {
+      // Run a dummy compare to prevent timing attacks
+      await bcrypt.compare(password, '$2a$10$dummyhashfortimingattackprevention000000000000000000000')
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
     if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
     const ok = await bcrypt.compare(password, user.passwordHash)
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
+    // Return token immediately — client navigates without waiting for anything else
     res.json({ token: sign(user), user: toPublicUser(user) })
   }
 )

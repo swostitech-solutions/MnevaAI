@@ -96,6 +96,9 @@ export default function App() {
     const splashTimer = setTimeout(() => setShowSplash(false), 2500);
     (async () => {
       try {
+        // Warm up Render server immediately on app start — during splash window
+        // so server is awake before user reaches login screen
+        fetch(`${(await import('./src/api/client')).BASE_URL}/api/health`, { method: 'GET' }).catch(() => {});
         const { token } = await getStoredAuth();
         setInitialRoute(token ? 'Home' : 'Onboarding');
       } catch {

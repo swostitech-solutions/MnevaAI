@@ -1,14 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 
-function getBaseUrl() {
-  if (!__DEV__) return 'https://mneva-backend.onrender.com';
-  const host = Constants.expoConfig?.hostUri?.split(':')[0];
-  if (host) return `http://${host}:3001`;
-  return 'http://localhost:3001';
-}
-
-export const BASE_URL = getBaseUrl();
+export const BASE_URL = 'https://mneva-backend.onrender.com';
 
 // Listeners notified when session expires (401) so screens can redirect to login
 const _sessionExpiredListeners = new Set();
@@ -33,8 +25,9 @@ export async function apiFetch(path, options = {}) {
   };
 
   // 15-second timeout per request — prevents hanging on stale connections
+  // Use 50s for cold-start tolerance (Render free tier can take 30-50s to wake)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 50000);
 
   try {
     const res = await fetch(`${BASE_URL}${path}`, {

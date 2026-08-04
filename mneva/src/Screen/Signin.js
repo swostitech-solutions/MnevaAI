@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -24,9 +24,12 @@ export default function Signin({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const warmupDoneRef = useRef(false);
 
-  // Fire-and-forget warmup — wakes Render server silently while user types
+  // Warmup on mount (catches case where App.js warmup hasn't resolved yet)
   useEffect(() => {
+    if (warmupDoneRef.current) return;
+    warmupDoneRef.current = true;
     fetch(`${BASE_URL}/api/health`, { method: 'GET' }).catch(() => {});
   }, []);
 
@@ -43,10 +46,9 @@ export default function Signin({ navigation }) {
         method: 'POST',
         body: { email: email.trim().toLowerCase(), password },
       });
-      // Save auth and navigate immediately — don't wait for socket
-      await saveAuth(data.token, data.user);
+      // Navigate immediately — save token + socket init in background
       navigation.replace('Home');
-      // Reset + reconnect socket in background after navigation
+      saveAuth(data.token, data.user).catch(() => {});
       resetSocket();
       getSocket();
     } catch (err) {

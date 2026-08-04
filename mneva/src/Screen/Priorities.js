@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, ActivityIndicator, useWindowDimensions,
+  Linking, ActivityIndicator, useWindowDimensions, RefreshControl,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { apiFetch } from "../api/client";
+import { useSocket } from '../services/socket';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const TABS = ["TODAY", "UPCOMING", "MEETINGS"];
@@ -97,13 +98,18 @@ export default function Priorities({ navigation }) {
   const [tasks, setTasks] = useState([]);
   const [allCalendarItems, setAllCalendarItems] = useState([]);
   const [doneMeetingIds, setDoneMeetingIds] = useState(new Set());
+  const [urgentEmails, setUrgentEmails] = useState([]);
+  const [suggestedMeetings, setSuggestedMeetings] = useState([]);
+  const [meetingActed, setMeetingActed] = useState({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const isMountedRef = useRef(false);
 
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const horizontalPad = width < 360 ? 16 : 20;
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
     try {
       const [taskRes, meetRes, doneRes] = await Promise.all([
         apiFetch("/api/tasks"),
@@ -115,10 +121,36 @@ export default function Priorities({ navigation }) {
       setAllCalendarItems(Array.isArray(meetRes) ? meetRes : meetRes.meetings || []);
       setDoneMeetingIds(new Set(doneRes.ids || []));
     } catch {}
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+    // Fetch brief data separately — fail silently
+    try {
+      const brief = await apiFetch("/api/dashboard/brief");
+      setUrgentEmails(brief?.urgentEmails || []);
+      setSuggestedMeetings(brief?.suggestedMeetings || []);
+    } catch {}
   }, []);
 
   useEffect(() => { loadData(); }, []);
+
+  const { on } = useSocket();
+  useEffect(() => {
+    const refresh = () => loadData(true);
+    const offTask = on('task:created', refresh);
+    const offMeeting = on('meeting:created', refresh);
+    return () => { offTask?.(); offMeeting?.(); };
+  }, [on, loadData]);
+
+  // Re-fetch on screen focus (skip first mount focus)
+  useEffect(() => {
+    const unsubFocus = navigation?.addListener?.('focus', () => {
+      if (!isMountedRef.current) { isMountedRef.current = true; return; }
+      loadData(true);
+    });
+    return () => unsubFocus?.();
+  }, [navigation, loadData]);
 
   // Derived task lists
   const now        = new Date();
@@ -134,10 +166,40 @@ export default function Priorities({ navigation }) {
   // Only real Google meetings (have meetLink) go to MEETINGS tab
   const meetings = allCalendarItems.filter(m => !!m.meetLink);
   // All calendar items (meetings + reminders) go to TODAY/UPCOMING
-  const todayMeetings    = allCalendarItems.filter(m => { const d = new Date(m.start); return d >= todayStart && d <= todayEnd; });
+  const pendingTaskTitles = new Set(pendingTasks.map(task => (task.title || '').trim().toLowerCase()));
+  const todayMeetings = allCalendarItems.filter(m => {
+    const d = new Date(m.start);
+    // A Mneva-created meeting already has a pending task above; retain the
+    // calendar record for Upcoming/Meetings, but don't show it twice today.
+    return d >= todayStart && d <= todayEnd && !pendingTaskTitles.has((m.title || '').trim().toLowerCase());
+  });
   const upcomingMeetings = allCalendarItems
     .filter(m => new Date(m.start) > now)
     .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  const handleMeetingSuggest = async (emailId, action, suggestion) => {
+    setMeetingActed(prev => ({ ...prev, [emailId]: action }));
+    if (action === 'approve') {
+      try {
+        const now = new Date();
+        now.setMinutes(0, 0, 0);
+        now.setHours(now.getHours() + 1);
+        await apiFetch('/api/meetings/suggest-approve', {
+          method: 'POST',
+          body: {
+            emailId: suggestion.emailId,
+            senderName: suggestion.senderName,
+            senderEmail: suggestion.senderEmail,
+            subject: suggestion.subject,
+            start: now.toISOString(),
+          },
+        });
+      } catch {}
+    }
+    setTimeout(() => {
+      setSuggestedMeetings(prev => prev.filter(m => m.emailId !== emailId));
+    }, 800);
+  };
 
   const handleCheckTask = async (task) => {
     const newStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED";
@@ -163,7 +225,7 @@ export default function Priorities({ navigation }) {
 
 
 
-  const totalPending = pendingTasks.length;
+  const totalPending = pendingTasks.length + urgentEmails.length + suggestedMeetings.length;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
@@ -174,10 +236,18 @@ export default function Priorities({ navigation }) {
           { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); loadData(true); }}
+            tintColor="#1F9A5A"
+            colors={['#1F9A5A']}
+          />
+        }
       >
         <Text style={styles.headerTitle}>Priorities</Text>
         <Text style={styles.headerSubtitle}>
-          {totalPending} pending · {meetings.filter(m => !doneMeetingIds.has(m.id)).length} meeting{meetings.filter(m => !doneMeetingIds.has(m.id)).length !== 1 ? "s" : ""}
+          {pendingTasks.length} task{pendingTasks.length !== 1 ? "s" : ""}{urgentEmails.length > 0 ? ` · ${urgentEmails.length} urgent mail` : ""}{suggestedMeetings.length > 0 ? ` · ${suggestedMeetings.length} meeting request${suggestedMeetings.length !== 1 ? 's' : ''}` : ""} · {meetings.filter(m => !doneMeetingIds.has(m.id)).length} meeting{meetings.filter(m => !doneMeetingIds.has(m.id)).length !== 1 ? "s" : ""}
         </Text>
 
         {/* Segment tabs */}
@@ -227,11 +297,83 @@ export default function Priorities({ navigation }) {
             {/* TODAY tab */}
             {activeTab === "TODAY" && (
               <>
-                {pendingTasks.length === 0 && todayMeetings.length === 0 && (
+                {pendingTasks.length === 0 && todayMeetings.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && (
                   <View style={styles.emptyWrap}>
                     <Feather name="check-circle" size={28} color="#C7CBD3" />
                     <Text style={styles.emptyText}>All clear for today!</Text>
                   </View>
+                )}
+                {/* Suggested meetings from urgent emails */}
+                {suggestedMeetings.length > 0 && (
+                  <>
+                    <View style={styles.sectionDivider}>
+                      <Feather name="calendar" size={12} color="#615FF8" />
+                      <Text style={[styles.sectionDividerText, { color: '#615FF8' }]}>MEETING REQUESTS</Text>
+                    </View>
+                    {suggestedMeetings.map((mtg) => {
+                      const acted = meetingActed[mtg.emailId];
+                      return (
+                        <View key={mtg.emailId} style={styles.meetSuggestCard}>
+                          <View style={styles.meetSuggestIconWrap}>
+                            <Feather name="user" size={16} color="#615FF8" />
+                          </View>
+                          <View style={styles.meetSuggestBody}>
+                            <Text style={styles.meetSuggestTitle} numberOfLines={1}>
+                              {mtg.senderName} wants to meet
+                            </Text>
+                            <Text style={styles.meetSuggestFrom} numberOfLines={1}>{mtg.senderEmail}</Text>
+                            <Text style={styles.meetSuggestSubject} numberOfLines={1}>{mtg.subject}</Text>
+                            {!acted ? (
+                              <View style={styles.meetSuggestBtnRow}>
+                                <TouchableOpacity
+                                  style={styles.meetSuggestDenyBtn}
+                                  onPress={() => handleMeetingSuggest(mtg.emailId, 'deny', mtg)}
+                                >
+                                  <Feather name="x" size={13} color="#E0546E" />
+                                  <Text style={styles.meetSuggestDenyText}>Skip</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={styles.meetSuggestApproveBtn}
+                                  onPress={() => handleMeetingSuggest(mtg.emailId, 'approve', mtg)}
+                                >
+                                  <Feather name="calendar" size={13} color="#FFFFFF" />
+                                  <Text style={styles.meetSuggestApproveText}>Schedule Meeting</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <Text style={[styles.meetSuggestActed, { color: acted === 'approve' ? '#1F9A5A' : '#9AA1AE' }]}>
+                                {acted === 'approve' ? '✓ Meeting scheduled' : '✗ Skipped'}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
+                {/* Urgent emails section */}
+                {urgentEmails.length > 0 && (
+                  <>
+                    <View style={styles.sectionDivider}>
+                      <Feather name="alert-circle" size={12} color="#E0546E" />
+                      <Text style={[styles.sectionDividerText, { color: '#E0546E' }]}>URGENT EMAILS TODAY</Text>
+                    </View>
+                    {urgentEmails.map((email, i) => (
+                      <View key={email.id || i} style={styles.urgentEmailCard}>
+                        <View style={styles.urgentEmailIconWrap}>
+                          <Feather name="mail" size={16} color="#E0546E" />
+                        </View>
+                        <View style={styles.urgentEmailBody}>
+                          <Text style={styles.urgentEmailSubject} numberOfLines={1}>{email.subject}</Text>
+                          <Text style={styles.urgentEmailFrom} numberOfLines={1}>From: {email.from.replace(/<.*>/, '').trim()}</Text>
+                          {!!email.snippet && <Text style={styles.urgentEmailSnippet} numberOfLines={1}>{email.snippet}</Text>}
+                        </View>
+                        <View style={styles.urgentBadge}>
+                          <Text style={styles.urgentBadgeText}>URGENT</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
                 )}
                 {pendingTasks.map(task => (
                   <TaskCard key={task.id} task={task} onCheck={handleCheckTask} />
@@ -373,6 +515,30 @@ const styles = StyleSheet.create({
   emptyWrap: { alignItems: "center", paddingVertical: 40, gap: 10 },
   emptyText: { fontSize: 14, color: "#9AA1AE", fontWeight: "600" },
   emptyHint: { fontSize: 12, color: "#C7CBD3", textAlign: "center" },
+
+  // Meeting suggestion card
+  meetSuggestCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: "#F5F3FF", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: "#615FF8" },
+  meetSuggestIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#EEEDFE", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
+  meetSuggestBody: { flex: 1 },
+  meetSuggestTitle: { fontSize: 14, fontWeight: "700", color: "#14171F", marginBottom: 2 },
+  meetSuggestFrom: { fontSize: 12, color: "#615FF8", marginBottom: 2 },
+  meetSuggestSubject: { fontSize: 11, color: "#9AA1AE", marginBottom: 10 },
+  meetSuggestBtnRow: { flexDirection: "row", gap: 8 },
+  meetSuggestDenyBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: "#FFF0F3" },
+  meetSuggestDenyText: { fontSize: 12, fontWeight: "700", color: "#E0546E" },
+  meetSuggestApproveBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#615FF8", flex: 1, justifyContent: "center" },
+  meetSuggestApproveText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  meetSuggestActed: { fontSize: 12, fontWeight: "600", marginTop: 4 },
+
+  // Urgent email card
+  urgentEmailCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: "#FFF5F7", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: "#E0546E" },
+  urgentEmailIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#FCEAED", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
+  urgentEmailBody: { flex: 1 },
+  urgentEmailSubject: { fontSize: 14, fontWeight: "700", color: "#14171F", marginBottom: 3 },
+  urgentEmailFrom: { fontSize: 12, color: "#6B7280", marginBottom: 2 },
+  urgentEmailSnippet: { fontSize: 11, color: "#9AA1AE" },
+  urgentBadge: { backgroundColor: "#FCEAED", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginLeft: 8, alignSelf: "flex-start" },
+  urgentBadgeText: { fontSize: 10, fontWeight: "800", color: "#E0546E" },
 
   // Tab bar
   tabBar: { flexDirection: "row", backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EEF0F3", paddingTop: 10 },

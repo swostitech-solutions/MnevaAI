@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import { useSocket } from '../services/socket';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -99,7 +100,7 @@ export default function MorningBriefing({ navigation, route }) {
 
   // Accept brief passed via route params (instant load) or fetch fresh
   const [brief, setBrief] = useState(route?.params?.brief || null);
-  const [loading, setLoading] = useState(!route?.params?.brief);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadBrief = async (isRefresh = false) => {
@@ -111,12 +112,52 @@ export default function MorningBriefing({ navigation, route }) {
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useEffect(() => { if (!brief) loadBrief(); }, []);
+  // Always fetch fresh data on mount — route.params may be stale
+  useEffect(() => { loadBrief(); }, []);
+
+  // A briefing screen stays mounted in the stack. Refresh whenever the user
+  // returns from Ask AI so a newly created reminder or meeting is visible.
+  useEffect(() => {
+    const unsub = navigation?.addListener?.('focus', () => loadBrief(true));
+    return () => unsub?.();
+  }, [navigation]);
+
+  const { on } = useSocket();
+  useEffect(() => {
+    const refresh = () => loadBrief(true);
+    const offTask = on('task:created', refresh);
+    const offLedger = on('ledger:updated', refresh);
+    return () => { offTask?.(); offLedger?.(); };
+  }, [on]);
 
   const autoCompleted = brief?.autoCompleted || [];
   const pendingActions = brief?.pendingActions || [];
   const pendingTasks   = brief?.pendingTasks   || [];
-  const totalItems = autoCompleted.length + pendingActions.length + pendingTasks.length;
+  const urgentEmails   = brief?.urgentEmails   || [];
+  const suggestedMeetings = brief?.suggestedMeetings || [];
+  const [meetingActed, setMeetingActed] = useState({});
+  const totalItems = autoCompleted.length + pendingActions.length + pendingTasks.length + urgentEmails.length + suggestedMeetings.length;
+
+  const handleMeetingSuggest = async (emailId, action, suggestion) => {
+    setMeetingActed(prev => ({ ...prev, [emailId]: action }));
+    if (action === 'approve') {
+      try {
+        const now = new Date();
+        now.setMinutes(0, 0, 0);
+        now.setHours(now.getHours() + 1);
+        await apiFetch('/api/meetings/suggest-approve', {
+          method: 'POST',
+          body: {
+            emailId: suggestion.emailId,
+            senderName: suggestion.senderName,
+            senderEmail: suggestion.senderEmail,
+            subject: suggestion.subject,
+            start: now.toISOString(),
+          },
+        });
+      } catch {}
+    }
+  };
 
   const getDateString = () => new Date().toLocaleDateString('en-IN', {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -179,10 +220,85 @@ export default function MorningBriefing({ navigation, route }) {
 
             {/* Stats row */}
             <View style={styles.statsRow}>
-              <StatCard icon="zap"         color="#1F9A5A" bg="#EFFDF6" label="Auto Done"  value={autoCompleted.length} />
-              <StatCard icon="clock"       color="#F5A623" bg="#FEF3C7" label="Pending"    value={pendingActions.length + pendingTasks.length} />
-              <StatCard icon="list"        color="#615FF8" bg="#EEEDFE" label="Total Items" value={totalItems} />
+              <StatCard icon="alert-circle" color="#E0546E" bg="#FCEAED" label="Urgent Mail"    value={urgentEmails.length} />
+              <StatCard icon="calendar"     color="#615FF8" bg="#EEEDFE" label="Meet Requests" value={suggestedMeetings.length} />
+              <StatCard icon="zap"          color="#1F9A5A" bg="#EFFDF6" label="AI Done"       value={autoCompleted.length} />
             </View>
+
+            {/* Suggested meetings from urgent emails */}
+            {suggestedMeetings.length > 0 && (
+              <>
+                <SectionHeader title="📅  MEETING REQUESTS" />
+                <View style={styles.card}>
+                  {suggestedMeetings.map((mtg, i) => {
+                    const acted = meetingActed[mtg.emailId];
+                    return (
+                      <View key={mtg.emailId} style={[styles.actionRow, i !== suggestedMeetings.length - 1 && styles.actionRowDivider, { flexDirection: 'column', alignItems: 'stretch', gap: 10 }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <View style={[styles.actionIconWrap, { backgroundColor: '#EEEDFE' }]}>
+                            <Feather name="user" size={16} color="#615FF8" />
+                          </View>
+                          <View style={styles.actionTextWrap}>
+                            <Text style={styles.actionTitle} numberOfLines={1}>{mtg.senderName} wants to meet</Text>
+                            <Text style={styles.actionDetail} numberOfLines={1}>{mtg.senderEmail}</Text>
+                            <Text style={styles.actionTime} numberOfLines={1}>{mtg.subject}</Text>
+                          </View>
+                          <View style={[styles.actionBadge, { backgroundColor: '#EEEDFE' }]}>
+                            <Text style={[styles.actionBadgeText, { color: '#615FF8' }]}>REQUEST</Text>
+                          </View>
+                        </View>
+                        {!acted ? (
+                          <View style={{ flexDirection: 'row', gap: 8, paddingLeft: 50 }}>
+                            <TouchableOpacity
+                              style={styles.mtgDenyBtn}
+                              onPress={() => handleMeetingSuggest(mtg.emailId, 'deny', mtg)}
+                            >
+                              <Feather name="x" size={13} color="#E0546E" />
+                              <Text style={styles.mtgDenyText}>Skip</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.mtgApproveBtn}
+                              onPress={() => handleMeetingSuggest(mtg.emailId, 'approve', mtg)}
+                            >
+                              <Feather name="calendar" size={13} color="#FFFFFF" />
+                              <Text style={styles.mtgApproveText}>Schedule Meeting</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <Text style={[styles.mtgActedText, { color: acted === 'approve' ? '#1F9A5A' : '#9AA1AE', paddingLeft: 50 }]}>
+                            {acted === 'approve' ? '✓ Meeting scheduled' : '✗ Skipped'}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
+            {/* Urgent emails */}
+            {urgentEmails.length > 0 && (
+              <>
+                <SectionHeader title="🚨  URGENT EMAILS TODAY" />
+                <View style={styles.card}>
+                  {urgentEmails.map((email, i) => (
+                    <View key={email.id || i} style={[styles.actionRow, i !== urgentEmails.length - 1 && styles.actionRowDivider]}>
+                      <View style={[styles.actionIconWrap, { backgroundColor: '#FCEAED' }]}>
+                        <Feather name="mail" size={16} color="#E0546E" />
+                      </View>
+                      <View style={styles.actionTextWrap}>
+                        <Text style={styles.actionTitle} numberOfLines={1}>{email.subject}</Text>
+                        <Text style={styles.actionDetail} numberOfLines={1}>From: {email.from.replace(/<.*>/, '').trim()}</Text>
+                        {!!email.snippet && <Text style={styles.actionTime} numberOfLines={1}>{email.snippet}</Text>}
+                      </View>
+                      <View style={[styles.actionBadge, { backgroundColor: '#FCEAED' }]}>
+                        <Text style={[styles.actionBadgeText, { color: '#E0546E' }]}>URGENT</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
 
             {/* Auto-completed actions */}
             {autoCompleted.length > 0 && (
@@ -314,6 +430,13 @@ const styles = StyleSheet.create({
 
   tipCard: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, marginTop: 4 },
   tipText: { fontSize: 12, color: '#9AA1AE', flex: 1, lineHeight: 18 },
+
+  // Meeting suggestion buttons
+  mtgDenyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#FFF0F3' },
+  mtgDenyText: { fontSize: 12, fontWeight: '700', color: '#E0546E' },
+  mtgApproveBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#615FF8', flex: 1, justifyContent: 'center' },
+  mtgApproveText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  mtgActedText: { fontSize: 12, fontWeight: '600' },
 
   tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
