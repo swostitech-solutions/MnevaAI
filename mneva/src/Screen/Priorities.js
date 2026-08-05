@@ -11,6 +11,13 @@ import { useSocket } from '../services/socket';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const TABS = ["TODAY", "UPCOMING", "MEETINGS"];
 
+// A calendar entry is only a joinable, real-time meeting when Calendar gave
+// us an actual web-conference URL.  A title such as "Lunch" or "Meet up" is
+// still a reminder/appointment, not a meeting the user can join in the app.
+function isJoinableMeetingLink(link) {
+  return typeof link === 'string' && /^https?:\/\/\S+$/i.test(link.trim());
+}
+
 function fmtMeeting(start, end) {
   const s = new Date(start);
   const e = end ? new Date(end) : null;
@@ -48,7 +55,8 @@ function TaskCard({ task, onCheck }) {
 function MeetingCard({ m, done, onCheck }) {
   const { date, time, durStr } = fmtMeeting(m.start, m.end);
   const attendees = Array.isArray(m.attendees) ? m.attendees : [];
-  const isReminder = m.kind === 'reminder';
+  const isRealtimeMeeting = isJoinableMeetingLink(m.meetLink);
+  const isReminder = !isRealtimeMeeting;
   return (
     <View style={[styles.meetCard, done && styles.cardDone]}>
       <TouchableOpacity
@@ -66,8 +74,8 @@ function MeetingCard({ m, done, onCheck }) {
               {m.title}
             </Text>
           </View>
-          {!isReminder && !done && (
-            <TouchableOpacity style={styles.joinBtn} onPress={() => Linking.openURL(m.meetLink)}>
+          {isRealtimeMeeting && !done && (
+            <TouchableOpacity style={styles.joinBtn} onPress={() => Linking.openURL(m.meetLink.trim())}>
               <Feather name="video" size={12} color="#FFFFFF" />
               <Text style={styles.joinBtnText}>Join</Text>
             </TouchableOpacity>
@@ -77,7 +85,7 @@ function MeetingCard({ m, done, onCheck }) {
           <Feather name="clock" size={11} color="#9AA1AE" />
           <Text style={styles.meetMeta}> {date}  ·  {time}{durStr ? `  ·  ${durStr}` : ""}</Text>
         </View>
-        {!isReminder && attendees.length > 0 && (
+        {isRealtimeMeeting && attendees.length > 0 && (
           <View style={styles.meetMetaRow}>
             <Feather name="users" size={11} color="#9AA1AE" />
             <Text style={styles.meetAttendees} numberOfLines={1}> {attendees.join(", ")}</Text>
@@ -172,8 +180,11 @@ export default function Priorities({ navigation }) {
 
   // Keep actual tasks separate, but surface reminders alongside the date they
   // are due instead of making users switch to a dedicated reminders tab.
-  const meetings = allCalendarItems.filter(m => m.kind === 'meeting');
-  const reminders = allCalendarItems.filter(m => m.kind === 'reminder');
+  // The Meetings tab is intentionally limited to entries that can actually
+  // be joined. Calendar appointments without a live-conference URL belong in
+  // Today/Upcoming as reminders, regardless of their stored source/kind.
+  const meetings = allCalendarItems.filter(m => isJoinableMeetingLink(m.meetLink));
+  const reminders = allCalendarItems.filter(m => !isJoinableMeetingLink(m.meetLink));
   const calendarReminderTitles = new Set(reminders.map(m => (m.title || '').trim().toLowerCase()));
   // Reminders are also persisted as pending tasks. Keep their task record as
   // a fallback when the calendar feed is slow or unavailable, but avoid
@@ -431,7 +442,7 @@ export default function Priorities({ navigation }) {
                 {meetings.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <Feather name="video" size={28} color="#C7CBD3" />
-                    <Text style={styles.emptyText}>No meetings scheduled yet.</Text>
+                    <Text style={styles.emptyText}>No live meetings scheduled yet.</Text>
                     <Text style={styles.emptyHint}>Use Ask Mneva → Schedule to create one.</Text>
                   </View>
                 ) : (

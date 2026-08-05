@@ -8,6 +8,12 @@ import { emitToUser } from '../services/realtime.js'
 
 const router = express.Router()
 
+// Do not present ordinary calendar appointments as video meetings.  This is
+// kept at the API boundary too, so every client gets the same distinction.
+function hasJoinableMeetingLink(link) {
+  return typeof link === 'string' && /^https?:\/\/\S+$/i.test(link.trim())
+}
+
 export async function calendarCallbackHandler(req, res) {
   try {
     const { code, state } = req.query
@@ -174,7 +180,9 @@ router.get('/meetings', async (req, res) => {
       return {
         id: n.id,
         title: n.title === '🔔 Reminder set' ? (parsed.preview || 'Reminder') : n.title.replace(/^📅 Meeting scheduled: /, ''),
-        kind: parsed.source === 'reminder' ? 'reminder' : 'meeting',
+        kind: parsed.source === 'reminder' || !hasJoinableMeetingLink(parsed.meetLink)
+          ? 'reminder'
+          : 'meeting',
         start: parsed.start || null,
         end: parsed.end || null,
         meetLink: parsed.meetLink || null,
