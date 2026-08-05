@@ -346,33 +346,47 @@ export async function executeTool(name, input, userId) {
         return { success: false, error: 'Please provide a valid future date and time for this reminder.' }
       }
       const scheduled = scheduledAt.toISOString()
-      const { enqueueReminder } = await import('../queues/reminder.queue.js')
-      const job = await enqueueReminder({
-        userId,
-        message: input.message,
-        time: scheduled,
-        domain: input.domain || 'general',
-        repeat: input.repeat || 'once',
-      })
-      await prisma.notification.create({
-        data: {
-          userId,
-          title: '🔔 Reminder set',
-          message: JSON.stringify({ source: 'reminder', preview: input.message, start: scheduled, repeat: input.repeat || 'once' }),
-        },
-      })
-      // Also create a Task so it shows on Home + Priorities
+      // The in-app record is the source of truth.  A Redis/BullMQ outage must
+      // never make a reminder appear successful in chat but disappear from the
+      // dashboard and Priorities.
       const reminderTimeStr = scheduledAt.toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })
-      const reminderTask = await prisma.task.create({
-        data: {
+      const [, reminderTask] = await prisma.$transaction([
+        prisma.notification.create({
+          data: {
+            userId,
+            title: '🔔 Reminder set',
+            message: JSON.stringify({ source: 'reminder', preview: input.message, start: scheduled, repeat: input.repeat || 'once' }),
+          },
+        }),
+        prisma.task.create({
+          data: {
+            userId,
+            title: input.message,
+            description: reminderTimeStr ? `Reminder · ${reminderTimeStr}` : 'Reminder',
+            status: 'PENDING',
+          },
+        }),
+      ])
+
+      let job = null
+      let queueError = null
+      try {
+        const { enqueueReminder } = await import('../queues/reminder.queue.js')
+        job = await enqueueReminder({
           userId,
-          title: input.message,
-          description: reminderTimeStr ? `Reminder · ${reminderTimeStr}` : 'Reminder',
-          status: 'PENDING',
-        },
-      })
-      // Real-time push so Home + Priorities update instantly without polling
-      emitToUser(userId, 'task:created', reminderTask)
+          message: input.message,
+          time: scheduled,
+          domain: input.domain || 'general',
+          repeat: input.repeat || 'once',
+        })
+      } catch (err) {
+        // Retain the reminder for every in-app view and report the delivery
+        // issue accurately instead of rolling its record back.
+        queueError = err.message || 'Reminder delivery queue is unavailable.'
+        logger.error(`Reminder queued locally but delivery queue failed: ${queueError}`)
+      }
+      // Real-time push — small delay ensures DB transaction is visible to readers
+      setTimeout(() => emitToUser(userId, 'task:created', reminderTask), 300)
       try {
         const { createEventIfConnected } = await import('../services/calendar.service.js')
         const startDt = scheduledAt
@@ -387,12 +401,14 @@ export async function executeTool(name, input, userId) {
         }
       } catch { /* calendar push is best-effort */ }
       return {
-        reminderId: job?.id || `rem_${Date.now()}`,
+        success: true,
+        reminderId: job?.id || reminderTask.id,
         taskId: reminderTask.id,
         scheduled,
         message: input.message,
         repeat: input.repeat || 'once',
-        queued: true,
+        queued: Boolean(job),
+        queueError,
       }
     }
     case 'schedule_event': {
@@ -403,32 +419,44 @@ export async function executeTool(name, input, userId) {
         if (!startDt || startDt.getTime() <= Date.now()) return { success: false, error: 'Please provide a valid future start date and time.' }
         const endDt = input.end ? normalizeScheduledTime(input.end, timeZone) : new Date(startDt.getTime() + 60 * 60 * 1000)
         if (!endDt || endDt <= startDt) return { success: false, error: 'Meeting end time must be after its start time.' }
-        const meeting = await createMeetingWithGoogleMeet(userId, {
-          title: input.title,
-          start: startDt.toISOString(),
-          end: endDt.toISOString(),
-          description: input.description || '',
-          attendees: input.attendees || [],
-        })
-        await prisma.notification.create({
-          data: {
-            userId,
-            title: `📅 Meeting scheduled: ${input.title}`,
-            message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink, preview: input.description || input.title, start: startDt.toISOString() }),
-          },
-        })
-        // Create a Task so it shows on Priorities + Dashboard
-        const meetingTask = await prisma.task.create({
-          data: {
-            userId,
+        let meeting
+        let calendarError = null
+        try {
+          meeting = await createMeetingWithGoogleMeet(userId, {
             title: input.title,
-            description: `Meeting · ${startDt.toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })}`,
-            status: 'PENDING',
-          },
-        })
-        emitToUser(userId, 'task:created', meetingTask)
+            start: startDt.toISOString(),
+            end: endDt.toISOString(),
+            description: input.description || '',
+            attendees: input.attendees || [],
+          })
+        } catch (err) {
+          // A calendar connection is optional for tracking a meeting inside
+          // Mneva. Keep a local event visible in every dashboard view.
+          calendarError = err.message || 'Calendar event could not be created.'
+          meeting = { eventId: null, meetLink: null }
+          logger.warn(`Calendar meeting saved locally: ${calendarError}`)
+        }
+        const [, meetingTask] = await prisma.$transaction([
+          prisma.notification.create({
+            data: {
+              userId,
+              title: `📅 Meeting scheduled: ${input.title}`,
+              message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink, preview: input.description || input.title, start: startDt.toISOString(), end: endDt.toISOString(), description: input.description || null, attendees: input.attendees || [] }),
+            },
+          }),
+          prisma.task.create({
+            data: {
+              userId,
+              title: input.title,
+              description: `Meeting · ${startDt.toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })}`,
+              status: 'PENDING',
+            },
+          }),
+        ])
         emitToUser(userId, 'meeting:created', { ...meeting, title: input.title, start: startDt.toISOString(), end: endDt.toISOString() })
-        return { success: true, taskId: meetingTask.id, ...meeting }
+        // Delay task:created so DB write is committed before clients query
+        setTimeout(() => emitToUser(userId, 'task:created', meetingTask), 300)
+        return { success: true, taskId: meetingTask.id, calendarSaved: !calendarError, calendarError, ...meeting }
       } catch (err) {
         return { success: false, error: err.message }
       }
@@ -731,6 +759,7 @@ CRITICAL RULES:
 13. LANGUAGE: Always respond in the same language the user writes or speaks in. If the user writes in Hindi, respond in Hindi. If in Tamil, respond in Tamil. Match their language exactly.
 14. CONNECTED ACCOUNTS: You always know which accounts are connected from the CONNECTED ACCOUNTS section below. Answer questions about integrations directly from that — never say you don't know. If an account is not connected, tell the user to go to Settings → Connected Accounts to connect it.
 15. SCHEDULING: The current time is ${new Date().toISOString()}. For every reminder or meeting, use a complete future date and time. Call the scheduling tools only once per requested action and include an ISO UTC offset in the tool value whenever possible.
+16. ACTION RESULTS: Never claim that a reminder, meeting, or other action was completed unless its tool result has success: true. If a tool reports an error, clearly explain the error and do not say it was set or scheduled.
 
 USER PROFILE (registered account details — answer any personal questions from this):
 - Full Name: ${user.name || 'Not set'}
@@ -844,9 +873,15 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
 
       const actionTools = ['initiate_payment','send_email','book_cab','order_food','set_reminder','schedule_event']
       if (actionTools.includes(tb.name) && !(identity && allToolResults.some(entry => actionIdentity(entry.tool, entry.input) === identity))) {
-        const ledgerEntry = await ledger.add({ userId: user.id, tool: tb.name, input: tb.input, result })
-        // Push the action ledger to every active client immediately.
-        emitToUser(user.id, 'ledger:updated', ledgerEntry)
+        const ledgerEntry = await ledger.add({
+          userId: user.id,
+          tool: tb.name,
+          input: tb.input,
+          result,
+          status: result?.success === false ? 'failed' : 'completed',
+        })
+        // Delay slightly so any task DB writes from the tool are committed first
+        setTimeout(() => emitToUser(user.id, 'ledger:updated', ledgerEntry), 500)
       }
 
       allToolResults.push({ tool: tb.name, input: tb.input, result })

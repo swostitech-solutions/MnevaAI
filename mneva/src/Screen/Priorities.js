@@ -111,11 +111,17 @@ export default function Priorities({ navigation }) {
   const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
-      const [taskRes, meetRes, doneRes] = await Promise.all([
+      // These feeds are supplemental to tasks.  Do not blank the whole
+      // Priorities screen when Calendar or the meeting-completion feed is
+      // temporarily unavailable.
+      const [taskResult, meetingResult, doneResult] = await Promise.allSettled([
         apiFetch("/api/tasks"),
         apiFetch("/api/calendar/meetings"),
         apiFetch("/api/tasks/meeting-done"),
       ]);
+      const taskRes = taskResult.status === 'fulfilled' ? taskResult.value : [];
+      const meetRes = meetingResult.status === 'fulfilled' ? meetingResult.value : [];
+      const doneRes = doneResult.status === 'fulfilled' ? doneResult.value : { ids: [] };
       const allTasks = Array.isArray(taskRes) ? taskRes : [];
       setTasks(allTasks.filter(t => !t.title?.startsWith("meeting_done:")));
       setAllCalendarItems(Array.isArray(meetRes) ? meetRes : meetRes.meetings || []);
@@ -138,10 +144,19 @@ export default function Priorities({ navigation }) {
   const { on } = useSocket();
   useEffect(() => {
     const refresh = () => loadData(true);
-    const offTask = on('task:created', refresh);
+    const offTask    = on('task:created',   refresh);
     const offMeeting = on('meeting:created', refresh);
-    return () => { offTask?.(); offMeeting?.(); };
+    // ledger:updated fires after every AI tool call — use it as a reliable
+    // fallback trigger so reminders show even if task:created was missed
+    const offLedger  = on('ledger:updated', () => setTimeout(() => loadData(true), 800));
+    return () => { offTask?.(); offMeeting?.(); offLedger?.(); };
   }, [on, loadData]);
+
+  // Polling fallback — re-sync every 30s in case socket events were missed
+  useEffect(() => {
+    const interval = setInterval(() => loadData(true), 30000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   // Re-fetch on screen focus (skip first mount focus)
   useEffect(() => {

@@ -208,7 +208,12 @@ dashboardRouter.get('/brief', async (req, res) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const [externalNotifs, completedRaw, pendingTasks] = await Promise.all([
+    const importantNotificationWhere = {
+      userId: req.user.id,
+      read: false,
+      priority: { gte: 60 },
+    }
+    const [externalNotifs, completedRaw, pendingTasks, importantNotificationCount, urgentNotificationCount] = await Promise.all([
       prisma.notification.findMany({
         where: {
           userId: req.user.id,
@@ -220,7 +225,10 @@ dashboardRouter.get('/brief', async (req, res) => {
             { message: { contains: '"source":"sms"' } },
             { message: { contains: '"source":"calendar"' } },
             { message: { contains: '"source":"reminder"' } },
-            { priority: { gte: 85 } },
+            // Android phone alerts that passed the relevance agent belong in
+            // the morning briefing even when they are not urgent enough to
+            // become a Priority task.
+            { priority: { gte: 60 } },
           ],
         },
         orderBy: { createdAt: 'desc' },
@@ -240,6 +248,8 @@ dashboardRouter.get('/brief', async (req, res) => {
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
+      prisma.notification.count({ where: importantNotificationWhere }),
+      prisma.notification.count({ where: { ...importantNotificationWhere, priority: { gte: 85 } } }),
     ]);
 
     // Retries from an AI turn can leave identical ledger rows. Keep one action
@@ -356,6 +366,13 @@ dashboardRouter.get('/brief', async (req, res) => {
       insights: [],
       pendingTasks: filteredTasks.map(t => ({ id: t.id, title: t.title, description: t.description, createdAt: t.createdAt })),
       stats: { actionsAuto: completed.length, trustScore: 0 },
+      // These counts drive the opening AI greeting. Only alerts that the
+      // phone-notification agent marked important are included, so the app
+      // never describes ordinary unread mail or promotions as urgent work.
+      importantNotifications: {
+        count: importantNotificationCount,
+        urgentCount: urgentNotificationCount,
+      },
       urgentEmails: urgentEmails.map(e => ({
         id: e.id,
         subject: e.subject,
@@ -663,7 +680,12 @@ notifRouter.post('/device-token', async (req, res) => {
   res.status(201).json({ deviceToken: plainToken })
 })
 notifRouter.delete('/device-token', async (req, res) => {
-  await prisma.deviceNotificationToken.deleteMany({ where: { userId: req.user.id } })
+  const token = req.body?.deviceToken
+  await prisma.deviceNotificationToken.deleteMany({
+    where: token
+      ? { userId: req.user.id, tokenHash: hashToken(token) }
+      : { userId: req.user.id },
+  })
   res.json({ success: true })
 })
 notifRouter.get('/', async (req, res) => {
@@ -683,7 +705,7 @@ notifRouter.get('/', async (req, res) => {
         id: n.id,
         title: n.title,
         body: isEmail || isSms ? `From: ${meta.from || ''} \u2014 ${meta.preview || ''}` : meta?.preview || meta?.body || n.message,
-        type: isEmail ? 'email' : isSms ? 'sms' : (meta?.source === 'calendar' ? 'calendar' : meta?.source === 'whatsapp' ? 'whatsapp' : meta?.source === 'instagram' ? 'instagram' : meta?.source === 'shopping' ? 'shopping' : meta?.source === 'food' ? 'food' : meta?.source === 'payment' ? 'payment' : meta?.source === 'booking' ? 'booking' : meta?.source === 'reminder' ? 'reminder' : 'info'),
+        type: isEmail ? 'email' : isSms ? 'sms' : (meta?.category === 'payments' || meta?.source === 'payment' ? 'payment' : meta?.category === 'time_sensitive' || meta?.source === 'reminder' ? 'reminder' : meta?.source === 'calendar' ? 'calendar' : meta?.source === 'whatsapp' ? 'whatsapp' : meta?.source === 'instagram' ? 'instagram' : meta?.source === 'shopping' ? 'shopping' : meta?.source === 'food' ? 'food' : meta?.source === 'booking' ? 'booking' : 'info'),
         emailId: isEmail ? meta.emailId || null : null,
         smsId: isSms ? meta.smsId || null : null,
         from: meta.from || null,

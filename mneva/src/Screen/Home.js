@@ -556,6 +556,7 @@ export default function Home({ navigation }) {
   const [meetings, setMeetings] = useState([]);
   const [profilePct, setProfilePct] = useState(null);
   const [profileCity, setProfileCity] = useState(null);
+  const notificationBriefRefreshRef = useRef(null);
 
   const loadWeather = async (cityOverride = null, countryOverride = null) => {
     if (!cityOverride) {
@@ -782,27 +783,58 @@ export default function Home({ navigation }) {
         });
       }
       setUnreadCount(prev => prev + 1);
+      // A phone alert can be important without creating a task. Debounce the
+      // briefing refresh so the personalised important-alert count changes
+      // immediately, while duplicate socket events cause only one request.
+      clearTimeout(notificationBriefRefreshRef.current);
+      notificationBriefRefreshRef.current = setTimeout(() => {
+        apiFetch('/api/dashboard/brief').then(b => { if (b) setBrief(b); }).catch(() => {});
+      }, 250);
     };
     const offGmail   = on('gmail:notification',    addNotif);
     const offCreated  = on('notification:created', addNotif);
     const offSms      = on('sms:notification',      addNotif);
 
-    // real-time task sync — when another device or AI creates a task
+    // Helper: fetch tasks + brief together and sync all state
+    const syncTasksAndBrief = () => {
+      Promise.allSettled([
+        apiFetch('/api/tasks'),
+        apiFetch('/api/dashboard/brief'),
+      ]).then(([tasksRes, briefRes]) => {
+        if (briefRes.status === 'fulfilled' && briefRes.value) setBrief(briefRes.value);
+        if (tasksRes.status === 'fulfilled') {
+          const allTasks = Array.isArray(tasksRes.value) ? tasksRes.value : [];
+          const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
+          const seeded = allTasks
+            .filter(t => t.status === 'PENDING' && t.title && !t.title.startsWith('meeting_done:'))
+            .map((t, i) => ({
+              id: t.id,
+              color: STRIPE_COLORS[i % STRIPE_COLORS.length],
+              title: t.title,
+              subtitle: t.description || 'Pending · AI tracked',
+              isLocal: false,
+            }));
+          setLocalPriorities(seeded);
+        }
+      }).catch(() => {});
+    };
+
+    // real-time task sync — when AI creates a task, optimistically add it
+    // then do a full sync to ensure consistency
     const offTask = on('task:created', (task) => {
       if (!task?.id || !task?.title) return;
-      // Add to priorities immediately
       setLocalPriorities(prev => {
         if (prev.find(p => p.id === task.id)) return prev;
         const color = CATEGORY_COLORS[task.description] || '#44BA82';
         return [{ id: task.id, color, title: task.title, subtitle: task.description || 'Pending · AI tracked', isLocal: false }, ...prev];
       });
-      // Also refresh brief so stats + briefing card update
-      apiFetch('/api/dashboard/brief').then(b => { if (b) setBrief(b); }).catch(() => {});
+      // Full sync after short delay to let DB write settle
+      setTimeout(syncTasksAndBrief, 800);
     });
 
-    // Real-time ledger update — refresh brief so autoCompleted section updates
+    // Real-time ledger update — sync tasks + brief
     const offLedger = on('ledger:updated', () => {
-      apiFetch('/api/dashboard/brief').then(b => { if (b) setBrief(b); }).catch(() => {});
+      setTimeout(syncTasksAndBrief, 800);
     });
 
     // Keep the calendar-backed priority list current without waiting for a
@@ -821,7 +853,10 @@ export default function Home({ navigation }) {
       if (pct != null) setProfilePct(pct);
     });
 
-    return () => { offGmail?.(); offCreated?.(); offSms?.(); offTask?.(); offLedger?.(); offMeeting?.(); offProfile?.(); };
+    return () => {
+      clearTimeout(notificationBriefRefreshRef.current);
+      offGmail?.(); offCreated?.(); offSms?.(); offTask?.(); offLedger?.(); offMeeting?.(); offProfile?.();
+    };
   }, [on]);
 
   // Polling fallback — silently refresh notifications every 30s
@@ -837,21 +872,37 @@ export default function Home({ navigation }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Polling — refresh brief + tasks every 60s for live feel
+  // Polling — refresh brief + tasks + ledger every 30s for live feel
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const [briefData, ledgerData] = await Promise.allSettled([
+        const [briefData, ledgerData, tasksData] = await Promise.allSettled([
           apiFetch('/api/dashboard/brief'),
           apiFetch('/api/agent/ledger'),
+          apiFetch('/api/tasks'),
         ]);
         if (briefData.status === 'fulfilled') setBrief(briefData.value);
         if (ledgerData.status === 'fulfilled') {
           const pending = (ledgerData.value.entries || []).filter(e => e.status === 'pending_approval');
           setPendingActions(pending);
         }
+        // Keep localPriorities in sync with DB on every poll cycle
+        if (tasksData.status === 'fulfilled') {
+          const allTasks = Array.isArray(tasksData.value) ? tasksData.value : [];
+          const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
+          const seeded = allTasks
+            .filter(t => t.status === 'PENDING' && t.title && !t.title.startsWith('meeting_done:'))
+            .map((t, i) => ({
+              id: t.id,
+              color: STRIPE_COLORS[i % STRIPE_COLORS.length],
+              title: t.title,
+              subtitle: t.description || 'Pending · AI tracked',
+              isLocal: false,
+            }));
+          setLocalPriorities(seeded);
+        }
       } catch {}
-    }, 60000);
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
   useEffect(() => {
@@ -1003,13 +1054,21 @@ export default function Home({ navigation }) {
   const markNotifRead = async (id) => {
     setRecentNotifs(prev => prev.filter(n => n.id !== id));
     setUnreadCount(prev => Math.max(0, prev - 1));
-    try { await apiFetch(`/api/notifications/${id}/read`, { method: 'PATCH' }); } catch {}
+    try {
+      await apiFetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+      const freshBrief = await apiFetch('/api/dashboard/brief');
+      if (freshBrief) setBrief(freshBrief);
+    } catch {}
   };
 
   const markAllNotifsRead = async () => {
     setRecentNotifs([]);
     setUnreadCount(0);
-    try { await apiFetch('/api/notifications/read-all', { method: 'PATCH' }); } catch {}
+    try {
+      await apiFetch('/api/notifications/read-all', { method: 'PATCH' });
+      const freshBrief = await apiFetch('/api/dashboard/brief');
+      if (freshBrief) setBrief(freshBrief);
+    } catch {}
   };
 
   const getNotifIcon = (type) => {
@@ -1133,6 +1192,12 @@ export default function Home({ navigation }) {
   const orbBottom = tabBarHeight + 14;
   // Scroll content needs enough bottom padding to clear the tab bar
   const scrollBottomPad = tabBarHeight + 24;
+  const importantNotificationCount = brief?.importantNotifications?.count || 0;
+  const urgentNotificationCount = brief?.importantNotifications?.urgentCount || 0;
+  const firstName = user?.name?.trim()?.split(' ')[0] || 'there';
+  const importantNotificationHeadline = importantNotificationCount
+    ? `Hey ${firstName} — you have ${importantNotificationCount} important notification${importantNotificationCount === 1 ? '' : 's'}${urgentNotificationCount ? `, including ${urgentNotificationCount} urgent` : ''}.`
+    : null;
 
   // Slightly shrink side padding on very narrow devices (e.g. small phones in split-screen)
   const horizontalPad = width < 360 ? 16 : 20;
@@ -1355,8 +1420,8 @@ export default function Home({ navigation }) {
                 </View>
                 <View style={styles.briefingStatDivider} />
                 <View style={styles.briefingStatChip}>
-                  <Text style={styles.briefingStatNum}>{brief?.pendingActions?.length || 0}</Text>
-                  <Text style={styles.briefingStatLabel}>Pending</Text>
+                  <Text style={styles.briefingStatNum}>{importantNotificationCount}</Text>
+                  <Text style={styles.briefingStatLabel}>Important</Text>
                 </View>
                 <View style={styles.briefingStatDivider} />
                 <View style={styles.briefingStatChip}>
@@ -1367,9 +1432,9 @@ export default function Home({ navigation }) {
 
               {/* Headline */}
               <Text style={styles.briefingTitle}>
-                {brief?.autoCompleted?.length
+                {importantNotificationHeadline || (brief?.autoCompleted?.length
                   ? `${brief.autoCompleted.length} action${brief.autoCompleted.length > 1 ? 's' : ''} resolved by your AI twin`
-                  : brief?.summary || 'Your AI twin is standing by'}
+                  : brief?.summary || 'Your AI twin is standing by')}
               </Text>
 
               {/* Item rows — suggested meetings first, then urgent emails, then AI actions */}

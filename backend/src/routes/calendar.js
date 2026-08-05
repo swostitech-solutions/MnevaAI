@@ -137,9 +137,17 @@ router.post('/meetings', async (req, res) => {
 router.get('/meetings', async (req, res) => {
   try {
     const { prisma } = await import('../config/prisma.js')
-    // Pull from notifications (source of truth for meetings created via Mneva)
+    // Pull from notifications (source of truth for meetings and reminders
+    // created via Mneva, including locally saved entries when Calendar is not
+    // connected).
     const notifs = await prisma.notification.findMany({
-      where: { userId: req.user.id, title: { contains: 'Meeting scheduled' } },
+      where: {
+        userId: req.user.id,
+        OR: [
+          { title: { contains: 'Meeting scheduled' } },
+          { title: '🔔 Reminder set' },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
       take: 20,
     })
@@ -158,7 +166,7 @@ router.get('/meetings', async (req, res) => {
       try { parsed = JSON.parse(n.message) } catch {}
       return {
         id: n.id,
-        title: n.title.replace(/^📅 Meeting scheduled: /, ''),
+        title: n.title === '🔔 Reminder set' ? (parsed.preview || 'Reminder') : n.title.replace(/^📅 Meeting scheduled: /, ''),
         start: parsed.start || null,
         end: parsed.end || null,
         meetLink: parsed.meetLink || null,

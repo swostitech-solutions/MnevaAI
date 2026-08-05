@@ -7,6 +7,13 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { clearAuth } from '../storage/auth';
+import { AppState, Platform } from 'react-native';
+import {
+  enableNotificationCapture,
+  disableNotificationCapture,
+  isNotificationCaptureEnabled,
+  notificationCaptureAvailable,
+} from '../services/notificationCapture';
 
 const TABS = ['Trust', 'Privacy', 'Notifications', 'Account'];
 
@@ -150,6 +157,8 @@ export default function Settings({ navigation, route }) {
   const [privacy, setPrivacy] = useState({ biometricGate: true, e2eEncryption: true, signedLedger: true, dataSharing: false });
   const [notifications, setNotifications] = useState({ email: true, payments: true, rides: true, aiInsights: true, system: true });
   const [user, setUser] = useState(null);
+  const [phoneCaptureEnabled, setPhoneCaptureEnabled] = useState(false);
+  const [phoneCaptureBusy, setPhoneCaptureBusy] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -166,6 +175,20 @@ export default function Settings({ navigation, route }) {
       setUser(me);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  // Android's settings page is outside the app, so confirm the final consent
+  // whenever the Settings screen becomes active again.
+  useEffect(() => {
+    const refresh = () => isNotificationCaptureEnabled().then(setPhoneCaptureEnabled).catch(() => {});
+    const unsub = navigation?.addListener?.('focus', () => {
+      refresh();
+    });
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state === 'active') refresh();
+    });
+    refresh();
+    return () => { unsub?.(); appStateSub.remove(); };
+  }, [navigation]);
 
   const save = useCallback(async (patch) => {
     setSaving(true);
@@ -194,6 +217,33 @@ export default function Settings({ navigation, route }) {
     const next = { ...notifications, [key]: val };
     setNotifications(next);
     save({ notifications: next });
+  };
+
+  const togglePhoneCapture = async (enabled) => {
+    if (!enabled) {
+      setPhoneCaptureBusy(true);
+      await disableNotificationCapture().catch(() => {});
+      setPhoneCaptureEnabled(false);
+      setPhoneCaptureBusy(false);
+      return;
+    }
+    if (Platform.OS !== 'android') {
+      Alert.alert('Android feature', 'Apple does not allow apps to read notifications from other apps. Mneva can still use notifications sent directly to it on iPhone.');
+      return;
+    }
+    if (!notificationCaptureAvailable) {
+      Alert.alert('Android build required', 'Install the Mneva Android development or production build. Expo Go cannot use Android notification access.');
+      return;
+    }
+    setPhoneCaptureBusy(true);
+    try {
+      await enableNotificationCapture();
+      Alert.alert('Allow notification access', 'In Android Settings, enable Mneva. Mneva will analyse only useful alerts for your briefing and priorities. You can turn this off at any time.');
+    } catch (error) {
+      Alert.alert('Could not enable', error.message || 'Please try again.');
+    } finally {
+      setPhoneCaptureBusy(false);
+    }
   };
 
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
@@ -312,6 +362,19 @@ export default function Settings({ navigation, route }) {
         {activeTab === 2 && (
           <>
             <Text style={styles.sectionLabel}>Notification Preferences</Text>
+            <View style={[styles.card, { marginBottom: 12 }]}> 
+              <View style={styles.captureRow}>
+                <View style={styles.captureIcon}><Feather name="smartphone" size={18} color="#1F9A5A" /></View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.captureTitle}>Analyse phone notifications</Text>
+                  <Text style={styles.captureDesc}>Important alerts go to Morning Briefing. Urgent ones also become Priorities.</Text>
+                  {Platform.OS === 'ios' && <Text style={styles.captureUnavailable}>Available on Android only</Text>}
+                </View>
+                {phoneCaptureBusy
+                  ? <ActivityIndicator size="small" color="#1F9A5A" />
+                  : <Switch value={phoneCaptureEnabled} onValueChange={togglePhoneCapture} trackColor={{ false: '#E3E5EA', true: '#1F9A5A' }} thumbColor="#FFFFFF" />}
+              </View>
+            </View>
             <View style={styles.card}>
               {NOTIF_TOGGLES.map(({ key, label, icon }, i) => (
                 <View key={key} style={[styles.toggleRow, i !== NOTIF_TOGGLES.length - 1 && styles.divider]}>
@@ -387,6 +450,11 @@ const styles = StyleSheet.create({
   levelDesc:       { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
   toggleRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   toggleLabel:     { flex: 1, fontSize: 14, fontWeight: '600', color: '#14171F', marginLeft: 12 },
+  captureRow:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
+  captureIcon:     { width: 36, height: 36, borderRadius: 10, backgroundColor: '#E8F5EE', alignItems: 'center', justifyContent: 'center' },
+  captureTitle:    { fontSize: 14, fontWeight: '700', color: '#14171F' },
+  captureDesc:     { fontSize: 12, lineHeight: 17, color: '#6B7280', marginTop: 3, paddingRight: 8 },
+  captureUnavailable: { fontSize: 11, color: '#9AA1AE', marginTop: 5 },
   divider:         { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
   bottomBar:       { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
   tabItem:         { flex: 1, alignItems: 'center' },

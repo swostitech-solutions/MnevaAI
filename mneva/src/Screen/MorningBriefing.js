@@ -124,11 +124,18 @@ export default function MorningBriefing({ navigation, route }) {
 
   const { on } = useSocket();
   useEffect(() => {
-    const refresh = () => loadBrief(true);
-    const offTask = on('task:created', refresh);
+    // Delay refresh slightly so DB write has time to commit before we query
+    const refresh = () => setTimeout(() => loadBrief(true), 800);
+    const offTask   = on('task:created',   refresh);
     const offLedger = on('ledger:updated', refresh);
     return () => { offTask?.(); offLedger?.(); };
   }, [on]);
+
+  // Polling fallback — re-sync every 30s in case socket events were missed
+  useEffect(() => {
+    const interval = setInterval(() => loadBrief(true), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const autoCompleted = brief?.autoCompleted || [];
   const pendingActions = brief?.pendingActions || [];
