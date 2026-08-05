@@ -57,6 +57,25 @@ function actionIdentity(name, input = {}) {
   return null
 }
 
+// The model's prose is not a record of an action.  Explicitly require the
+// corresponding tool on direct create requests, otherwise a fluent text-only
+// reply can incorrectly say "reminder set" without creating a Task.
+function requestedSchedulingTool(messages = []) {
+  const userMessages = messages
+    .filter(message => message?.role === 'user')
+    .slice(-4)
+    .map(message => String(message.content || ''))
+  const text = userMessages.join('\n').toLowerCase()
+
+  if (/\b(remind me|set (?:a )?reminder|create (?:a )?reminder|add (?:a )?reminder|alert me|set (?:an )?alert)\b/.test(text)) {
+    return 'set_reminder'
+  }
+  if (/\b(schedule|create|set up|book|add)\b[\s\S]{0,100}\b(meeting|appointment|calendar event|event)\b|\b(meeting|appointment|calendar event)\b[\s\S]{0,100}\b(schedule|create|set up|book|add)\b/.test(text)) {
+    return 'schedule_event'
+  }
+  return null
+}
+
 export function isDeepSeekConfigured(apiKey = process.env.DEEPSEEK_API_KEY) {
   const value = String(apiKey || '').trim()
   if (!value) return false
@@ -92,7 +111,7 @@ function getDeepSeekErrorMessage(error) {
   return detail || 'Unknown DeepSeek error'
 }
 
-async function callDeepSeek({ model, system, messages, tools }) {
+async function callDeepSeek({ model, system, messages, tools, toolChoice = null }) {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
   if (!isDeepSeekConfigured(apiKey)) return null
 
@@ -126,6 +145,7 @@ async function callDeepSeek({ model, system, messages, tools }) {
       },
     }))
   }
+  if (toolChoice) payload.tool_choice = { type: 'function', function: { name: toolChoice } }
 
   const response = await fetch(`${getDeepSeekBaseUrl()}/chat/completions`, {
     method: 'POST',
@@ -818,6 +838,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   const allToolResults = []
   const executedActionResults = new Map()
   let iterations = 0
+  const requestedActionTool = requestedSchedulingTool(messages)
 
   if (topMemory.length) {
     const memoryContext = buildMemoryContext(topMemory)
@@ -835,6 +856,9 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         system: buildSystemPrompt(user, context),
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
+        // Only force a tool before any result exists. The following model turn
+        // receives that result and can write the user-facing response.
+        toolChoice: allToolResults.length === 0 ? requestedActionTool : null,
       })
     } catch (error) {
       const detail = getDeepSeekErrorMessage(error)
@@ -852,6 +876,25 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     const textBlocks = Array.isArray(resp?.content) ? resp.content.filter(b => b.type === 'text') : []
 
     if (resp?.stop_reason === 'end_turn' || toolBlocks.length === 0) {
+      const failedAction = allToolResults.find(item =>
+        ['set_reminder', 'schedule_event'].includes(item.tool) && item.result?.success === false
+      )
+      if (failedAction) {
+        return {
+          response: `I couldn’t ${failedAction.tool === 'set_reminder' ? 'set that reminder' : 'schedule that event'}: ${failedAction.result.error || 'the action did not complete.'}`,
+          toolResults: allToolResults,
+          iterations,
+          mode: 'deepseek',
+        }
+      }
+      if (requestedActionTool && allToolResults.length === 0) {
+        return {
+          response: 'I couldn’t create that yet because the scheduling action was not completed. Please try again with a future date and time.',
+          toolResults: [],
+          iterations,
+          mode: 'deepseek',
+        }
+      }
       return {
         response: textBlocks.map(b => b.text).join('\n'),
         toolResults: allToolResults,
