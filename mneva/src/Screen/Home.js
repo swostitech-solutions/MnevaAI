@@ -25,7 +25,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle } from "react-native-svg";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { clearAuth, getStoredAuth } from '../storage/auth';
-import { apiFetch, BASE_URL, onSessionExpired } from '../api/client';
+import { apiFetch, BASE_URL } from '../api/client';
 import { useSocket, resetSocket } from '../services/socket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
@@ -728,29 +728,15 @@ export default function Home({ navigation }) {
 
   // Re-fetch when app comes back to foreground after being backgrounded
   useEffect(() => {
-    let lastActiveAt = Date.now();
     const sub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        // Only reload if app was backgrounded for more than 5 minutes
-        if (Date.now() - lastActiveAt > 5 * 60 * 1000) {
-          loadData(true);
-        }
-      } else {
-        lastActiveAt = Date.now();
+        // A suspended mobile connection can become stale in seconds. Refresh
+        // on every resume; loadData already prevents concurrent requests.
+        loadData(true);
       }
     });
     return () => sub.remove();
   }, []);
-
-  // Auto-logout + redirect when JWT expires (401 from any API call)
-  useEffect(() => {
-    const unsub = onSessionExpired(async () => {
-      await clearAuth();
-      resetSocket();
-      navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
-    });
-    return () => unsub();
-  }, [navigation]);
 
   // Stop all speech when navigating away or app goes to background
   useEffect(() => {

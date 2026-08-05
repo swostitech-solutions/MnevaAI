@@ -24,38 +24,38 @@ export async function apiFetch(path, options = {}) {
     ...options.headers,
   };
 
-  // 15-second timeout per request — prevents hanging on stale connections
-  // Use 50s for cold-start tolerance (Render free tier can take 30-50s to wake)
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 50000);
+  // Retrying reads heals short network changes and Render wake-ups without
+  // ever retrying a POST/PATCH action that could create duplicate work.
+  const retryable = (options.method || 'GET').toUpperCase() === 'GET';
+  let lastError;
+  for (let attempt = 0; attempt < (retryable ? 2 : 1); attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 50000);
+    try {
+      const res = await fetch(`${BASE_URL}${path}`, {
+        ...options,
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => ({}));
 
-  try {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      ...options,
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-    const data = await res.json().catch(() => ({}));
-
-    if (res.status === 401) {
-      // Token expired or invalid — notify app to redirect to login
-      _notifySessionExpired();
-      throw { status: 401, message: 'Session expired. Please sign in again.' };
+      if (res.status === 401) {
+        _notifySessionExpired();
+        throw { status: 401, message: 'Session expired. Please sign in again.' };
+      }
+      if (!res.ok) throw { status: res.status, message: data.error || data.message || 'Request failed' };
+      return data;
+    } catch (err) {
+      lastError = err?.name === 'AbortError'
+        ? { status: 0, message: 'Request timed out. Check your connection.' }
+        : err;
+      // An authenticated or client-side response cannot be healed by retrying.
+      if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500)) throw lastError;
+      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1000));
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    if (!res.ok) {
-      throw { status: res.status, message: data.error || data.message || 'Request failed' };
-    }
-
-    return data;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      throw { status: 0, message: 'Request timed out. Check your connection.' };
-    }
-    throw err;
   }
+  throw lastError;
 }

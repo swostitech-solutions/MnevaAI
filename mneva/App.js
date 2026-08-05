@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Linking } from 'react-native';
+import { AppState, Linking } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -31,7 +31,9 @@ import Settings from './src/Screen/Settings';
 import Search from './src/Screen/Search';
 import MorningBriefing from './src/Screen/MorningBriefing';
 import Contacts from './src/Screen/Contacts';
-import { getStoredAuth } from './src/storage/auth';
+import { clearAuth, getStoredAuth } from './src/storage/auth';
+import { onSessionExpired } from './src/api/client';
+import { getSocket, resetSocket } from './src/services/socket';
 import ReminderAlert from './src/components/ReminderAlert';
 
 const Stack = createNativeStackNavigator();
@@ -90,6 +92,31 @@ export default function App() {
     const sub = Linking.addEventListener('url', handleUrl);
     Linking.getInitialURL().then(url => { if (url) handleUrl({ url }); }).catch(() => {});
     return () => sub.remove();
+  }, []);
+
+  // Keep the authenticated app alive when Android/iOS resumes a suspended
+  // network connection. Every mounted screen re-registers its socket handlers
+  // after this fresh connection succeeds.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async state => {
+      if (state !== 'active') return;
+      const { token } = await getStoredAuth();
+      if (!token) return;
+      resetSocket();
+      getSocket().catch(() => {});
+    });
+    return () => sub.remove();
+  }, []);
+
+  // This belongs at app level, not only Home: an expired session from any
+  // screen must recover to sign-in instead of leaving that screen inert.
+  useEffect(() => {
+    const unsub = onSessionExpired(async () => {
+      await clearAuth().catch(() => {});
+      resetSocket();
+      navigationRef.current?.reset({ index: 0, routes: [{ name: 'Signin' }] });
+    });
+    return () => unsub();
   }, []);
 
   useEffect(() => {

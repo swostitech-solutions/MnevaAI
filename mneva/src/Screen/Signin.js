@@ -46,11 +46,13 @@ export default function Signin({ navigation }) {
         method: 'POST',
         body: { email: email.trim().toLowerCase(), password },
       });
-      // Navigate immediately — save token + socket init in background
-      navigation.replace('Home');
-      saveAuth(data.token, data.user).catch(() => {});
+      // Persist the new session *before* mounting Home. Previously Home could
+      // fetch with the previous/no token, leaving the UI empty until logout and
+      // login caused another app start.
+      await saveAuth(data.token, data.user);
       resetSocket();
-      getSocket();
+      await getSocket();
+      navigation.replace('Home');
     } catch (err) {
       if (err.status === 403) {
         navigation.navigate('VerifyOtp', { email: email.trim().toLowerCase() });
