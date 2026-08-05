@@ -29,6 +29,11 @@ async function pollOnce(userId, io) {
     events.forEach(e => state.lastSeenIds.add(e.id))
 
     for (const ev of newEvents) {
+      // Events made by Mneva already have their own Task + Notification. Do
+      // not read them back as a second, incorrectly classified calendar
+      // meeting (a reminder used to become both a reminder and a meeting).
+      if (ev.extendedProperties?.private?.mnevaSource) continue
+
       const start = ev.start?.dateTime || ev.start?.date || null
       const title = ev.summary || '(No title)'
       const preview = ev.description || ev.summary || ''
@@ -37,9 +42,16 @@ async function pollOnce(userId, io) {
         || ev.hangoutLink
         || null
 
-      const notif = await prisma.notification.create({
+      const notif = await prisma.notification.upsert({
+        where: { userId_sourceId: { userId, sourceId: `calendar:${ev.id}` } },
+        update: {
+          title: `📅 Meeting scheduled: ${title}`,
+          message: JSON.stringify({ source: 'calendar', eventId: ev.id, meetLink, preview, start }),
+          read: false,
+        },
         data: {
           userId,
+          sourceId: `calendar:${ev.id}`,
           title: `📅 Meeting scheduled: ${title}`,
           message: JSON.stringify({ source: 'calendar', eventId: ev.id, meetLink, preview, start }),
         },

@@ -151,22 +151,30 @@ router.get('/meetings', async (req, res) => {
       orderBy: { createdAt: 'desc' },
       take: 20,
     })
-    // Deduplicate by eventId — keep only the latest notification per event
-    const seenEventIds = new Set();
-    const dedupedNotifs = notifs.filter(n => {
+    // A retry can create two identical in-app notification rows. Deduplicate
+    // by the actual scheduled item, not just a Google event id (reminders and
+    // local meetings deliberately have no event id).
+    const itemsBySchedule = new Map();
+    for (const n of notifs) {
       let parsed = {};
       try { parsed = JSON.parse(n.message) } catch {}
-      const key = parsed.eventId || n.id;
-      if (seenEventIds.has(key)) return false;
-      seenEventIds.add(key);
-      return true;
-    });
+      const title = n.title === '🔔 Reminder set'
+        ? (parsed.preview || 'Reminder')
+        : n.title.replace(/^📅 Meeting scheduled: /, '')
+      const key = `${title.trim().toLowerCase()}:${parsed.start || n.createdAt.toISOString()}`;
+      const existing = itemsBySchedule.get(key)
+      // Prefer the original reminder record over the Calendar mirror left by
+      // older app versions, so its category remains correct.
+      if (!existing || parsed.source === 'reminder') itemsBySchedule.set(key, n)
+    }
+    const dedupedNotifs = [...itemsBySchedule.values()];
     const meetings = dedupedNotifs.map(n => {
       let parsed = {}
       try { parsed = JSON.parse(n.message) } catch {}
       return {
         id: n.id,
         title: n.title === '🔔 Reminder set' ? (parsed.preview || 'Reminder') : n.title.replace(/^📅 Meeting scheduled: /, ''),
+        kind: parsed.source === 'reminder' ? 'reminder' : 'meeting',
         start: parsed.start || null,
         end: parsed.end || null,
         meetLink: parsed.meetLink || null,

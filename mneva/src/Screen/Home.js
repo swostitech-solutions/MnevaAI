@@ -1239,11 +1239,6 @@ export default function Home({ navigation }) {
               >
                 <Text style={styles.avatarText}>{getInitials(user?.name)}</Text>
               </LinearGradient>
-              {unreadCount > 0 && (
-                <View style={styles.notifDot}>
-                  {unreadCount <= 9 && <Text style={styles.notifDotText}>{unreadCount}</Text>}
-                </View>
-              )}
             </View>
           </View>
         </View>
@@ -1990,25 +1985,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 15,
-  },
-  notifDot: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#EB3E5B",
-    borderWidth: 2,
-    borderColor: "#F9FAFC",
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 2,
-  },
-  notifDotText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
   },
   topRow: {
     flexDirection: "row",

@@ -97,6 +97,7 @@ export async function createMeetingWithGoogleMeet(userId, { title, start, end, d
     start: { dateTime: new Date(start).toISOString(), timeZone: 'Asia/Kolkata' },
     end: { dateTime: new Date(end).toISOString(), timeZone: 'Asia/Kolkata' },
     conferenceData: { createRequest: { requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+    extendedProperties: { private: { mnevaSource: 'meeting' } },
     ...(attendees.length && { attendees: attendees.map(email => ({ email })) }),
   }
 

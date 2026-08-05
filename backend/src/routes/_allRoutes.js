@@ -340,7 +340,7 @@ dashboardRouter.get('/brief', async (req, res) => {
           urgency: 'medium',
           title: n.title,
           detail: meta.preview || meta.body || '',
-          domain: 'notifications',
+          domain: meta.source === 'calendar' ? 'calendar' : meta.source === 'reminder' ? 'reminder' : 'notifications',
         };
       }),
       autoCompleted: completed.map(entry => {

@@ -48,7 +48,7 @@ function TaskCard({ task, onCheck }) {
 function MeetingCard({ m, done, onCheck }) {
   const { date, time, durStr } = fmtMeeting(m.start, m.end);
   const attendees = Array.isArray(m.attendees) ? m.attendees : [];
-  const isReminder = !m.meetLink;
+  const isReminder = m.kind === 'reminder';
   return (
     <View style={[styles.meetCard, done && styles.cardDone]}>
       <TouchableOpacity
@@ -168,28 +168,28 @@ export default function Priorities({ navigation }) {
   }, [navigation, loadData]);
 
   // Derived task lists
-  const now        = new Date();
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
 
-  const pendingTasks   = tasks.filter(t => t.status === "PENDING");
-  const completedTasks = tasks.filter(t => t.status === "COMPLETED");
-
-  // TODAY = all meetings that fall on today (any time)
-  // UPCOMING = meetings strictly after today AND in the future
-  // No overlap — a meeting is in exactly one bucket
-  // Only real Google meetings (have meetLink) go to MEETINGS tab
-  const meetings = allCalendarItems.filter(m => !!m.meetLink);
-  // All calendar items (meetings + reminders) go to TODAY/UPCOMING
-  const pendingTaskTitles = new Set(pendingTasks.map(task => (task.title || '').trim().toLowerCase()));
-  const todayMeetings = allCalendarItems.filter(m => {
-    const d = new Date(m.start);
-    // A Mneva-created meeting already has a pending task above; retain the
-    // calendar record for Upcoming/Meetings, but don't show it twice today.
-    return d >= todayStart && d <= todayEnd && !pendingTaskTitles.has((m.title || '').trim().toLowerCase());
+  // Keep actual tasks separate, but surface reminders alongside the date they
+  // are due instead of making users switch to a dedicated reminders tab.
+  const meetings = allCalendarItems.filter(m => m.kind === 'meeting');
+  const reminders = allCalendarItems.filter(m => m.kind === 'reminder');
+  const calendarReminderTitles = new Set(reminders.map(m => (m.title || '').trim().toLowerCase()));
+  // Reminders are also persisted as pending tasks. Keep their task record as
+  // a fallback when the calendar feed is slow or unavailable, but avoid
+  // rendering it twice once its dated calendar record has arrived.
+  const pendingTasks = tasks.filter(t => {
+    if (t.status !== 'PENDING' || /^Meeting · /i.test(t.description || '')) return false;
+    const isReminderTask = /^Reminder ·/i.test(t.description || '');
+    return !isReminderTask || !calendarReminderTitles.has((t.title || '').trim().toLowerCase());
   });
-  const upcomingMeetings = allCalendarItems
-    .filter(m => new Date(m.start) > now)
+  const todayReminders = reminders
+    .filter(m => new Date(m.start) <= todayEnd)
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+  // Upcoming means a later calendar date — not a later time today. Include
+  // reminders here so they appear on their due date alongside commitments.
+  const upcomingItems = allCalendarItems
+    .filter(m => new Date(m.start) > todayEnd)
     .sort((a, b) => new Date(a.start) - new Date(b.start));
 
   const handleMeetingSuggest = async (emailId, action, suggestion) => {
@@ -276,11 +276,9 @@ export default function Priorities({ navigation }) {
           {TABS.map((tab) => {
             const active = tab === activeTab;
             const isMeetings = tab === "MEETINGS";
-            const isUpcoming = tab === "UPCOMING";
-            const badgeCount = tab === "TODAY" ? pendingTasks.length
-              : tab === "UPCOMING" ? upcomingMeetings.filter(m => !doneMeetingIds.has(m.id)).length
-              : tab === "MEETINGS" ? meetings.filter(m => !doneMeetingIds.has(m.id)).length
-              : 0;
+            const badgeCount = tab === "TODAY" ? pendingTasks.length + todayReminders.filter(m => !doneMeetingIds.has(m.id)).length
+              : tab === "UPCOMING" ? upcomingItems.filter(m => !doneMeetingIds.has(m.id)).length
+              : meetings.filter(m => !doneMeetingIds.has(m.id)).length;
             return (
               <TouchableOpacity
                 key={tab}
@@ -312,7 +310,7 @@ export default function Priorities({ navigation }) {
             {/* TODAY tab */}
             {activeTab === "TODAY" && (
               <>
-                {pendingTasks.length === 0 && todayMeetings.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && (
+                {pendingTasks.length === 0 && todayReminders.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && (
                   <View style={styles.emptyWrap}>
                     <Feather name="check-circle" size={28} color="#C7CBD3" />
                     <Text style={styles.emptyText}>All clear for today!</Text>
@@ -393,18 +391,14 @@ export default function Priorities({ navigation }) {
                 {pendingTasks.map(task => (
                   <TaskCard key={task.id} task={task} onCheck={handleCheckTask} />
                 ))}
-                {todayMeetings.length > 0 && (
+                {todayReminders.length > 0 && (
                   <>
                     <View style={styles.sectionDivider}>
-                      <Feather name="video" size={12} color="#1F9A5A" />
-                      <Text style={styles.sectionDividerText}>TODAY'S MEETINGS</Text>
+                      <Feather name="bell" size={12} color="#D88900" />
+                      <Text style={[styles.sectionDividerText, { color: '#D88900' }]}>REMINDERS TODAY</Text>
                     </View>
-                    {todayMeetings.map(m => (
-                      <MeetingCard
-                        key={m.id} m={m}
-                        done={doneMeetingIds.has(m.id)}
-                        onCheck={handleCheckMeeting}
-                      />
+                    {todayReminders.map(m => (
+                      <MeetingCard key={m.id} m={m} done={doneMeetingIds.has(m.id)} onCheck={handleCheckMeeting} />
                     ))}
                   </>
                 )}
@@ -414,13 +408,13 @@ export default function Priorities({ navigation }) {
             {/* UPCOMING tab */}
             {activeTab === "UPCOMING" && (
               <>
-                {upcomingMeetings.length === 0 ? (
+                {upcomingItems.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <Feather name="calendar" size={28} color="#C7CBD3" />
                     <Text style={styles.emptyText}>Nothing upcoming yet.</Text>
                   </View>
                 ) : (
-                  upcomingMeetings.map(m => (
+                  upcomingItems.map(m => (
                     <MeetingCard
                       key={m.id} m={m}
                       done={doneMeetingIds.has(m.id)}
@@ -451,6 +445,7 @@ export default function Priorities({ navigation }) {
                 )}
               </>
             )}
+
           </>
         )}
       </ScrollView>
@@ -494,6 +489,7 @@ const styles = StyleSheet.create({
   segmentItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 11, borderRadius: 11 },
   segmentItemActive: { backgroundColor: "#FFFFFF", shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   segmentItemMeetingActive: { backgroundColor: "#EFFDF6" },
+  segmentItemReminderActive: { backgroundColor: "#FFF8EA" },
   segmentText: { fontSize: 12, fontWeight: "700", color: "#9AA1AE", letterSpacing: 0.3 },
   segmentTextActive: { color: "#14171F" },
   meetBadgeDot: { marginLeft: 5, backgroundColor: "#1F9A5A", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },

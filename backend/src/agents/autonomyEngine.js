@@ -417,6 +417,7 @@ export async function executeTool(name, input, userId) {
             description: 'Reminder set via Mneva AI',
             start: { dateTime: startDt.toISOString() },
             end: { dateTime: endDt.toISOString() },
+            extendedProperties: { private: { mnevaSource: 'reminder' } },
           })
         }
       } catch { /* calendar push is best-effort */ }
