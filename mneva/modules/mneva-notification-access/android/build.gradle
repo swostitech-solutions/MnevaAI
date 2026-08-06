@@ -1,0 +1,14 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.swostitech.mneva'
+version = '1.0.0'
+
+android {
+  namespace 'com.swostitech.mneva.notificationaccess'
+  defaultConfig {
+    minSdk 23
+  }
+}

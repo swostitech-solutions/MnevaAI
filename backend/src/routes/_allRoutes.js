@@ -749,6 +749,7 @@ notifRouter.get('/', async (req, res) => {
         from: meta.from || null,
         source: meta.source || null,
         appName: meta.appName || null,
+        priority: Number.isFinite(n.priority) ? n.priority : (meta.priority || 0),
         meetLink: meta.meetLink || null,
         eventStart: meta.start || null,
         relevant: typeof meta.relevant === 'boolean' ? meta.relevant : true,

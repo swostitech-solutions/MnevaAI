@@ -2,5 +2,7 @@
   "name": "mneva-notification-access",
   "version": "1.0.0",
   "private": true,
-  "description": "Android notification listener for Mneva"
+  "description": "Android notification listener for Mneva",
+  "main": "index.js",
+  "keywords": ["expo-module", "android", "notification-listener"]
 }

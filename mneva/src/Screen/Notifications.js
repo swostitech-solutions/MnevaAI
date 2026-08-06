@@ -77,6 +77,14 @@ function NotifRow({ item, onMarkRead }) {
         <View style={[styles.typePill, { backgroundColor: meta.bg }]}>
           <Text style={[styles.typePillText, { color: meta.color }]}>{item.type}</Text>
         </View>
+        {item.priority >= 60 && (
+          <View style={[styles.priorityPill, item.priority >= 85 && styles.priorityPillUrgent]}>
+            <Feather name={item.priority >= 85 ? 'alert-circle' : 'flag'} size={11} color={item.priority >= 85 ? '#B42318' : '#9A6700'} />
+            <Text style={[styles.priorityPillText, item.priority >= 85 && styles.priorityPillUrgentText]}>
+              {item.priority >= 85 ? 'Priority' : 'Important'} · {item.priority}
+            </Text>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -131,11 +139,11 @@ export default function Notifications({ navigation }) {
     });
 
     const offApp = on('app:notification', (data) => {
-      push({ id: data.id, title: data.title, body: data.body, type: data.type || 'info', read: false, ts: data.ts });
+      push({ id: data.id, title: data.title, body: data.body, type: data.type || 'info', priority: data.priority || 0, read: false, ts: data.ts });
     });
 
     const offGeneric = on('notification:created', (data) => {
-      push({ id: data.id, title: data.title, body: data.body, type: data.type || 'info', read: false, ts: data.ts });
+      push({ id: data.id, title: data.title, body: data.body, type: data.type || 'info', priority: data.priority || 0, read: false, ts: data.ts });
     });
 
     const offSent = on('gmail:reply_sent', ({ notifId }) => {
@@ -357,6 +365,13 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   typePillText: { fontSize: 10, fontWeight: '800' },
+  priorityPill: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: '#FFF7E6', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, marginTop: 5,
+  },
+  priorityPillUrgent: { backgroundColor: '#FEF3F2' },
+  priorityPillText: { fontSize: 10, fontWeight: '800', color: '#9A6700' },
+  priorityPillUrgentText: { color: '#B42318' },
   skeleton: {
     height: 76,
     backgroundColor: '#FFFFFF',
