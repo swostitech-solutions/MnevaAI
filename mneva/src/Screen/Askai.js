@@ -25,9 +25,9 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as FileSystem from "expo-file-system/legacy";
-import { apiFetch, BASE_URL } from "../api/client";
-import { getStoredAuth } from "../storage/auth";
+import { apiFetch } from "../api/client";
 import { useSocket } from "../services/socket";
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -311,54 +311,51 @@ export default function AskAI({ navigation }) {
   const [pendingAction, setPendingAction] = useState(null); // { id, summary, tool, args }
   const voiceEnabledRef = useRef(true);
   const conversationIdRef = useRef(null);
+  const aiLoadingRef = useRef(false);
   const { on, emit } = useSocket();
 
-
-
   // ── Load conversation history from backend (same as web app) ─────────────
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const list = await apiFetch("/api/conversations");
-        if (cancelled) return;
-        const conversations = Array.isArray(list) ? list : list.conversations || [];
+  const loadConversation = useCallback(async () => {
+    // Never replace the visible conversation while a reply is in flight.
+    if (aiLoadingRef.current) return;
+    try {
+      const list = await apiFetch("/api/conversations");
+      const conversations = Array.isArray(list) ? list : list.conversations || [];
 
-        let convId;
-        if (conversations.length === 0) {
-          const created = await apiFetch("/api/conversations", {
-            method: "POST",
-            body: { title: "New Conversation" },
-          });
-          convId = created.id;
-        } else {
-          convId = conversations[0].id;
-        }
-        conversationIdRef.current = convId;
-
-        const savedMessages = await apiFetch(`/api/messages/${convId}`);
-        if (cancelled) return;
-
-        const normalized = Array.isArray(savedMessages)
-          ? savedMessages.map(m => ({
-              id: m.id,
-              sender: m.role === "user" ? "user" : "ai",
-              text: m.content,
-              ts: m.createdAt || m.ts || new Date().toISOString(),
-            }))
-          : [];
-
-        if (normalized.length) {
-          setMessages(normalized);
-          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 300);
-        }
-      } catch {
-        // fallback: keep initial message, chat still works
+      let convId;
+      if (conversations.length === 0) {
+        const created = await apiFetch("/api/conversations", {
+          method: "POST",
+          body: { title: "New Conversation" },
+        });
+        convId = created.id;
+      } else {
+        convId = conversations[0].id;
       }
-    };
-    load();
-    return () => { cancelled = true; };
+      conversationIdRef.current = convId;
+
+      const savedMessages = await apiFetch(`/api/messages/${convId}`);
+      const normalized = Array.isArray(savedMessages)
+        ? savedMessages.map(m => ({
+            id: m.id,
+            sender: m.role === "user" ? "user" : "ai",
+            text: m.content,
+            ts: m.createdAt || m.ts || new Date().toISOString(),
+          }))
+        : [];
+
+      if (normalized.length) {
+        setMessages(normalized);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 300);
+      }
+    } catch {
+      // Keep the current chat on screen; the shared recovery flow will retry.
+    }
   }, []);
+
+  useEffect(() => { loadConversation(); }, [loadConversation]);
+  useEffect(() => onAppDataRefresh(loadConversation), [loadConversation]);
+  useEffect(() => { aiLoadingRef.current = aiLoading; }, [aiLoading]);
 
   const persistMessage = async (role, content) => {
     const convId = conversationIdRef.current;
@@ -527,18 +524,12 @@ export default function AskAI({ navigation }) {
       const uri = audioRecorder.uri;
       if (!uri) throw new Error('No recording URI');
 
-      const { token } = await getStoredAuth();
       // Read as base64 and send as JSON — avoids React Native FormData binary issues
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      const res = await fetch(`${BASE_URL}/api/agent/transcribe`, {
+      const data = await apiFetch('/api/agent/transcribe', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ audioBase64: base64, fileName: 'voice.m4a', mimeType: 'audio/m4a' }),
+        body: { audioBase64: base64, fileName: 'voice.m4a', mimeType: 'audio/m4a' },
       });
-      const data = await res.json();
       if (data?.text) {
         await handleSend(data.text);
       } else {
@@ -567,22 +558,12 @@ export default function AskAI({ navigation }) {
     setAttachModal(false);
     addMessage({ id: String(Date.now()), sender: "ai", text: `Uploading ${name}\u2026` });
     try {
-      const { token } = await getStoredAuth();
       // Read file as base64 and send as JSON — avoids React Native FormData binary issues
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      const res = await fetch(`${BASE_URL}/api/documents/upload`, {
+      const data = await apiFetch('/api/documents/upload', {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ fileBase64: base64, fileName: name, mimeType: mimeType || 'application/octet-stream' }),
+        body: { fileBase64: base64, fileName: name, mimeType: mimeType || 'application/octet-stream' },
       });
-
-      let data = {};
-      try { data = await res.json(); } catch {}
-
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
 
       const chunks = data.chunks || 0;
       const msg = chunks > 0

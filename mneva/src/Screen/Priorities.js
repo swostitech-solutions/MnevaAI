@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { apiFetch } from "../api/client";
 import { useSocket } from '../services/socket';
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const TABS = ["TODAY", "UPCOMING", "MEETINGS"];
@@ -156,6 +157,7 @@ export default function Priorities({ navigation }) {
   }, []);
 
   useEffect(() => { loadData(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadData(true)), [loadData]);
 
   const { on } = useSocket();
   useEffect(() => {

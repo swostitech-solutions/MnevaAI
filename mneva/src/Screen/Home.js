@@ -27,6 +27,7 @@ import { Ionicons, Feather } from "@expo/vector-icons";
 import { clearAuth, getStoredAuth } from '../storage/auth';
 import { apiFetch, BASE_URL } from '../api/client';
 import { useSocket, resetSocket } from '../services/socket';
+import { onAppDataRefresh } from '../services/dataRefresh';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import * as Speech from 'expo-speech';
@@ -656,10 +657,16 @@ export default function Home({ navigation }) {
 
   const isMountedRef = useRef(false);
   const isLoadingRef = useRef(false);
+  const queuedRefreshRef = useRef(false);
 
   const loadData = async (isRefresh = false) => {
     // Prevent concurrent loads
-    if (isLoadingRef.current) return;
+    if (isLoadingRef.current) {
+      // A backend recovery can finish while the first (stale) screen load is
+      // still in flight. Queue one fresh load instead of silently dropping it.
+      queuedRefreshRef.current = true;
+      return;
+    }
     isLoadingRef.current = true;
     if (!isRefresh) setBriefLoading(true);
     try {
@@ -753,11 +760,18 @@ export default function Home({ navigation }) {
       isLoadingRef.current = false;
       setBriefLoading(false);
       setRefreshing(false);
+      if (queuedRefreshRef.current) {
+        queuedRefreshRef.current = false;
+        setTimeout(() => loadData(true), 0);
+      }
     }
   };
 
   // Single mount load
   useEffect(() => { loadData(); }, []);
+
+  // Refresh automatically after the shared session/network recovery runs.
+  useEffect(() => onAppDataRefresh(() => loadData(true)), []);
 
   // Re-fetch when screen comes back into focus (after navigating away)
   // Skip the very first focus event which fires right after mount

@@ -13,6 +13,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -89,6 +90,12 @@ export default function Profile({ navigation }) {
       apiFetch('/api/auth/me').then(me => setUser(me)).catch(() => {});
     });
   }, []);
+
+  React.useEffect(() => onAppDataRefresh(() => {
+    import('../api/client').then(({ apiFetch }) => {
+      apiFetch('/api/auth/me').then(me => setUser(me)).catch(() => {});
+    });
+  }), []);
 
   const getInitials = (name) => {
     if (!name) return 'ME';

@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { useSocket } from '../services/socket';
+import { onAppDataRefresh } from '../services/dataRefresh';
 import SmartReplyCard from '../components/SmartReplyCard';
 import ReminderAlert from '../components/ReminderAlert';
 
@@ -106,6 +107,7 @@ export default function Notifications({ navigation }) {
   }, []);
 
   useEffect(() => { loadData(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadData(true)), [loadData]);
 
   // ── Live socket events ────────────────────────────────────────────────────────────
   useEffect(() => {

@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { useSocket } from '../services/socket';
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -68,6 +69,10 @@ function actionKey(entry) {
 function uniqueEntries(entries) {
   const seen = new Set();
   return (entries || []).filter(entry => {
+    // Failed attempts are deliberately absent from the diary. The backend
+    // applies the same rule, and this also prevents a real-time failed event
+    // from flashing on screen before the next refresh.
+    if (entry?.status === 'failed') return false;
     const key = actionKey(entry);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -118,6 +123,7 @@ export default function TwinDiary({ navigation }) {
   };
 
   useEffect(() => { loadData(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadData(true)), []);
 
   // Re-fetch when navigating back from AskAI
   useEffect(() => {
@@ -133,7 +139,7 @@ export default function TwinDiary({ navigation }) {
   // Real-time: when AI executes any action, refresh ledger immediately
   useEffect(() => {
     const off = on('ledger:updated', (entry) => {
-      if (!entry?.id) return;
+      if (!entry?.id || entry.status === 'failed') return;
       setEntries(prev => {
         if (prev.find(e => e.id === entry.id || actionKey(e) === actionKey(entry))) return prev;
         return uniqueEntries([entry, ...prev]);

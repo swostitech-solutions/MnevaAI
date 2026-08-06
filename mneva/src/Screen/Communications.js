@@ -7,6 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_H = 50;
 const INBOX_TABS = ['All', 'Unread', 'Flagged'];
@@ -107,6 +108,7 @@ export default function Communications({ navigation }) {
   };
 
   useEffect(() => { loadEmails(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadEmails(filter, true)), [filter]);
 
   const openThread = async (email) => {
     setThread(email);

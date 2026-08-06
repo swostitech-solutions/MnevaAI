@@ -17,25 +17,33 @@ async function getToken() {
 }
 
 export async function apiFetch(path, options = {}) {
+  // `retry: false` is used by higher-level recovery loops which already own
+  // their retry/backoff policy. Do not pass this app-only option to fetch.
+  const { retry, ...fetchOptions } = options;
   const token = await getToken();
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
+    ...fetchOptions.headers,
   };
 
   // Retrying reads heals short network changes and Render wake-ups without
   // ever retrying a POST/PATCH action that could create duplicate work.
-  const retryable = (options.method || 'GET').toUpperCase() === 'GET';
+  const retryable = retry !== false && (fetchOptions.method || 'GET').toUpperCase() === 'GET';
   let lastError;
-  for (let attempt = 0; attempt < (retryable ? 2 : 1); attempt += 1) {
+  // Render can take a moment to wake and mobile radios can take a few seconds
+  // to reconnect after the app resumes. Reads are safe to retry and should not
+  // leave a screen empty just because its first request raced that recovery.
+  const maxAttempts = retryable ? 4 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 50000);
     try {
       const res = await fetch(`${BASE_URL}${path}`, {
-        ...options,
+        ...fetchOptions,
+        cache: 'no-store',
         headers,
-        body: options.body ? JSON.stringify(options.body) : undefined,
+        body: fetchOptions.body ? JSON.stringify(fetchOptions.body) : undefined,
         signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
@@ -44,7 +52,12 @@ export async function apiFetch(path, options = {}) {
         _notifySessionExpired();
         throw { status: 401, message: 'Session expired. Please sign in again.' };
       }
-      if (!res.ok) throw { status: res.status, message: data.error || data.message || 'Request failed' };
+      if (!res.ok) {
+        throw {
+          status: res.status,
+          message: data.error || data.message || `Server request failed (HTTP ${res.status})`,
+        };
+      }
       return data;
     } catch (err) {
       lastError = err?.name === 'AbortError'
@@ -52,7 +65,9 @@ export async function apiFetch(path, options = {}) {
         : err;
       // An authenticated or client-side response cannot be healed by retrying.
       if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500)) throw lastError;
-      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1000));
+      if (attempt < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** attempt)));
+      }
     } finally {
       clearTimeout(timeoutId);
     }

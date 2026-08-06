@@ -701,11 +701,26 @@ function buildLiveDataContext(liveData = {}) {
 
   // Calendar
   if (liveData.calendar?.length) {
-    const events = liveData.calendar.slice(0, 5).map(e => {
-      const start = e.start ? new Date(e.start).toLocaleString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
-      return `  • ${e.title || e.summary} — ${start}${e.meetLink ? ' [Meet]' : ''}`
-    }).join('\n')
-    lines.push(`UPCOMING CALENDAR EVENTS:\n${events}`)
+    // Group calendar context by its real calendar date before it reaches the
+    // model. This prevents a response from presenting yesterday's items and
+    // today's items as one "today" schedule.
+    const dateGroups = new Map()
+    liveData.calendar.slice(0, 10).forEach(e => {
+      const startDate = e.start ? new Date(e.start) : null
+      if (!startDate || Number.isNaN(startDate.getTime())) return
+      const dateLabel = startDate.toLocaleDateString('en-IN', {
+        weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Kolkata',
+      })
+      const time = startDate.toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
+      })
+      if (!dateGroups.has(dateLabel)) dateGroups.set(dateLabel, [])
+      dateGroups.get(dateLabel).push(`    • ${e.title || e.summary} — ${time}${e.meetLink ? ' [Meet]' : ''}`)
+    })
+    const events = [...dateGroups.entries()]
+      .map(([date, entries]) => `  ${date}:\n${entries.join('\n')}`)
+      .join('\n')
+    if (events) lines.push(`UPCOMING CALENDAR EVENTS (grouped by date):\n${events}`)
   }
 
   // Emails
@@ -781,6 +796,7 @@ CRITICAL RULES:
 14. CONNECTED ACCOUNTS: You always know which accounts are connected from the CONNECTED ACCOUNTS section below. Answer questions about integrations directly from that — never say you don't know. If an account is not connected, tell the user to go to Settings → Connected Accounts to connect it.
 15. SCHEDULING: The current time is ${new Date().toISOString()}. For every reminder or meeting, use a complete future date and time. Call the scheduling tools only once per requested action and include an ISO UTC offset in the tool value whenever possible.
 16. ACTION RESULTS: Never claim that a reminder, meeting, or other action was completed unless its tool result has success: true. If a tool reports an error, clearly explain the error and do not say it was set or scheduled.
+17. CALENDAR DATE GROUPING: When showing more than one scheduled item, group them under their actual calendar date (for example, "Today — Thursday 6 August" and "Tomorrow — Friday 7 August"). Never put entries from different dates in one list labelled "today". Do not include past events unless the user specifically asks for history; after creating one reminder or meeting, confirm that item only unless they ask to see their schedule.
 
 USER PROFILE (registered account details — answer any personal questions from this):
 - Full Name: ${user.name || 'Not set'}

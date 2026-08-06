@@ -19,7 +19,10 @@ class LedgerService {
 
   async getByUser(userId, limit = 100) {
     const entries = await prisma.agentLedger.findMany({
-      where: { userId },
+      // Failed creation attempts are retained in the audit database, but are
+      // not user-facing actions. This keeps them out of every client that
+      // consumes the public ledger (Twin Diary and dashboard feeds).
+      where: { userId, status: { not: 'failed' } },
       orderBy: { createdAt: 'desc' },
       take: limit,
     })

@@ -5,6 +5,13 @@ import { prisma } from '../config/prisma.js'
 const router = express.Router()
 const hashToken = token => createHash('sha256').update(String(token || '')).digest('hex')
 
+// Device-side redaction is the first line of defence. Redact again at the
+// server boundary so a malformed/outdated client can never persist OTP-like
+// values in notifications, tasks, or logs.
+const redactSensitiveText = value => String(value || '')
+  .slice(0, 1000)
+  .replace(/\b\d{4,8}\b/g, '••••')
+
 function analyse(title = '', body = '', appName = '') {
   const text = `${title} ${body} ${appName}`.toLowerCase()
   // Marketing should never take a place in the briefing simply because it
@@ -32,7 +39,9 @@ router.post('/ingest', async (req, res) => {
     const device = await prisma.deviceNotificationToken.findUnique({ where: { tokenHash: hashToken(token) } })
     if (!device) return res.status(401).json({ error: 'Invalid device token' })
 
-    const { packageName = '', appName = '', title = '', body = '', notificationKey = '', postedAt } = req.body || {}
+    const { packageName = '', appName = '', notificationKey = '', postedAt } = req.body || {}
+    const title = redactSensitiveText(req.body?.title)
+    const body = redactSensitiveText(req.body?.body)
     if (!title && !body) return res.status(400).json({ error: 'title or body required' })
     const analysis = analyse(title, body, appName)
     const preferences = await prisma.user.findUnique({ where: { id: device.userId }, select: { preferences: true } })

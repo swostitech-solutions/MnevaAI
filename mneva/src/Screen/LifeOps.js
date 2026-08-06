@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -72,6 +73,7 @@ export default function LifeOps({ navigation }) {
   };
 
   useEffect(() => { loadData(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadData(true)), []);
 
   const bookCab = async () => {
     if (!pickup.trim() || !destination.trim()) return;

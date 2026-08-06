@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { useSocket } from '../services/socket';
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -114,6 +115,7 @@ export default function MorningBriefing({ navigation, route }) {
 
   // Always fetch fresh data on mount — route.params may be stale
   useEffect(() => { loadBrief(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadBrief(true)), []);
 
   // A briefing screen stays mounted in the stack. Refresh whenever the user
   // returns from Ask AI so a newly created reminder or meeting is visible.

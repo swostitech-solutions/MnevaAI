@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -307,6 +308,7 @@ export default function AIProfile({ navigation }) {
   };
 
   useEffect(() => { loadProfile(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadProfile(true)), []);
 
   const showToast = (title, subtitle, isError = false) => {
     clearTimeout(toastTimer.current);

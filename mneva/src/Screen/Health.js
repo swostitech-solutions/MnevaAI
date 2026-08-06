@@ -8,6 +8,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -149,6 +150,7 @@ export default function Health({ navigation }) {
   };
 
   useEffect(() => { loadData(); }, []);
+  useEffect(() => onAppDataRefresh(() => loadData(true)), []);
 
   const METRIC_CARDS = [
     { icon: 'activity', label: 'Steps', value: metrics?.steps?.value, unit: 'steps', color: '#1F9A5A', bg: '#EFFDF6' },

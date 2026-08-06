@@ -1,9 +1,15 @@
-import { NativeModules, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL, apiFetch } from '../api/client';
 
 const TOKEN_KEY = 'mneva_phone_notification_token';
-const nativeModule = NativeModules.MnevaNotificationAccess;
+// Expo Modules are registered through Expo's module registry, not React
+// Native's legacy NativeModules object. Optional loading keeps Expo Go and
+// iOS safe: the capability simply reports unavailable there.
+const nativeModule = Platform.OS === 'android'
+  ? requireOptionalNativeModule('MnevaNotificationAccess')
+  : null;
 
 export const notificationCaptureAvailable = Platform.OS === 'android' && !!nativeModule;
 

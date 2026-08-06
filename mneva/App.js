@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { AppState, Linking } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -32,8 +32,9 @@ import Search from './src/Screen/Search';
 import MorningBriefing from './src/Screen/MorningBriefing';
 import Contacts from './src/Screen/Contacts';
 import { clearAuth, getStoredAuth } from './src/storage/auth';
-import { onSessionExpired } from './src/api/client';
+import { apiFetch, onSessionExpired } from './src/api/client';
 import { getSocket, resetSocket } from './src/services/socket';
+import { refreshAppData } from './src/services/dataRefresh';
 import ReminderAlert from './src/components/ReminderAlert';
 
 const Stack = createNativeStackNavigator();
@@ -68,6 +69,88 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [initialRoute, setInitialRoute] = useState(null);
   const navigationRef = useRef(null);
+  const appStateRef = useRef(AppState.currentState);
+  const recoveryTimerRef = useRef(null);
+  const recoveryPromiseRef = useRef(null);
+  const recoveryAttemptRef = useRef(0);
+  const refreshTimersRef = useRef([]);
+
+  const clearRecoveryTimer = useCallback(() => {
+    if (recoveryTimerRef.current) {
+      clearTimeout(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    }
+  }, []);
+
+  const refreshMountedData = useCallback(() => {
+    // One immediate pass handles a healthy connection; a second pass covers
+    // screens that were still mounting or a socket that has just reconnected.
+    refreshAppData();
+    refreshTimersRef.current.forEach(clearTimeout);
+    refreshTimersRef.current = [
+      setTimeout(refreshAppData, 1500),
+    ];
+  }, []);
+
+  // A saved token alone does not mean the existing mobile connection is ready.
+  // Validate the API session and ensure a socket exists without tearing down a
+  // working connection. Transient mobile-network and Render wake-up failures
+  // retry indefinitely with a capped backoff; only a confirmed 401 is final.
+  const recoverSession = useCallback(async () => {
+    if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
+
+    const recovery = (async () => {
+      const { token } = await getStoredAuth();
+      if (!token) {
+        clearRecoveryTimer();
+        recoveryAttemptRef.current = 0;
+        return false;
+      }
+
+      try {
+        // Recovery owns retries, so make one request here rather than stacking
+        // apiFetch retries on top of this loop and amplifying backend outages.
+        await apiFetch('/api/auth/me', { retry: false });
+        clearRecoveryTimer();
+        recoveryAttemptRef.current = 0;
+        // getSocket reuses a healthy socket and starts/restarts one only when
+        // needed. It intentionally runs after auth validation.
+        getSocket().catch(() => {});
+        refreshMountedData();
+        return true;
+      } catch (error) {
+        // apiFetch notifies the global expiry handler for 401 responses. Do
+        // not keep retrying a session that has genuinely expired.
+        if (error?.status === 401) return false;
+
+        const attempt = recoveryAttemptRef.current;
+        recoveryAttemptRef.current += 1;
+        // Rate limiting needs a slower cadence than transient network errors.
+        // Other recoverable errors use a capped exponential backoff.
+        const delay = error?.status === 429
+          ? 60000
+          : Math.min(1000 * (2 ** Math.min(attempt, 5)), 30000);
+        clearRecoveryTimer();
+        recoveryTimerRef.current = setTimeout(() => {
+          recoveryTimerRef.current = null;
+          // Do not revive a suspended app; foregrounding will resume recovery.
+          // AppState can briefly be null during cold launch, which is still a
+          // foreground state for this purpose.
+          if (!/inactive|background/.test(appStateRef.current || '')) recoverSession().catch(() => {});
+        }, delay);
+        // This is an expected, self-healing condition. Do not use console.warn:
+        // React Native displays warnings as an intrusive developer overlay.
+        return false;
+      }
+    })();
+
+    recoveryPromiseRef.current = recovery;
+    try {
+      return await recovery;
+    } finally {
+      if (recoveryPromiseRef.current === recovery) recoveryPromiseRef.current = null;
+    }
+  }, [clearRecoveryTimer, refreshMountedData]);
 
   // Handle deep links from OAuth callbacks e.g. mneva://contacts?contacts=connected
   useEffect(() => {
@@ -98,15 +181,27 @@ export default function App() {
   // network connection. Every mounted screen re-registers its socket handlers
   // after this fresh connection succeeds.
   useEffect(() => {
-    const sub = AppState.addEventListener('change', async state => {
-      if (state !== 'active') return;
-      const { token } = await getStoredAuth();
-      if (!token) return;
-      resetSocket();
-      getSocket().catch(() => {});
+    const sub = AppState.addEventListener('change', state => {
+      const wasBackgrounded = /inactive|background/.test(appStateRef.current || '');
+      appStateRef.current = state;
+      if (!wasBackgrounded || state !== 'active') return;
+      recoverSession().catch(() => {});
     });
-    return () => sub.remove();
-  }, []);
+    return () => {
+      sub.remove();
+      clearRecoveryTimer();
+    };
+  }, [clearRecoveryTimer, recoverSession]);
+
+  // AppState changes are not the only way a mobile connection can go stale:
+  // Wi-Fi/cellular handoffs and idle radios also happen while foregrounded.
+  // This inexpensive authenticated heartbeat keeps the session self-healing.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!/inactive|background/.test(appStateRef.current || '')) recoverSession().catch(() => {});
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [recoverSession]);
 
   // This belongs at app level, not only Home: an expired session from any
   // screen must recover to sign-in instead of leaving that screen inert.
@@ -114,6 +209,7 @@ export default function App() {
     const unsub = onSessionExpired(async () => {
       await clearAuth().catch(() => {});
       resetSocket();
+      setInitialRoute('Signin');
       navigationRef.current?.reset({ index: 0, routes: [{ name: 'Signin' }] });
     });
     return () => unsub();
@@ -123,17 +219,23 @@ export default function App() {
     const splashTimer = setTimeout(() => setShowSplash(false), 2500);
     (async () => {
       try {
-        // Warm up Render server immediately on app start — during splash window
-        // so server is awake before user reaches login screen
-        fetch(`${(await import('./src/api/client')).BASE_URL}/api/health`, { method: 'GET' }).catch(() => {});
+        // Do this on *every* cold start, not only after app backgrounding.
+        // Previously a saved session opened Home with a stale connection, while
+        // logging in manually happened to perform this recovery sequence.
         const { token } = await getStoredAuth();
         setInitialRoute(token ? 'Home' : 'Onboarding');
+        if (token) recoverSession().catch(() => {});
       } catch {
         setInitialRoute('Onboarding');
       }
     })();
     return () => clearTimeout(splashTimer);
-  }, []);
+  }, [recoverSession]);
+
+  useEffect(() => () => {
+    clearRecoveryTimer();
+    refreshTimersRef.current.forEach(clearTimeout);
+  }, [clearRecoveryTimer]);
 
   if (showSplash || !initialRoute) {
     return (
