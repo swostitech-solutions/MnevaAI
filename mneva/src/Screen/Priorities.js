@@ -18,6 +18,14 @@ function isJoinableMeetingLink(link) {
   return typeof link === 'string' && /^https?:\/\/\S+$/i.test(link.trim());
 }
 
+// The Today tab is a calendar-day view, not an "up to now" history.  Keeping
+// the start boundary prevents yesterday's reminders and tasks from returning
+// after midnight.
+function isToday(value, todayStart, todayEnd) {
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date >= todayStart && date <= todayEnd;
+}
+
 function fmtMeeting(start, end) {
   const s = new Date(start);
   const e = end ? new Date(end) : null;
@@ -176,6 +184,7 @@ export default function Priorities({ navigation }) {
   }, [navigation, loadData]);
 
   // Derived task lists
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
 
   // Keep actual tasks separate, but surface reminders alongside the date they
@@ -190,12 +199,12 @@ export default function Priorities({ navigation }) {
   // a fallback when the calendar feed is slow or unavailable, but avoid
   // rendering it twice once its dated calendar record has arrived.
   const pendingTasks = tasks.filter(t => {
-    if (t.status !== 'PENDING' || /^Meeting · /i.test(t.description || '')) return false;
+    if (t.status !== 'PENDING' || !isToday(t.createdAt, todayStart, todayEnd) || /^Meeting · /i.test(t.description || '')) return false;
     const isReminderTask = /^Reminder ·/i.test(t.description || '');
     return !isReminderTask || !calendarReminderTitles.has((t.title || '').trim().toLowerCase());
   });
   const todayReminders = reminders
-    .filter(m => new Date(m.start) <= todayEnd)
+    .filter(m => isToday(m.start, todayStart, todayEnd))
     .sort((a, b) => new Date(a.start) - new Date(b.start));
   // Upcoming means a later calendar date — not a later time today. Include
   // reminders here so they appear on their due date alongside commitments.

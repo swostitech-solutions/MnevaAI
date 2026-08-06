@@ -57,6 +57,40 @@ const FAB_SIZE = 56;
 const FAB_GAP = 16;
 const ORB_SIZE = 64;
 
+function formatRecentLogTime(timestamp, fallback = '') {
+  if (!timestamp) return fallback;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+// Deliberately mirror the formatter in Priorities.js so a scheduled reminder
+// has exactly the same displayed time in both places.
+function formatPriorityReminderTime(timestamp, fallback = '') {
+  if (!timestamp) return fallback;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function isJoinableMeetingLink(link) {
+  return typeof link === 'string' && /^https?:\/\/\S+$/i.test(link.trim());
+}
+
+function isToday(value, todayStart, todayEnd) {
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date >= todayStart && date <= todayEnd;
+}
+
 function FocusRing({ percent }) {
   const progress = RING_CIRC - (percent / 100) * RING_CIRC;
   return (
@@ -544,7 +578,6 @@ export default function Home({ navigation }) {
   const [recentNotifs, setRecentNotifs] = useState([]);
   const [brief, setBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(true);
-  const [checkedIds, setCheckedIds] = useState({});
   const [localPriorities, setLocalPriorities] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [weather, setWeather] = useState(null);
@@ -554,6 +587,9 @@ export default function Home({ navigation }) {
   const [financeSnap, setFinanceSnap] = useState(null);
   const [healthSnap, setHealthSnap] = useState(null);
   const [meetings, setMeetings] = useState([]);
+  const [allTasks, setAllTasks] = useState([]);
+  const [calendarItems, setCalendarItems] = useState([]);
+  const [doneMeetingIds, setDoneMeetingIds] = useState(new Set());
   const [profilePct, setProfilePct] = useState(null);
   const [profileCity, setProfileCity] = useState(null);
   const notificationBriefRefreshRef = useRef(null);
@@ -631,12 +667,14 @@ export default function Home({ navigation }) {
       if (stored) setUser(stored);
 
       // Phase 1 — critical data + tasks all in one shot
-      const [meRes, notifsRes, briefRes, profileRes, tasksRes] = await Promise.allSettled([
+      const [meRes, notifsRes, briefRes, profileRes, tasksRes, calendarRes, doneMeetingsRes] = await Promise.allSettled([
         apiFetch('/api/auth/me'),
         apiFetch('/api/notifications'),
         apiFetch('/api/dashboard/brief'),
         apiFetch('/api/onboarding/profile'),
         apiFetch('/api/tasks'),
+        apiFetch('/api/calendar/meetings'),
+        apiFetch('/api/tasks/meeting-done'),
       ]);
 
       const me        = meRes.status      === 'fulfilled' ? meRes.value      : null;
@@ -644,6 +682,8 @@ export default function Home({ navigation }) {
       const briefData = briefRes.status   === 'fulfilled' ? briefRes.value   : null;
       const profileRes2 = profileRes.status === 'fulfilled' ? profileRes.value : null;
       const tasksData = tasksRes.status   === 'fulfilled' ? tasksRes.value   : null;
+      const calendarData = calendarRes.status === 'fulfilled' ? calendarRes.value : null;
+      const doneMeetingsData = doneMeetingsRes.status === 'fulfilled' ? doneMeetingsRes.value : null;
 
       if (me)     setUser(me);
       if (notifs) {
@@ -651,6 +691,8 @@ export default function Home({ navigation }) {
         setRecentNotifs((notifs.notifications || []).filter(n => !n.read && (n.type === 'email' || n.type === 'sms')).slice(0, 4));
       }
       if (briefData) setBrief(briefData);
+      if (calendarData) setCalendarItems(Array.isArray(calendarData) ? calendarData : calendarData.meetings || []);
+      if (doneMeetingsData) setDoneMeetingIds(new Set(doneMeetingsData.ids || []));
       if (profileRes2) {
         const city    = profileRes2?.profile?.city    || null;
         const country = profileRes2?.profile?.country || null;
@@ -662,6 +704,7 @@ export default function Home({ navigation }) {
       // Seed localPriorities from DB tasks — source of truth
       if (tasksData) {
         const allTasks = Array.isArray(tasksData) ? tasksData : [];
+        setAllTasks(allTasks);
         const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
         const seeded = allTasks
           .filter(t => t.status === 'PENDING' && t.title && !t.title.startsWith('meeting_done:'))
@@ -786,10 +829,18 @@ export default function Home({ navigation }) {
       Promise.allSettled([
         apiFetch('/api/tasks'),
         apiFetch('/api/dashboard/brief'),
-      ]).then(([tasksRes, briefRes]) => {
+        apiFetch('/api/calendar/meetings'),
+        apiFetch('/api/tasks/meeting-done'),
+      ]).then(([tasksRes, briefRes, calendarRes, doneRes]) => {
         if (briefRes.status === 'fulfilled' && briefRes.value) setBrief(briefRes.value);
+        if (calendarRes.status === 'fulfilled') {
+          const items = Array.isArray(calendarRes.value) ? calendarRes.value : calendarRes.value.meetings || [];
+          setCalendarItems(items);
+        }
+        if (doneRes.status === 'fulfilled') setDoneMeetingIds(new Set(doneRes.value.ids || []));
         if (tasksRes.status === 'fulfilled') {
           const allTasks = Array.isArray(tasksRes.value) ? tasksRes.value : [];
+          setAllTasks(allTasks);
           const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
           const seeded = allTasks
             .filter(t => t.status === 'PENDING' && t.title && !t.title.startsWith('meeting_done:'))
@@ -827,6 +878,11 @@ export default function Home({ navigation }) {
     // screen remount or the next manual refresh.
     const offMeeting = on('meeting:created', (meeting) => {
       if (!meeting?.start) return;
+      setCalendarItems(prev => {
+        const key = meeting.eventId || meeting.id;
+        if (prev.some(item => (item.eventId || item.id) === key)) return prev;
+        return [{ ...meeting, id: meeting.id || key }, ...prev];
+      });
       setMeetings(prev => {
         const key = meeting.eventId || meeting.id;
         if (prev.some(item => (item.eventId || item.id) === key)) return prev;
@@ -875,6 +931,7 @@ export default function Home({ navigation }) {
         // Keep localPriorities in sync with DB on every poll cycle
         if (tasksData.status === 'fulfilled') {
           const allTasks = Array.isArray(tasksData.value) ? tasksData.value : [];
+          setAllTasks(allTasks);
           const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
           const seeded = allTasks
             .filter(t => t.status === 'PENDING' && t.title && !t.title.startsWith('meeting_done:'))
@@ -892,9 +949,15 @@ export default function Home({ navigation }) {
     return () => clearInterval(interval);
   }, []);
   useEffect(() => {
-    apiFetch("/api/calendar/meetings")
-      .then(res => {
-        const all = Array.isArray(res) ? res : res.meetings || [];
+    Promise.allSettled([
+      apiFetch('/api/calendar/meetings'),
+      apiFetch('/api/tasks/meeting-done'),
+    ])
+      .then(([calendarRes, doneRes]) => {
+        if (calendarRes.status !== 'fulfilled') return;
+        const all = Array.isArray(calendarRes.value) ? calendarRes.value : calendarRes.value.meetings || [];
+        setCalendarItems(all);
+        if (doneRes.status === 'fulfilled') setDoneMeetingIds(new Set(doneRes.value.ids || []));
         const now = new Date();
         now.setHours(0, 0, 0, 0);
         // Deduplicate by eventId first, then by id
@@ -912,7 +975,6 @@ export default function Home({ navigation }) {
 
   const onRefresh = () => {
     setRefreshing(true);
-    setCheckedIds({});
     setActedIds({});
     setLocalPriorities([]);
     loadData(true);
@@ -1093,29 +1155,9 @@ export default function Home({ navigation }) {
     }
   };
 
-  const handleCheck = (id) => {
-    setCheckedIds((prev) => ({ ...prev, [id]: true }));
-    // mark complete on backend if it's a real task id
-    if (!String(id).startsWith('local_')) {
-      apiFetch(`/api/tasks/${id}`, { method: 'PATCH', body: { status: 'COMPLETED' } }).catch(() => {});
-    }
-    setTimeout(() => {
-      setCheckedIds((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-      setLocalPriorities((prev) => prev.filter((p) => p.id !== id));
-      setBrief((prev) => prev ? {
-        ...prev,
-        pendingTasks: (prev.pendingTasks || []).filter((t) => t.id !== id),
-      } : prev);
-    }, 600);
-  };
-
   // Merge backend tasks + locally added priorities + meetings
   const STRIPE_COLORS = ['#44BA82', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623'];
-  // Titles already shown in Recent Logs — don't duplicate in Today's Priorities
+  // Titles already shown in Recent Logs — don't count them twice in the overview.
   const loggedTitles = new Set(
     (brief?.autoCompleted || []).map(l => (l.title || '').toLowerCase().trim())
   );
@@ -1172,6 +1214,58 @@ export default function Home({ navigation }) {
     seenIds.add(p.id);
     return true;
   });
+  // Match the Priorities screen exactly: ordinary appointments are reminders,
+  // and their persisted task mirror must not be counted a second time.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  const todayReminders = calendarItems.filter(item =>
+    !isJoinableMeetingLink(item.meetLink)
+    && item.start
+    && isToday(item.start, todayStart, todayEnd)
+  );
+  const reminderTitles = new Set(todayReminders.map(item => (item.title || '').trim().toLowerCase()));
+  const todayTaskItems = allTasks.filter(task => {
+    if (task.status !== 'PENDING' || !isToday(task.createdAt, todayStart, todayEnd) || /^Meeting · /i.test(task.description || '')) return false;
+    const isReminderTask = /^Reminder ·/i.test(task.description || '');
+    return !isReminderTask || !reminderTitles.has((task.title || '').trim().toLowerCase());
+  });
+  const doneTaskCount = todayReminders.filter(item => doneMeetingIds.has(item.id)).length;
+  const pendingTaskCount = todayTaskItems.length
+    + todayReminders.filter(item => !doneMeetingIds.has(item.id)).length;
+  const totalTaskCount = todayTaskItems.length + todayReminders.length;
+  // This is deliberately built from the same two lists used by Priorities.
+  // Do not use the dashboard/ledger feed here: it can contain historical AI
+  // actions, which would make this card disagree with the Today tab.
+  const dashboardPriorityItems = [
+    ...todayTaskItems.map(task => ({
+      id: `task_${task.id}`,
+      title: task.title,
+      detail: task.description || 'Pending · AI tracked',
+      done: false,
+      icon: 'clock',
+    })),
+    ...todayReminders.map(reminder => ({
+      id: `reminder_${reminder.id}`,
+      title: reminder.title,
+      detail: formatPriorityReminderTime(reminder.start),
+      done: doneMeetingIds.has(reminder.id),
+      icon: 'bell',
+    })),
+  ];
+  // Calendar reminders are the source of truth for the scheduled time shown
+  // in Priorities. Match a dashboard log to that record before falling back
+  // to the ledger timestamp supplied by the API.
+  const getReminderScheduledAt = (title, fallback = null) => {
+    const reminderTitle = (title || '').replace(/^Reminder set:\s*/i, '').trim().toLowerCase();
+    const reminder = calendarItems.find(item =>
+      !isJoinableMeetingLink(item.meetLink)
+      && (item.title || '').trim().toLowerCase() === reminderTitle
+      && item.start
+    );
+    return reminder?.start || fallback;
+  };
 
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const fabBottom = tabBarHeight + FAB_GAP;
@@ -1366,7 +1460,7 @@ export default function Home({ navigation }) {
           </>
         )}
 
-        {/* Morning briefing */}
+        {/* Today's priorities overview */}
         <LinearGradient
           colors={["#3CB37A", "#1F7A54"]}
           start={{ x: 0, y: 0 }}
@@ -1379,7 +1473,7 @@ export default function Home({ navigation }) {
               <View style={styles.briefingLabelIconWrap}>
                 <Feather name="sun" size={12} color="#1F7A54" />
               </View>
-              <Text style={styles.briefingLabel}>MORNING BRIEFING</Text>
+              <Text style={styles.briefingLabel}>TODAY'S PRIORITIES</Text>
             </View>
             <View style={styles.briefingTimeBadge}>
               <Text style={styles.briefingTimeText}>{getDateString()}</Text>
@@ -1396,198 +1490,66 @@ export default function Home({ navigation }) {
               {/* Stats row */}
               <View style={styles.briefingStatsRow}>
                 <View style={styles.briefingStatChip}>
-                  <Text style={styles.briefingStatNum}>{brief?.autoCompleted?.length || 0}</Text>
-                  <Text style={styles.briefingStatLabel}>Done</Text>
-                </View>
-                <View style={styles.briefingStatDivider} />
-                <View style={styles.briefingStatChip}>
-                  <Text style={styles.briefingStatNum}>{importantNotificationCount}</Text>
-                  <Text style={styles.briefingStatLabel}>Important</Text>
-                </View>
-                <View style={styles.briefingStatDivider} />
-                <View style={styles.briefingStatChip}>
-                  <Text style={styles.briefingStatNum}>{allPriorities.length}</Text>
+                  <Text style={styles.briefingStatNum}>{totalTaskCount}</Text>
                   <Text style={styles.briefingStatLabel}>Tasks</Text>
+                </View>
+                <View style={styles.briefingStatDivider} />
+                <View style={styles.briefingStatChip}>
+                  <Text style={styles.briefingStatNum}>{pendingTaskCount}</Text>
+                  <Text style={styles.briefingStatLabel}>Pending</Text>
+                </View>
+                <View style={styles.briefingStatDivider} />
+                <View style={styles.briefingStatChip}>
+                  <Text style={styles.briefingStatNum}>{doneTaskCount}</Text>
+                  <Text style={styles.briefingStatLabel}>Done</Text>
                 </View>
               </View>
 
               {/* Headline */}
               <Text style={styles.briefingTitle}>
-                {importantNotificationHeadline || (brief?.autoCompleted?.length
-                  ? `${brief.autoCompleted.length} action${brief.autoCompleted.length > 1 ? 's' : ''} resolved by your AI twin`
-                  : brief?.summary || 'Your AI twin is standing by')}
+                {pendingTaskCount
+                  ? `${pendingTaskCount} task${pendingTaskCount === 1 ? '' : 's'} pending.`
+                  : doneTaskCount
+                    ? 'All today’s priorities completed.'
+                    : 'All clear for today!'}
               </Text>
 
-              {/* Item rows — suggested meetings first, then urgent emails, then AI actions */}
-              {(() => {
-                const suggestedMeetings = (brief?.suggestedMeetings || []).slice(0, 2);
-                const urgentEmails = (brief?.urgentEmails || []).slice(0, suggestedMeetings.length > 0 ? 1 : 2);
-                const aiItems = (brief?.autoCompleted?.length ? brief.autoCompleted : brief?.pendingActions || []).slice(0, suggestedMeetings.length > 0 ? 0 : urgentEmails.length > 0 ? 1 : 3);
-                return (
-                  <>
-                    {suggestedMeetings.map((mtg) => {
-                      const acted = meetingSuggestActed[mtg.emailId];
-                      return (
-                        <View key={mtg.emailId} style={[styles.briefingItemRow, { flexDirection: 'column', gap: 8, alignItems: 'stretch' }]}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                            <View style={[styles.briefingIconWrap, { backgroundColor: 'rgba(97,95,248,0.15)' }]}>
-                              <Feather name="calendar" size={12} color="#A5B4FC" />
-                            </View>
-                            <View style={styles.briefingItemTextWrap}>
-                              <Text style={styles.briefingItemText} numberOfLines={1}>{mtg.senderName} wants to meet</Text>
-                              <Text style={styles.briefingItemDetail} numberOfLines={1}>{mtg.subject}</Text>
-                            </View>
-                            <View style={[styles.briefingItemBadge, { backgroundColor: 'rgba(97,95,248,0.25)' }]}>
-                              <Text style={[styles.briefingItemBadgeText, { color: '#C7D2FE' }]}>MEETING</Text>
-                            </View>
-                          </View>
-                          {!acted ? (
-                            <View style={{ flexDirection: 'row', gap: 8, paddingLeft: 38 }}>
-                              <TouchableOpacity
-                                style={[styles.briefingSuggestBtn, { backgroundColor: 'rgba(224,84,110,0.25)' }]}
-                                onPress={() => handleMeetingSuggest(mtg.emailId, 'deny', mtg)}
-                              >
-                                <Feather name="x" size={12} color="#FFCDD5" />
-                                <Text style={[styles.briefingSuggestBtnText, { color: '#FFCDD5' }]}>Skip</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[styles.briefingSuggestBtn, { backgroundColor: 'rgba(255,255,255,0.2)', flex: 1 }]}
-                                onPress={() => handleMeetingSuggest(mtg.emailId, 'approve', mtg)}
-                              >
-                                <Feather name="calendar" size={12} color="#FFFFFF" />
-                                <Text style={styles.briefingSuggestBtnText}>Schedule Meeting</Text>
-                              </TouchableOpacity>
-                            </View>
-                          ) : (
-                            <View style={{ paddingLeft: 38 }}>
-                              <Text style={{ color: acted === 'approve' ? '#A5F3C4' : 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600' }}>
-                                {acted === 'approve' ? '✓ Meeting scheduled' : '✗ Skipped'}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      );
-                    })}
-                    {urgentEmails.map((email, i) => (
-                      <View key={`email_${i}`} style={styles.briefingItemRow}>
-                        <View style={[styles.briefingIconWrap, { backgroundColor: 'rgba(224,84,110,0.15)' }]}>
-                          <Feather name="mail" size={12} color="#E0546E" />
-                        </View>
-                        <View style={styles.briefingItemTextWrap}>
-                          <Text style={styles.briefingItemText} numberOfLines={1}>{email.subject}</Text>
-                          <Text style={styles.briefingItemDetail} numberOfLines={1}>From: {email.from.replace(/<.*>/, '').trim()}</Text>
-                        </View>
-                        <View style={[styles.briefingItemBadge, { backgroundColor: 'rgba(224,84,110,0.25)' }]}>
-                          <Text style={[styles.briefingItemBadgeText, { color: '#FFCDD5' }]}>URGENT</Text>
-                        </View>
-                      </View>
-                    ))}
-                    {aiItems.map((item, i) => (
-                      <View key={`ai_${i}`} style={styles.briefingItemRow}>
-                        <View style={styles.briefingIconWrap}>
-                          <Feather name={brief?.autoCompleted?.length ? 'check' : 'clock'} size={12} color="#1F7A54" />
-                        </View>
-                        <View style={styles.briefingItemTextWrap}>
-                          <Text style={styles.briefingItemText} numberOfLines={1}>{item.title}</Text>
-                          {item.detail ? <Text style={styles.briefingItemDetail} numberOfLines={1}>{item.detail}</Text> : null}
-                        </View>
-                        <View style={styles.briefingItemBadge}>
-                          <Text style={styles.briefingItemBadgeText}>{brief?.autoCompleted?.length ? 'AI' : 'NEW'}</Text>
-                        </View>
-                      </View>
-                    ))}
-                  </>
-                );
-              })()}
+              {/* Render the same current-day task/reminder data as Priorities. */}
+              {dashboardPriorityItems.slice(0, 3).map(item => (
+                <View key={item.id} style={styles.briefingItemRow}>
+                  <View style={styles.briefingIconWrap}>
+                    <Feather name={item.done ? 'check' : item.icon} size={12} color="#1F7A54" />
+                  </View>
+                  <View style={styles.briefingItemTextWrap}>
+                    <Text style={styles.briefingItemText} numberOfLines={1}>{item.title}</Text>
+                    {!!item.detail && <Text style={styles.briefingItemDetail} numberOfLines={1}>{item.detail}</Text>}
+                  </View>
+                  <View style={styles.briefingItemBadge}>
+                    <Text style={styles.briefingItemBadgeText}>{item.done ? 'DONE' : 'NEW'}</Text>
+                  </View>
+                </View>
+              ))}
 
-              {!brief?.autoCompleted?.length && !brief?.pendingActions?.length && !brief?.urgentEmails?.length && !brief?.suggestedMeetings?.length && (
+              {dashboardPriorityItems.length === 0 && (
                 <View style={styles.briefingEmptyRow}>
                   <Feather name="check-circle" size={15} color="rgba(255,255,255,0.5)" />
-                  <Text style={styles.briefingEmptyText}>All clear — no pending actions</Text>
+                  <Text style={styles.briefingEmptyText}>All clear — no priorities today</Text>
                 </View>
               )}
             </>
           )}
 
           {/* CTA */}
-          <TouchableOpacity style={styles.briefingButton} onPress={() => navigation?.navigate?.('MorningBriefing', { brief })}>
+          <TouchableOpacity style={styles.briefingButton} onPress={() => navigation?.navigate?.('Priorities')}>
             <View style={styles.briefingButtonLeft}>
               <Feather name="list" size={14} color="#1F7A54" />
-              <Text style={styles.briefingButtonText}>View full briefing</Text>
+              <Text style={styles.briefingButtonText}>View today’s priorities</Text>
             </View>
             <View style={styles.briefingButtonArrow}>
               <Feather name="arrow-right" size={14} color="#1F7A54" />
             </View>
           </TouchableOpacity>
         </LinearGradient>
-
-        {/* Today's priorities */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionHeader}>TODAY'S PRIORITIES</Text>
-          <TouchableOpacity style={styles.viewAllRow} onPress={() => navigation?.navigate?.('Priorities')}>
-            <Text style={styles.viewAllText}>View All</Text>
-            <Feather name="chevron-right" size={14} color="#4C3AED" />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.dragHint}>Tap ✓ to mark complete</Text>
-
-        {briefLoading ? (
-          [1, 2, 3].map((i) => (
-            <View key={i} style={styles.prioritySkeletonRow}>
-              <View style={styles.prioritySkeletonStripe} />
-              <View style={{ flex: 1, paddingHorizontal: 14, paddingVertical: 14 }}>
-                <View style={styles.prioritySkeletonLine} />
-                <View style={[styles.prioritySkeletonLine, { width: '45%', marginTop: 6 }]} />
-              </View>
-            </View>
-          ))
-        ) : allPriorities.length === 0 ? (
-          <View style={styles.emptyPriorities}>
-            <Feather name="check-circle" size={28} color="#C7CBD3" />
-            <Text style={styles.emptyPrioritiesText}>All clear — no pending tasks</Text>
-          </View>
-        ) : (
-          allPriorities.map((p) => (
-            <View key={p.id} style={[
-              styles.priorityRow,
-              checkedIds[p.id] && styles.priorityRowChecked,
-            ]}>
-              <View style={[styles.priorityStripe, { backgroundColor: p.color }]} />
-              <View style={styles.priorityTextWrap}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  {p.isMeeting && <Feather name="video" size={12} color="#E0546E" />}
-                  <Text style={[
-                    styles.priorityTitle,
-                    checkedIds[p.id] && styles.priorityTitleChecked,
-                  ]} numberOfLines={2}>{p.title}</Text>
-                </View>
-                <Text style={styles.prioritySubtitle}>{p.subtitle}</Text>
-              </View>
-              {p.isMeeting && p.meetLink ? (
-                <TouchableOpacity
-                  style={styles.meetJoinBtn}
-                  onPress={() => require('react-native').Linking.openURL(p.meetLink)}
-                >
-                  <Feather name="video" size={13} color="#FFFFFF" />
-                  <Text style={styles.meetJoinBtnText}>Join</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.checkCircle, checkedIds[p.id] && styles.checkCircleActive]}
-                  onPress={() => handleCheck(p.id)}
-                >
-                  <Feather
-                    name="check"
-                    size={16}
-                    color={checkedIds[p.id] ? '#FFFFFF' : '#9AA1AE'}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-          ))
-        )}
-
-
 
         {/* Recent Inbox */}
         {recentNotifs.length > 0 && (
@@ -1720,23 +1682,33 @@ export default function Home({ navigation }) {
             <Text style={styles.emptyLogsText}>No AI actions logged yet today</Text>
           </View>
         ) : (
-          (brief.autoCompleted).slice(0, 5).map((log, i) => (
-            <View key={i} style={styles.logRow}>
-              <View style={styles.logIconWrap}>
-                <Feather name="check" size={14} color="#1F7A54" />
+          (brief.autoCompleted).slice(0, 5).map((log, i) => {
+            const rawLogDetail = log.logDetail || log.detail || 'Auto resolved';
+            // Legacy reminder details contained a second timestamp. Remove it
+            // and use the actual log timestamp below for one correct AM/PM.
+            const logDetail = log.tool === 'set_reminder'
+              ? rawLogDetail.replace(/\s*·\s*\d{1,2}:\d{2}\s*(?:AM|PM)\b/gi, '').trim()
+              : rawLogDetail;
+            const logTime = log.tool === 'set_reminder'
+              ? formatPriorityReminderTime(getReminderScheduledAt(log.title, log.scheduledAt), log.time)
+              : formatRecentLogTime(log.timestamp, log.time);
+            return (
+              <View key={i} style={styles.logRow}>
+                <View style={styles.logIconWrap}>
+                  <Feather name="check" size={14} color="#1F7A54" />
+                </View>
+                <View style={styles.logTextWrap}>
+                  <Text style={styles.logTitle} numberOfLines={1}>{log.title}</Text>
+                  <Text style={styles.logSubtitle}>
+                    {logDetail}{logTime ? ` · ${logTime}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.logBadge}>
+                  <Text style={styles.logBadgeText}>AI</Text>
+                </View>
               </View>
-              <View style={styles.logTextWrap}>
-                <Text style={styles.logTitle} numberOfLines={1}>{log.title}</Text>
-                <Text style={styles.logSubtitle}>
-                  {log.time ? `${log.time} · Auto resolved` : 'Auto resolved'}
-                  {log.detail ? ` · ${log.detail}` : ''}
-                </Text>
-              </View>
-              <View style={styles.logBadge}>
-                <Text style={styles.logBadgeText}>AI</Text>
-              </View>
-            </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
 

@@ -203,6 +203,27 @@ agentRouter.post('/deny', async (req, res) => {
 
 // dashboard.js
 export const dashboardRouter = express.Router()
+
+function formatDashboardTime(value) {
+  return new Intl.DateTimeFormat('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  }).format(new Date(value))
+}
+
+function formatDashboardDateTime(value) {
+  return new Intl.DateTimeFormat('en-IN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  }).format(new Date(value))
+}
+
 dashboardRouter.get('/brief', async (req, res) => {
   try {
     const todayStart = new Date();
@@ -296,13 +317,15 @@ dashboardRouter.get('/brief', async (req, res) => {
     } catch { urgentEmails = []; suggestedMeetings = []; }
 
     const filteredTasks = pendingTasks.filter(t => {
+      // The dashboard's priority card is intentionally reset every calendar
+      // day. Older open tasks remain stored, but are not today's priorities.
+      if (t.createdAt < todayStart) return false;
       const title = (t.title || '').trim();
       if (!title || title.length < 3) return false;
       if (/^[a-z_]+:[a-z0-9]+$/i.test(title)) return false;
       if (/^meeting_done:/i.test(title)) return false;
       return true;
     });
-
     const makeLabel = (entry, input) => {
       const map = {
         schedule_event:       'Scheduled: ' + (input.title || 'Meeting'),
@@ -348,18 +371,33 @@ dashboardRouter.get('/brief', async (req, res) => {
         try { const p = JSON.parse(entry.action); input = p.input || {}; result = p.result || {}; } catch {}
         const label = makeLabel(entry, input);
         let detail = '';
+        let logDetail = '';
         if (entry.tool === 'schedule_event') {
           const w = input.attendees && input.attendees.length ? 'With ' + input.attendees[0] : '';
-          const t = input.start ? ' \u00b7 ' + new Date(input.start).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+          const t = input.start ? ' \u00b7 ' + formatDashboardDateTime(input.start) : '';
           detail = (w + t).trim();
         } else if (entry.tool === 'initiate_payment') {
           detail = 'Status: ' + (result.status || 'done');
         } else if (entry.tool === 'book_cab') {
           detail = 'Est. fare: ' + (result.fare || 'N/A');
         } else if (entry.tool === 'set_reminder') {
-          detail = 'Saved \u00b7 ' + entry.createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+          // The dashboard priority card should show when the reminder will
+          // happen, matching the Priorities screen — not when AI created it.
+          const scheduledTime = result.scheduled || input.time;
+          detail = scheduledTime
+            ? `Scheduled · ${formatDashboardTime(scheduledTime)}`
+            : 'Scheduled';
+          logDetail = 'Saved';
         }
-        return { title: label, detail, tool: entry.tool, time: entry.createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) };
+        return {
+          title: label,
+          detail,
+          logDetail: logDetail || detail,
+          tool: entry.tool,
+          scheduledAt: entry.tool === 'set_reminder' ? (result.scheduled || input.time || null) : null,
+          timestamp: entry.createdAt.toISOString(),
+          time: formatDashboardTime(entry.createdAt),
+        };
       }),
       commitments: [],
       followUpRadar: [],

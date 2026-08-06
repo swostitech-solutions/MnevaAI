@@ -191,7 +191,7 @@ export default function MorningBriefing({ navigation, route }) {
             <Feather name="arrow-left" size={20} color="#14171F" />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Morning Briefing</Text>
+            <Text style={styles.headerTitle}>Today’s Priorities</Text>
             <Text style={styles.headerSubtitle}>{getDateString()}</Text>
           </View>
           <TouchableOpacity
@@ -217,7 +217,7 @@ export default function MorningBriefing({ navigation, route }) {
             >
               <View style={styles.heroLabelRow}>
                 <Feather name="sun" size={13} color="#E9FFF4" />
-                <Text style={styles.heroLabel}>  AI TWIN SUMMARY</Text>
+                <Text style={styles.heroLabel}>  TODAY’S PRIORITIES</Text>
               </View>
               <Text style={styles.heroTitle}>
                 {brief?.summary || 'Your AI twin has reviewed everything for you.'}
@@ -334,7 +334,7 @@ export default function MorningBriefing({ navigation, route }) {
             {/* Pending tasks */}
             {pendingTasks.length > 0 && (
               <>
-                <SectionHeader title="📋  TODAY'S PENDING TASKS" />
+                <SectionHeader title="📋  TODAY'S PRIORITIES" />
                 <View style={styles.card}>
                   {pendingTasks.map((task, i) => (
                     <PendingTaskRow key={task.id || i} task={task} index={i} total={pendingTasks.length} />
