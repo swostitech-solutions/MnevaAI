@@ -715,6 +715,23 @@ twinRouter.get('/ledger',async (req, res) => res.json({ entries: await ledger.ge
 
 // notifications.js
 export const notifRouter = express.Router()
+
+function phoneAlertAnalysis(meta = {}, title = '', body = '') {
+  const text = `${title} ${body}`.toLowerCase()
+  const priority = Number(meta.priority || 0)
+  const category = meta.category || (/(payment|upi|bank|debit|credit|bill)/i.test(text) ? 'payments' : '')
+  const reason = meta.reason || (priority >= 85 ? 'time_sensitive' : 'action_needed')
+  if (reason === 'security_or_payment' || /(fraud|suspicious|unauthori[sz]ed|blocked|declined|failed)/i.test(text)) {
+    return { label: 'Security or payment check', summary: 'This may need your attention to protect your account or resolve a payment issue.', nextStep: 'Open the original app and verify the activity before sharing any details or taking action.', urgency: 'urgent' }
+  }
+  if (category === 'payments' || /(due|bill|payment|upi|bank)/i.test(text)) {
+    return { label: 'Money-related alert', summary: 'Mneva detected a finance-related notification that may need a quick review.', nextStep: 'Check the amount, due date, and recipient in the original app. Pay or dispute it only after verifying the details.', urgency: priority >= 85 ? 'urgent' : 'important' }
+  }
+  if (reason === 'time_sensitive' || /(appointment|meeting|flight|delivery today|medicine|deadline)/i.test(text)) {
+    return { label: 'Time-sensitive update', summary: 'This alert appears to have a time-sensitive detail worth reviewing soon.', nextStep: 'Review the time and location in the original app, then add or update a reminder if you need one.', urgency: priority >= 85 ? 'urgent' : 'important' }
+  }
+  return { label: 'Action may be needed', summary: 'Mneva marked this notification as useful because it may need a response, follow-up, or review.', nextStep: 'Read the full notification and decide whether to respond, complete the request, or dismiss it.', urgency: priority >= 85 ? 'urgent' : 'normal' }
+}
 notifRouter.post('/device-token', async (req, res) => {
   const plainToken = createDeviceToken()
   await prisma.deviceNotificationToken.create({ data: { userId: req.user.id, tokenHash: hashToken(plainToken) } })
@@ -756,6 +773,7 @@ notifRouter.get('/', async (req, res) => {
         meetLink: meta.meetLink || null,
         eventStart: meta.start || null,
         relevant: typeof meta.relevant === 'boolean' ? meta.relevant : true,
+        analysis: meta.source === 'android' ? phoneAlertAnalysis(meta, n.title, meta?.body || meta?.preview || '') : null,
         read: n.read,
         ts: n.createdAt.toISOString(),
       }

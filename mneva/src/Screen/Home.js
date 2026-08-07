@@ -1592,12 +1592,12 @@ export default function Home({ navigation }) {
                 <Text style={styles.sectionHeader}>PHONE ALERTS</Text>
                 <View style={styles.phoneAlertsCount}><Text style={styles.phoneAlertsCountText}>{phoneAlerts.length}</Text></View>
               </View>
-              <TouchableOpacity onPress={() => navigation?.navigate?.('Notifications')}>
+              <TouchableOpacity onPress={() => navigation?.navigate?.('PhoneAlerts')}>
                 <Text style={styles.viewAllText}>View all</Text>
               </TouchableOpacity>
             </View>
             {phoneAlerts.map(alert => (
-              <TouchableOpacity key={alert.id} style={styles.phoneAlertCard} activeOpacity={0.75} onPress={() => navigation?.navigate?.('Notifications')}>
+              <TouchableOpacity key={alert.id} style={styles.phoneAlertCard} activeOpacity={0.75} onPress={() => navigation?.navigate?.('PhoneAlertDetail', { alert })}>
                 <View style={[styles.phoneAlertPriority, alert.priority >= 85 && styles.phoneAlertPriorityUrgent]}>
                   <Feather name={alert.priority >= 85 ? 'alert-circle' : 'bell'} size={16} color={alert.priority >= 85 ? '#B42318' : '#9A6700'} />
                 </View>

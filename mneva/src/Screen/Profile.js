@@ -17,6 +17,15 @@ import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
+function displayPlanName(plan) {
+  const value = (plan || 'Free').toLowerCase();
+  if (value.includes('plus')) return 'Starter';
+  if (value.includes('inner')) return 'Inner Circle';
+  if (value.includes('professional')) return 'Professional';
+  if (value.includes('starter')) return 'Starter';
+  return 'Free';
+}
+
 const SETTINGS_ROWS = [
   {
     id: "subscription",
@@ -136,7 +145,7 @@ export default function Profile({ navigation }) {
             <Text style={styles.profileEmail}>{user?.email || ''}</Text>
             <TouchableOpacity style={styles.planBadge} onPress={() => navigation?.navigate?.('Subscription')} activeOpacity={0.75}>
               <Feather name="sun" size={12} color="#1F9A5A" />
-              <Text style={styles.planBadgeText}>{"  "}{user?.plan || 'Mneva Plus'}</Text>
+              <Text style={styles.planBadgeText}>{"  "}{displayPlanName(user?.plan)}</Text>
               <Feather name="chevron-right" size={13} color="#1F9A5A" style={{ marginLeft: 4 }} />
             </TouchableOpacity>
           </View>

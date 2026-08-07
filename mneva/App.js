@@ -32,6 +32,8 @@ import Subscription from './src/Screen/Subscription';
 import Search from './src/Screen/Search';
 import MorningBriefing from './src/Screen/MorningBriefing';
 import Contacts from './src/Screen/Contacts';
+import PhoneAlerts from './src/Screen/PhoneAlerts';
+import PhoneAlertDetail from './src/Screen/PhoneAlertDetail';
 import { clearAuth, getStoredAuth } from './src/storage/auth';
 import { apiFetch, onSessionExpired } from './src/api/client';
 import { getSocket, resetSocket } from './src/services/socket';
@@ -278,6 +280,8 @@ export default function App() {
           <Stack.Screen name="Search" component={Search} />
           <Stack.Screen name="MorningBriefing" component={MorningBriefing} />
           <Stack.Screen name="Contacts" component={Contacts} />
+          <Stack.Screen name="PhoneAlerts" component={PhoneAlerts} />
+          <Stack.Screen name="PhoneAlertDetail" component={PhoneAlertDetail} />
           <Stack.Screen name="Tasks" component={Tasks} />
           <Stack.Screen name="GoogleWorkspace" component={GoogleWorkspace} />
           <Stack.Screen name="Docs" component={Docs} />
