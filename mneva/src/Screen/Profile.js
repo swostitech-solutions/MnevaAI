@@ -19,6 +19,14 @@ const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const SETTINGS_ROWS = [
   {
+    id: "subscription",
+    title: "Subscription",
+    value: "Manage your plan",
+    icon: "credit-card",
+    iconColor: "#1F9A5A",
+    screen: "Subscription",
+  },
+  {
     id: "1",
     title: "AI Profile",
     value: "Personalize Mneva",
@@ -126,10 +134,11 @@ export default function Profile({ navigation }) {
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{user?.name || 'Loading…'}</Text>
             <Text style={styles.profileEmail}>{user?.email || ''}</Text>
-            <View style={styles.planBadge}>
+            <TouchableOpacity style={styles.planBadge} onPress={() => navigation?.navigate?.('Subscription')} activeOpacity={0.75}>
               <Feather name="sun" size={12} color="#1F9A5A" />
               <Text style={styles.planBadgeText}>{"  "}{user?.plan || 'Mneva Plus'}</Text>
-            </View>
+              <Feather name="chevron-right" size={13} color="#1F9A5A" style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
           </View>
         </View>
 

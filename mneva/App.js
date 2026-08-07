@@ -28,6 +28,7 @@ import Slides from './src/Screen/Slides';
 import GoogleDrive from './src/Screen/GoogleDrive';
 import AIProfile from './src/Screen/AIProfile';
 import Settings from './src/Screen/Settings';
+import Subscription from './src/Screen/Subscription';
 import Search from './src/Screen/Search';
 import MorningBriefing from './src/Screen/MorningBriefing';
 import Contacts from './src/Screen/Contacts';
@@ -273,6 +274,7 @@ export default function App() {
           <Stack.Screen name="ConnectedAccounts" component={ConnectedAccounts} />
           <Stack.Screen name="AIProfile" component={AIProfile} />
           <Stack.Screen name="Settings" component={Settings} />
+          <Stack.Screen name="Subscription" component={Subscription} />
           <Stack.Screen name="Search" component={Search} />
           <Stack.Screen name="MorningBriefing" component={MorningBriefing} />
           <Stack.Screen name="Contacts" component={Contacts} />

@@ -68,27 +68,16 @@ router.post('/ingest', async (req, res) => {
       },
     })
 
-    let task = null
-    if (analysis.priority >= 85) {
-      task = await prisma.task.create({
-        data: {
-          userId: device.userId,
-          title: title || source,
-          description: `Important ${source} alert · ${String(body).slice(0, 180)} · priority:${analysis.priority}`,
-          status: 'PENDING',
-        },
-      })
-    }
-
     await prisma.deviceNotificationToken.update({ where: { id: device.id }, data: { lastUsedAt: new Date() } })
     const type = analysis.category === 'payments' ? 'payment' : analysis.category === 'time_sensitive' ? 'reminder' : 'info'
     const payload = { id: notification.id, title: notification.title, body: String(body).slice(0, 300), type, source: 'android', appName: source, priority: analysis.priority, ts: notification.createdAt.toISOString(), relevant: true }
     const io = req.app.get('io')
     if (io) {
       io.to(`u:${device.userId}`).emit('notification:created', payload)
-      if (task) io.to(`u:${device.userId}`).emit('task:created', task)
     }
-    res.status(201).json({ accepted: true, priority: analysis.priority, notification: payload, taskId: task?.id || null })
+    // Phone alerts are intentionally kept in the notification feed. They are
+    // not converted to Tasks, so they never appear under Today's Priorities.
+    res.status(201).json({ accepted: true, priority: analysis.priority, notification: payload })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

@@ -577,6 +577,7 @@ export default function Home({ navigation }) {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [recentNotifs, setRecentNotifs] = useState([]);
+  const [phoneAlerts, setPhoneAlerts] = useState([]);
   const [brief, setBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(true);
   const [localPriorities, setLocalPriorities] = useState([]);
@@ -695,7 +696,9 @@ export default function Home({ navigation }) {
       if (me)     setUser(me);
       if (notifs) {
         setUnreadCount(notifs.unreadCount || 0);
-        setRecentNotifs((notifs.notifications || []).filter(n => !n.read && (n.type === 'email' || n.type === 'sms')).slice(0, 4));
+        const unreadNotifications = (notifs.notifications || []).filter(n => !n.read);
+        setRecentNotifs(unreadNotifications.filter(n => n.type === 'email' || n.type === 'sms').slice(0, 4));
+        setPhoneAlerts(unreadNotifications.filter(n => n.source === 'android').slice(0, 3));
       }
       if (briefData) setBrief(briefData);
       if (calendarData) setCalendarItems(Array.isArray(calendarData) ? calendarData : calendarData.meetings || []);
@@ -813,6 +816,10 @@ export default function Home({ navigation }) {
       type: n.type || 'email',
       from: n.from || n.title || '',
       body: n.body || n.preview || '',
+      title: n.title || '',
+      source: n.source || '',
+      appName: n.appName || '',
+      priority: n.priority || 0,
       ts:   n.ts   || new Date().toISOString(),
       read: false,
     });
@@ -823,6 +830,12 @@ export default function Home({ navigation }) {
         setRecentNotifs(prev => {
           if (prev.find(x => x.id === notif.id)) return prev;
           return [notif, ...prev].slice(0, 4);
+        });
+      }
+      if (notif.source === 'android') {
+        setPhoneAlerts(prev => {
+          if (prev.find(x => x.id === notif.id)) return prev;
+          return [notif, ...prev].slice(0, 3);
         });
       }
       setUnreadCount(prev => prev + 1);
@@ -920,8 +933,9 @@ export default function Home({ navigation }) {
     const interval = setInterval(async () => {
       try {
         const notifs = await apiFetch('/api/notifications');
-        const unread = (notifs.notifications || []).filter(n => !n.read && (n.type === 'email' || n.type === 'sms')).slice(0, 4);
-        setRecentNotifs(unread);
+        const unread = (notifs.notifications || []).filter(n => !n.read);
+        setRecentNotifs(unread.filter(n => n.type === 'email' || n.type === 'sms').slice(0, 4));
+        setPhoneAlerts(unread.filter(n => n.source === 'android').slice(0, 3));
         setUnreadCount(notifs.unreadCount || 0);
       } catch {}
     }, 30000);
@@ -1242,6 +1256,9 @@ export default function Home({ navigation }) {
   const reminderTitles = new Set(todayReminders.map(item => (item.title || '').trim().toLowerCase()));
   const todayTaskItems = allTasks.filter(task => {
     if (task.status !== 'PENDING' || !isToday(task.createdAt, todayStart, todayEnd) || /^Meeting · /i.test(task.description || '')) return false;
+    // Do not show legacy phone-alert tasks in Today's Priorities. New phone
+    // alerts no longer create tasks at all (see deviceNotifications route).
+    if (/^Important .+ alert · .+ · priority:\d+$/i.test(task.description || '')) return false;
     const isReminderTask = /^Reminder ·/i.test(task.description || '');
     return !isReminderTask || !reminderTitles.has((task.title || '').trim().toLowerCase());
   });
@@ -1564,6 +1581,36 @@ export default function Home({ navigation }) {
             </View>
           </TouchableOpacity>
         </LinearGradient>
+
+        {/* Phone alerts are separate from tasks: enabling notification analysis
+            never places a captured alert in Today's Priorities. */}
+        {phoneAlerts.length > 0 && (
+          <View style={styles.phoneAlertsSection}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.phoneAlertsHeading}>
+                <View style={styles.phoneAlertsIcon}><Feather name="smartphone" size={14} color="#1F7A54" /></View>
+                <Text style={styles.sectionHeader}>PHONE ALERTS</Text>
+                <View style={styles.phoneAlertsCount}><Text style={styles.phoneAlertsCountText}>{phoneAlerts.length}</Text></View>
+              </View>
+              <TouchableOpacity onPress={() => navigation?.navigate?.('Notifications')}>
+                <Text style={styles.viewAllText}>View all</Text>
+              </TouchableOpacity>
+            </View>
+            {phoneAlerts.map(alert => (
+              <TouchableOpacity key={alert.id} style={styles.phoneAlertCard} activeOpacity={0.75} onPress={() => navigation?.navigate?.('Notifications')}>
+                <View style={[styles.phoneAlertPriority, alert.priority >= 85 && styles.phoneAlertPriorityUrgent]}>
+                  <Feather name={alert.priority >= 85 ? 'alert-circle' : 'bell'} size={16} color={alert.priority >= 85 ? '#B42318' : '#9A6700'} />
+                </View>
+                <View style={styles.phoneAlertTextWrap}>
+                  <Text style={styles.phoneAlertTitle} numberOfLines={1}>{alert.title || alert.appName || 'Phone alert'}</Text>
+                  <Text style={styles.phoneAlertBody} numberOfLines={2}>{alert.body}</Text>
+                  <Text style={styles.phoneAlertMeta}>{alert.appName || 'Android'}{alert.priority >= 60 ? ` · Priority ${alert.priority}` : ''}</Text>
+                </View>
+                <Feather name="chevron-right" size={16} color="#9AA1AE" />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Recent Inbox */}
         {recentNotifs.length > 0 && (
@@ -2170,6 +2217,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFFDF6',
     alignItems: 'center', justifyContent: 'center',
   },
+  phoneAlertsSection: { marginTop: -8, marginBottom: 24 },
+  phoneAlertsHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  phoneAlertsIcon: { width: 24, height: 24, borderRadius: 8, backgroundColor: '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
+  phoneAlertsCount: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: '#E8F5EE', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  phoneAlertsCountText: { color: '#1F7A54', fontSize: 10, fontWeight: '800' },
+  phoneAlertCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E5E7EB', gap: 10 },
+  phoneAlertPriority: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#FFF7E6', alignItems: 'center', justifyContent: 'center' },
+  phoneAlertPriorityUrgent: { backgroundColor: '#FEF3F2' },
+  phoneAlertTextWrap: { flex: 1 },
+  phoneAlertTitle: { color: '#14171F', fontSize: 13, fontWeight: '700' },
+  phoneAlertBody: { color: '#6B7280', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  phoneAlertMeta: { color: '#1F7A54', fontSize: 10, fontWeight: '700', marginTop: 4 },
   sectionHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",

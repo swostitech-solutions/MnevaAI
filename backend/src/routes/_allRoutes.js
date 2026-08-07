@@ -324,6 +324,9 @@ dashboardRouter.get('/brief', async (req, res) => {
       if (!title || title.length < 3) return false;
       if (/^[a-z_]+:[a-z0-9]+$/i.test(title)) return false;
       if (/^meeting_done:/i.test(title)) return false;
+      // Older app versions created a task from a phone alert. Keep those
+      // records for audit history, but never surface them as a Priority.
+      if (/^Important .+ alert · .+ · priority:\d+$/i.test(t.description || '')) return false;
       return true;
     });
     const makeLabel = (entry, input) => {
