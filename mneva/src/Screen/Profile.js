@@ -36,6 +36,14 @@ const SETTINGS_ROWS = [
     screen: "Subscription",
   },
   {
+    id: "phone-alerts",
+    title: "Phone Alerts",
+    value: "View alert history",
+    icon: "smartphone",
+    iconColor: "#1F9A5A",
+    screen: "PhoneAlerts",
+  },
+  {
     id: "1",
     title: "AI Profile",
     value: "Personalize Mneva",

@@ -76,6 +76,78 @@ function requestedSchedulingTool(messages = []) {
   return null
 }
 
+// Keep the confirmation after a scheduling action grounded in the tool
+// results.  A model-written "updated schedule for today" can accidentally
+// blend old and future reminders into one list.  This only reports the items
+// successfully created by the current request and groups them by their real
+// calendar day.
+function formatScheduledActionConfirmation(results = [], timeZone = 'Asia/Kolkata') {
+  const entries = results
+    .filter(entry => ['set_reminder', 'schedule_event'].includes(entry.tool) && entry.result?.success)
+    .map((entry) => ({
+      title: entry.tool === 'set_reminder' ? entry.result.message : entry.input.title,
+      scheduledAt: entry.result.scheduled || entry.input.start,
+      kind: entry.tool === 'set_reminder' ? 'Reminder' : 'Meeting',
+    }))
+    .filter(entry => entry.title && entry.scheduledAt && !Number.isNaN(new Date(entry.scheduledAt).getTime()))
+
+  if (!entries.length) return null
+
+  const dayKey = (date) => new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date)
+  const today = new Date()
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+  const todayKey = dayKey(today)
+  const tomorrowKey = dayKey(tomorrow)
+  const groups = new Map()
+
+  entries.sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt)).forEach((entry) => {
+    const date = new Date(entry.scheduledAt)
+    const key = dayKey(date)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(entry)
+  })
+
+  const dateLabel = (date) => {
+    const key = dayKey(date)
+    if (key === todayKey) return 'Today'
+    if (key === tomorrowKey) return 'Tomorrow'
+    return new Intl.DateTimeFormat('en-IN', { timeZone, weekday: 'long', day: 'numeric', month: 'long' }).format(date)
+  }
+  const timeLabel = (date) => new Intl.DateTimeFormat('en-IN', {
+    timeZone, hour: 'numeric', minute: '2-digit', hour12: true,
+  }).format(date)
+  const total = entries.length
+  const lines = [`${total === 1 ? `${entries[0].kind} set` : `${total} schedule items set`} successfully.`]
+  for (const group of groups.values()) {
+    lines.push(`\n${dateLabel(new Date(group[0].scheduledAt))}`)
+    group.forEach(item => lines.push(`• ${item.title} — ${timeLabel(new Date(item.scheduledAt))}`))
+  }
+  return lines.join('\n')
+}
+
+function calendarDayKey(value, timeZone) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatTodaySchedule(schedule = [], timeZone = 'Asia/Kolkata') {
+  const todayKey = calendarDayKey(new Date(), timeZone)
+  const title = `Today's schedule`
+  if (!schedule.length) return `${title}\n\nNo reminders or meetings are scheduled for today.`
+  const time = (value) => new Intl.DateTimeFormat('en-IN', {
+    timeZone, hour: 'numeric', minute: '2-digit', hour12: true,
+  }).format(new Date(value))
+  const items = [...schedule].sort((a, b) => new Date(a.start) - new Date(b.start))
+  // This guard keeps the response correct even if a caller accidentally
+  // supplies a record from another calendar day.
+  const todayItems = items.filter(item => calendarDayKey(item.start, timeZone) === todayKey)
+  if (!todayItems.length) return `${title}\n\nNo reminders or meetings are scheduled for today.`
+  return `${title}\n\n${todayItems.map(item => `• ${item.title} — ${time(item.start)}`).join('\n')}`
+}
+
 export function isDeepSeekConfigured(apiKey = process.env.DEEPSEEK_API_KEY) {
   const value = String(apiKey || '').trim()
   if (!value) return false
@@ -304,18 +376,48 @@ export const MNEVA_TOOLS = [
 export async function executeTool(name, input, userId) {
   switch (name) {
     case 'get_daily_brief': {
-      const [notifications, completed] = await Promise.all([
-        prisma.notification.findMany({ where: { userId, read: false }, orderBy: { createdAt: 'desc' }, take: 10 }),
-        prisma.agentLedger.findMany({ where: { userId, status: 'completed' }, orderBy: { createdAt: 'desc' }, take: 10 }),
+      const timeZone = await getUserTimeZone(userId)
+      const todayKey = calendarDayKey(new Date(), timeZone)
+      const [notifications, completed, scheduledNotifications] = await Promise.all([
+        prisma.notification.findMany({ where: { userId, read: false }, orderBy: { createdAt: 'desc' }, take: 50 }),
+        prisma.agentLedger.findMany({ where: { userId, status: 'completed' }, orderBy: { createdAt: 'desc' }, take: 50 }),
+        prisma.notification.findMany({
+          where: {
+            userId,
+            OR: [
+              { message: { contains: '"source":"reminder"' } },
+              { message: { contains: '"source":"calendar"' } },
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 200,
+        }),
       ])
-      const notifSummary = notifications.slice(0, 5).map(n => `• ${n.title}`).join('\n') || 'None'
-      const completedSummary = completed.slice(0, 5).map(l => `• ${l.tool}: ${l.action}`).join('\n') || 'None'
+      // A daily brief must not carry unread alerts or past actions from an
+      // earlier day into today's schedule.
+      const todayNotifications = notifications.filter(n => calendarDayKey(n.createdAt, timeZone) === todayKey)
+      const todayCompleted = completed.filter(l => calendarDayKey(l.createdAt, timeZone) === todayKey)
+      const todaySchedule = scheduledNotifications.map((notification) => {
+        try {
+          const meta = JSON.parse(notification.message)
+          const start = meta.start
+          if (!start || calendarDayKey(start, timeZone) !== todayKey) return null
+          return {
+            title: notification.title === '🔔 Reminder set' ? (meta.preview || 'Reminder') : notification.title.replace(/^📅 Meeting scheduled: /, ''),
+            start,
+            kind: meta.source === 'calendar' ? 'meeting' : 'reminder',
+          }
+        } catch { return null }
+      }).filter(Boolean)
+      const notifSummary = todayNotifications.slice(0, 5).map(n => `• ${n.title}`).join('\n') || 'None'
+      const completedSummary = todayCompleted.slice(0, 5).map(l => `• ${l.tool}: ${l.action}`).join('\n') || 'None'
       return {
         generatedAt: new Date().toISOString(),
-        pendingCount: notifications.length,
+        pendingCount: todayNotifications.length,
         pendingSummary: notifSummary,
-        completedCount: completed.length,
+        completedCount: todayCompleted.length,
         completedSummary,
+        todaySchedule,
         insights: [],
       }
     }
@@ -477,7 +579,7 @@ export async function executeTool(name, input, userId) {
         emitToUser(userId, 'meeting:created', { ...meeting, title: input.title, start: startDt.toISOString(), end: endDt.toISOString() })
         // Delay task:created so DB write is committed before clients query
         setTimeout(() => emitToUser(userId, 'task:created', meetingTask), 300)
-        return { success: true, taskId: meetingTask.id, calendarSaved: !calendarError, calendarError, ...meeting }
+        return { success: true, taskId: meetingTask.id, scheduled: startDt.toISOString(), calendarSaved: !calendarError, calendarError, ...meeting }
       } catch (err) {
         return { success: false, error: err.message }
       }
@@ -912,8 +1014,16 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
           mode: 'deepseek',
         }
       }
+      const scheduledConfirmation = await (async () => {
+        if (!requestedActionTool) return null
+        return formatScheduledActionConfirmation(allToolResults, await getUserTimeZone(user.id))
+      })()
+      const dailyBrief = allToolResults.find(item => item.tool === 'get_daily_brief' && item.result)
+      const dailySchedule = dailyBrief
+        ? formatTodaySchedule(dailyBrief.result.todaySchedule || [], await getUserTimeZone(user.id))
+        : null
       return {
-        response: textBlocks.map(b => b.text).join('\n'),
+        response: scheduledConfirmation || dailySchedule || textBlocks.map(b => b.text).join('\n'),
         toolResults: allToolResults,
         iterations,
         mode: 'deepseek',
