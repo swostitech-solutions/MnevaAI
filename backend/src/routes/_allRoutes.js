@@ -156,19 +156,21 @@ agentRouter.post('/transcribe', upload.single('audio'), async (req, res) => {
 agentRouter.post('/draft', async (req, res) => {
   try {
     const { subject, from, preview, body } = req.body
-    const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
+    const apiKey = process.env.OPENAI_API_KEY?.trim()
     if (!apiKey) return res.status(503).json({ error: 'AI not configured' })
     const content = `From: ${from || ''}\nSubject: ${subject || ''}\n\n${body || preview || ''}`
-    const r = await fetch(`${process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'}/chat/completions`, {
+    const url = 'https://api.openai.com/v1/chat/completions'
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        model,
         messages: [
           { role: 'system', content: `You are ${req.user?.name || 'the user'}'s AI Chief of Staff. Write a concise professional reply to the email below. Return ONLY the reply body — no subject, no greeting, no sign-off. Under 100 words.` },
           { role: 'user', content },
         ],
-        temperature: 0.4, stream: false,
+        temperature: 0.4,
       }),
     })
     const data = await r.json().catch(() => ({}))

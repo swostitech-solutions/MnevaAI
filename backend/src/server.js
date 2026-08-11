@@ -46,7 +46,7 @@ import { connectRedis, disconnectRedis } from './config/redis.js'
 import { startEmailWorker } from './queues/email.queue.js'
 import { startReminderWorker } from './queues/reminder.queue.js'
 import { startWorkflowWorker } from './queues/workflow.queue.js'
-import { isDeepSeekConfigured } from './agents/autonomyEngine.js'
+import { isOpenAIConfigured } from './agents/autonomyEngine.js'
 
 const app = express()
 
@@ -92,18 +92,17 @@ app.get('/terms', (_, res) => res.send('<html><body><h1>Terms of Service</h1><p>
 
 app.get('/api/health', (_, res) => res.json({
   status: 'ok', service: 'Mneva AI v2', version: '2.0.0',
-  ai: isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY),
-  aiConfigured: isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY),
+  ai: isOpenAIConfigured(process.env.OPENAI_API_KEY),
+  aiConfigured: isOpenAIConfigured(process.env.OPENAI_API_KEY),
   timestamp: new Date().toISOString()
 }))
-// Diagnostic endpoint to verify DeepSeek API key and connectivity
-app.get('/api/debug/deepseek', async (_req, res) => {
+// Diagnostic endpoint to verify OpenAI API key and connectivity
+app.get('/api/debug/openai', async (_req, res) => {
   try {
-    const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
-    if (!apiKey) return res.status(400).json({ ok: false, message: 'DEEPSEEK_API_KEY not set' })
+    const apiKey = process.env.OPENAI_API_KEY?.trim()
+    if (!apiKey) return res.status(400).json({ ok: false, message: 'OPENAI_API_KEY not set' })
 
-    const base = process.env.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com'
-    const model = process.env.DEEPSEEK_MODEL?.trim() || 'deepseek-chat'
+    const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini'
 
     const payload = {
       model,
@@ -112,7 +111,7 @@ app.get('/api/debug/deepseek', async (_req, res) => {
       temperature: 0.0,
     }
 
-    const resp = await fetch(`${base}/chat/completions`, {
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(payload),
@@ -120,13 +119,13 @@ app.get('/api/debug/deepseek', async (_req, res) => {
 
     const data = await resp.json().catch(() => null)
     if (!resp.ok) {
-      const message = data?.error?.message || `DeepSeek API error ${resp.status}`
+      const message = data?.error?.message || `OpenAI API error ${resp.status}`
       return res.status(resp.status).json({ ok: false, status: resp.status, message, data })
     }
 
     return res.json({ ok: true, status: resp.status, data })
   } catch (err) {
-    logger.error('DeepSeek diagnostic failed', err)
+    logger.error('OpenAI diagnostic failed', err)
     return res.status(500).json({ ok: false, error: String(err) })
   }
 })
@@ -243,7 +242,7 @@ server.on('listening', () => {
   logger.info(`🚀 Mneva AI v2 running on :${listenPort}`)
   logger.info(`📦 Redis: ${redisClient ? '✅ Ready' : '⚠️  Not reachable'}`)
   logger.info(`🧠 Qdrant: ${qdrantClient ? '✅ Ready' : '⚠️  Not reachable'}`)
-  logger.info(`🤖 DeepSeek AI: ${isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY) ? '✅ Ready' : '⚠️  Set DEEPSEEK_API_KEY'}`)
+  logger.info(`🤖 OpenAI: ${isOpenAIConfigured(process.env.OPENAI_API_KEY) ? '✅ Ready' : '⚠️  Set OPENAI_API_KEY'}`)
   logger.info(`📡 Socket.IO ready`)
 
   // Self-ping every 10 minutes to prevent Render free-tier cold starts

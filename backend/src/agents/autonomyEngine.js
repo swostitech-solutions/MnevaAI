@@ -3,8 +3,6 @@ import { ledger } from '../services/ledgerService.js'
 import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
 
-const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat'
-
 function validTimeZone(value) {
   try {
     Intl.DateTimeFormat('en-US', { timeZone: value }).format()
@@ -156,14 +154,6 @@ export function isOpenAIConfigured(apiKey = process.env.OPENAI_API_KEY) {
   return value.startsWith('sk-')
 }
 
-export function isDeepSeekConfigured(apiKey = process.env.DEEPSEEK_API_KEY) {
-  const value = String(apiKey || '').trim()
-  if (!value) return false
-  const placeholderPatterns = [/replace/i, /your-key/i, /example/i, /placeholder/i, /dummy/i]
-  if (placeholderPatterns.some(p => p.test(value))) return false
-  return value.startsWith('sk-')
-}
-
 function getOpenAIErrorMessage(error) {
   const detail = error?.message || error?.error?.message || ''
   const lower = String(detail).toLowerCase()
@@ -174,43 +164,6 @@ function getOpenAIErrorMessage(error) {
     return 'OpenAI rejected the request because the API key is invalid or expired.'
   }
   return detail || 'Unknown OpenAI error'
-}
-
-async function callDeepSeek({ model, system, messages, tools, toolChoice = null }) {
-  const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
-  if (!isDeepSeekConfigured(apiKey)) return null
-  const base = process.env.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com'
-  const payload = {
-    model,
-    messages: [
-      ...(system ? [{ role: 'system', content: system }] : []),
-      ...messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map(p => p.type === 'text' ? { type: 'text', text: p.text || '' } : p) : '') })),
-    ],
-    temperature: 0.2,
-  }
-  if (Array.isArray(tools) && tools.length) {
-    payload.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema || { type: 'object', properties: {}, required: [] } } }))
-  }
-  if (toolChoice) payload.tool_choice = { type: 'function', function: { name: toolChoice } }
-  const response = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(payload),
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data?.error?.message || `DeepSeek API error ${response.status}`)
-  const choice = data.choices?.[0]
-  const msg = choice?.message ?? {}
-  const content = []
-  if (typeof msg.content === 'string' && msg.content.trim()) content.push({ type: 'text', text: msg.content })
-  if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
-    for (const tc of msg.tool_calls) {
-      let inp = {}
-      try { inp = JSON.parse(tc.function?.arguments || '{}') } catch { inp = { raw: tc.function?.arguments || '' } }
-      content.push({ type: 'tool_use', id: tc.id || `tool_${Date.now()}`, name: tc.function?.name, input: inp })
-    }
-  }
-  return { content, stop_reason: Array.isArray(msg.tool_calls) && msg.tool_calls.length ? 'tool_use' : (choice?.finish_reason || 'end_turn'), raw: data }
 }
 
 async function callOpenAI({ model, system, messages, tools, toolChoice = null }) {
@@ -953,8 +906,7 @@ Time: ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-dig
 
 // ── Main Agent Runner ─────────────────────────────────────────────────────────
 export async function runAutonomyEngine({ messages, user, context = {}, maxIterations = 10 }) {
-  const useDeepSeek = isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY)
-  if (!useDeepSeek && !isOpenAIConfigured(process.env.OPENAI_API_KEY)) {
+  if (!isOpenAIConfigured(process.env.OPENAI_API_KEY)) {
     const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
     const lastMessage = Array.isArray(messages) ? (messages[messages.length - 1]?.content || '') : ''
     const text = recentMemory
@@ -980,7 +932,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     }
   }
 
-  const model = useDeepSeek ? (process.env.DEEPSEEK_MODEL?.trim() || DEFAULT_DEEPSEEK_MODEL) : (process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini')
+  const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini'
   const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
   const topMemory = recentMemory.slice(0, 3)
   const agentMsgs = [...messages]
@@ -1007,9 +959,9 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         messages: agentMsgs,
         toolChoice: allToolResults.length === 0 ? requestedActionTool : null,
       }
-      resp = useDeepSeek ? await callDeepSeek(_callArgs) : await callOpenAI(_callArgs)
+      resp = await callOpenAI(_callArgs)
     } catch (error) {
-      const detail = useDeepSeek ? (error?.message || String(error)) : getOpenAIErrorMessage(error)
+      const detail = getOpenAIErrorMessage(error)
       logger.error(`AI request failed: ${String(detail)}`)
 
       return {

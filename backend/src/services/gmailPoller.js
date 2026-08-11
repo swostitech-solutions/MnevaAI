@@ -9,12 +9,12 @@ const POLL_INTERVAL_MS = 60_000
 
 async function generateReplyDraft(email, userName) {
   try {
-    const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
+    const apiKey = process.env.OPENAI_API_KEY?.trim()
     if (!apiKey || apiKey.includes('replace')) return null
 
     const body = (email.body || email.preview || '').slice(0, 1500)
     const payload = {
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
@@ -26,9 +26,8 @@ async function generateReplyDraft(email, userName) {
         },
       ],
       temperature: 0.4,
-      stream: false,
     }
-    const res = await fetch(`${process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'}/chat/completions`, {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(payload),
