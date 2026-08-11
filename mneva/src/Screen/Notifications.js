@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '@react-navigation/native';
 import SmartReplyCard from '../components/SmartReplyCard';
 import ReminderAlert from '../components/ReminderAlert';
 
@@ -92,6 +93,7 @@ function NotifRow({ item, onMarkRead }) {
 
 export default function Notifications({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
   const { width } = useWindowDimensions();
   const hPad = width < 360 ? 16 : 20;
   const { on, emit } = useSocket();
@@ -213,7 +215,7 @@ export default function Notifications({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right']}>
       <ReminderAlert />
 
       {/* Auto-popup smart reply cards — Modal bottom-sheet */}

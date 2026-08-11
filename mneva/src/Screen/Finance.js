@@ -8,7 +8,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
-
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const SPEND_COLORS = ['#1F9A5A', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623', '#9B72FF', '#06B6D4'];
 

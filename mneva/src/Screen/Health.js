@@ -9,7 +9,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
-
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const SYNC_FIELDS = [

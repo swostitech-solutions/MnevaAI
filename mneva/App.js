@@ -26,6 +26,12 @@ import Docs from './src/Screen/Docs';
 import Sheets from './src/Screen/Sheets';
 import Slides from './src/Screen/Slides';
 import GoogleDrive from './src/Screen/GoogleDrive';
+import MediaDiscovery from './src/Screen/MediaDiscovery';
+import MusicDiscovery from './src/Screen/MusicDiscovery';
+import MovieDiscovery from './src/Screen/MovieDiscovery';
+import SportsDiscovery from './src/Screen/SportsDiscovery';
+import NewsDiscovery from './src/Screen/NewsDiscovery';
+import NewsStory from './src/Screen/NewsStory';
 import AIProfile from './src/Screen/AIProfile';
 import Settings from './src/Screen/Settings';
 import Subscription from './src/Screen/Subscription';
@@ -288,6 +294,12 @@ export default function App() {
           <Stack.Screen name="Sheets" component={Sheets} />
           <Stack.Screen name="Slides" component={Slides} />
           <Stack.Screen name="GoogleDrive" component={GoogleDrive} />
+          <Stack.Screen name="MediaDiscovery" component={MediaDiscovery} />
+          <Stack.Screen name="MusicDiscovery" component={MusicDiscovery} />
+          <Stack.Screen name="MovieDiscovery" component={MovieDiscovery} />
+          <Stack.Screen name="SportsDiscovery" component={SportsDiscovery} />
+          <Stack.Screen name="NewsDiscovery" component={NewsDiscovery} />
+          <Stack.Screen name="NewsStory" component={NewsStory} />
         </Stack.Navigator>
         <ReminderAlert />
       </NavigationContainer>

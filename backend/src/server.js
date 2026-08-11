@@ -36,6 +36,7 @@ import contactsRoutes, { googleContactsCallbackHandler } from './routes/contacts
 import gdriveRoutes, { gdriveCallbackHandler } from './routes/gdrive.js'
 import gtasksRoutes, { gtasksCallbackHandler } from './routes/gtasks.js'
 import { smsRouter, meetingsRouter } from './routes/_allRoutes.js'
+import tmdbRoutes from './routes/tmdb.js'
 import notifyRoutes from './routes/notify.js'
 import { onboardingRouter as onboardingRoutes } from './routes/onboarding.js'
 import deviceNotificationRoutes from './routes/deviceNotifications.js'
@@ -171,6 +172,7 @@ app.use('/api/search',        authMiddleware, searchRoutes)
 import tasksRoutes from './routes/tasks.js'
 app.use('/api/tasks', authMiddleware, tasksRoutes)
 app.use('/api/meetings', authMiddleware, meetingsRouter)
+  app.use('/api/tmdb',     authMiddleware, tmdbRoutes)
 app.use('/api/sms', smsRouter)
 app.use('/api/notify', notifyRoutes)
 app.use('/api/onboarding', authMiddleware, onboardingRoutes)

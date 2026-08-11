@@ -16,6 +16,7 @@ import {
   Linking,
   Image,
   AppState,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -28,7 +29,6 @@ import * as FileSystem from "expo-file-system/legacy";
 import { apiFetch } from "../api/client";
 import { useSocket } from "../services/socket";
 import { onAppDataRefresh } from '../services/dataRefresh';
-
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const INITIAL_MESSAGES = [
@@ -312,7 +312,21 @@ export default function AskAI({ navigation }) {
   const voiceEnabledRef = useRef(true);
   const conversationIdRef = useRef(null);
   const aiLoadingRef = useRef(false);
+  const initialHistoryPositioningRef = useRef(false);
   const { on, emit } = useSocket();
+
+  // History arrives asynchronously. Waiting for both React's layout pass and
+  // any navigation animation prevents the chat from opening at message one.
+  const scrollToLatest = useCallback((animated = false) => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated });
+      InteractionManager.runAfterInteractions(() => {
+        scrollRef.current?.scrollToEnd({ animated: false });
+      });
+    });
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 250);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 750);
+  }, []);
 
   // ── Load conversation history from backend (same as web app) ─────────────
   const loadConversation = useCallback(async () => {
@@ -345,17 +359,24 @@ export default function AskAI({ navigation }) {
         : [];
 
       if (normalized.length) {
+        initialHistoryPositioningRef.current = true;
         setMessages(normalized);
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 300);
+        scrollToLatest(false);
       }
     } catch {
       // Keep the current chat on screen; the shared recovery flow will retry.
     }
-  }, []);
+  }, [scrollToLatest]);
 
   useEffect(() => { loadConversation(); }, [loadConversation]);
   useEffect(() => onAppDataRefresh(loadConversation), [loadConversation]);
   useEffect(() => { aiLoadingRef.current = aiLoading; }, [aiLoading]);
+  useEffect(() => {
+    if (!initialHistoryPositioningRef.current) return undefined;
+    scrollToLatest(false);
+    const done = setTimeout(() => { initialHistoryPositioningRef.current = false; }, 1200);
+    return () => clearTimeout(done);
+  }, [messages, scrollToLatest]);
 
   const persistMessage = async (role, content) => {
     const convId = conversationIdRef.current;
@@ -683,8 +704,8 @@ export default function AskAI({ navigation }) {
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
         {/* Header */}
         <View style={[styles.header, { paddingHorizontal: horizontalPad }]}>
@@ -725,8 +746,12 @@ export default function AskAI({ navigation }) {
           contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad }]}
           showsVerticalScrollIndicator={false}
           keyboardDismissMode="on-drag"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => scrollRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={() => {
+            if (initialHistoryPositioningRef.current) scrollToLatest(false);
+          }}
+          onLayout={() => {
+            if (initialHistoryPositioningRef.current) scrollToLatest(false);
+          }}
         >
           {messages.map((m, idx) => {
             const prev = messages[idx - 1];

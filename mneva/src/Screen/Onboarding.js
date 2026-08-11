@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
@@ -55,7 +56,7 @@ export default function Onboarding({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <StatusBar style="dark" />
 
       <TouchableOpacity style={styles.skip} onPress={handleSkip}>
@@ -102,7 +103,7 @@ export default function Onboarding({ navigation }) {
           </Text>
         </LinearGradient>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -113,7 +114,7 @@ const styles = StyleSheet.create({
   },
   skip: {
     position: "absolute",
-    top: 60,
+    top: 16,
     right: 24,
     zIndex: 10,
   },

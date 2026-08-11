@@ -148,44 +148,74 @@ function formatTodaySchedule(schedule = [], timeZone = 'Asia/Kolkata') {
   return `${title}\n\n${todayItems.map(item => `• ${item.title} — ${time(item.start)}`).join('\n')}`
 }
 
-export function isDeepSeekConfigured(apiKey = process.env.DEEPSEEK_API_KEY) {
+export function isOpenAIConfigured(apiKey = process.env.OPENAI_API_KEY) {
   const value = String(apiKey || '').trim()
   if (!value) return false
-
-  const placeholderPatterns = [
-    /replace/i,
-    /your-key/i,
-    /example/i,
-    /placeholder/i,
-    /dummy/i,
-  ]
-
-  if (placeholderPatterns.some(pattern => pattern.test(value))) return false
+  const placeholderPatterns = [/replace/i, /your-key/i, /example/i, /placeholder/i, /dummy/i]
+  if (placeholderPatterns.some(p => p.test(value))) return false
   return value.startsWith('sk-')
 }
 
-function getDeepSeekBaseUrl() {
-  return process.env.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com'
+export function isDeepSeekConfigured(apiKey = process.env.DEEPSEEK_API_KEY) {
+  const value = String(apiKey || '').trim()
+  if (!value) return false
+  const placeholderPatterns = [/replace/i, /your-key/i, /example/i, /placeholder/i, /dummy/i]
+  if (placeholderPatterns.some(p => p.test(value))) return false
+  return value.startsWith('sk-')
 }
 
-function getDeepSeekErrorMessage(error) {
+function getOpenAIErrorMessage(error) {
   const detail = error?.message || error?.error?.message || ''
   const lower = String(detail).toLowerCase()
-
-  if (lower.includes('insufficient balance')) {
-    return 'DeepSeek rejected the request because the account has insufficient balance. Add credits to the DeepSeek account or use a different API key.'
+  if (lower.includes('insufficient_quota') || lower.includes('billing')) {
+    return 'OpenAI rejected the request due to insufficient quota. Check your billing at platform.openai.com.'
   }
-
-  if (lower.includes('invalid api key') || lower.includes('authentication_error') || lower.includes('unauthorized')) {
-    return 'DeepSeek rejected the request because the API key is invalid or expired.'
+  if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) {
+    return 'OpenAI rejected the request because the API key is invalid or expired.'
   }
-
-  return detail || 'Unknown DeepSeek error'
+  return detail || 'Unknown OpenAI error'
 }
 
 async function callDeepSeek({ model, system, messages, tools, toolChoice = null }) {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim()
   if (!isDeepSeekConfigured(apiKey)) return null
+  const base = process.env.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com'
+  const payload = {
+    model,
+    messages: [
+      ...(system ? [{ role: 'system', content: system }] : []),
+      ...messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map(p => p.type === 'text' ? { type: 'text', text: p.text || '' } : p) : '') })),
+    ],
+    temperature: 0.2,
+  }
+  if (Array.isArray(tools) && tools.length) {
+    payload.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema || { type: 'object', properties: {}, required: [] } } }))
+  }
+  if (toolChoice) payload.tool_choice = { type: 'function', function: { name: toolChoice } }
+  const response = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(data?.error?.message || `DeepSeek API error ${response.status}`)
+  const choice = data.choices?.[0]
+  const msg = choice?.message ?? {}
+  const content = []
+  if (typeof msg.content === 'string' && msg.content.trim()) content.push({ type: 'text', text: msg.content })
+  if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+    for (const tc of msg.tool_calls) {
+      let inp = {}
+      try { inp = JSON.parse(tc.function?.arguments || '{}') } catch { inp = { raw: tc.function?.arguments || '' } }
+      content.push({ type: 'tool_use', id: tc.id || `tool_${Date.now()}`, name: tc.function?.name, input: inp })
+    }
+  }
+  return { content, stop_reason: Array.isArray(msg.tool_calls) && msg.tool_calls.length ? 'tool_use' : (choice?.finish_reason || 'end_turn'), raw: data }
+}
+
+async function callOpenAI({ model, system, messages, tools, toolChoice = null }) {
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!isOpenAIConfigured(apiKey)) return null
 
   const payload = {
     model,
@@ -203,7 +233,6 @@ async function callDeepSeek({ model, system, messages, tools, toolChoice = null 
             : ''),
       })),
     ],
-    stream: false,
     temperature: 0.2,
   }
 
@@ -219,7 +248,7 @@ async function callDeepSeek({ model, system, messages, tools, toolChoice = null 
   }
   if (toolChoice) payload.tool_choice = { type: 'function', function: { name: toolChoice } }
 
-  const response = await fetch(`${getDeepSeekBaseUrl()}/chat/completions`, {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -230,7 +259,7 @@ async function callDeepSeek({ model, system, messages, tools, toolChoice = null 
 
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const message = data?.error?.message || `DeepSeek API error ${response.status}`
+    const message = data?.error?.message || `OpenAI API error ${response.status}`
     throw new Error(message)
   }
 
@@ -887,7 +916,7 @@ CRITICAL RULES:
 3. Use Indian context: ₹, UPI, Swiggy/Zomato, Ola/Uber, BSE/NSE, CIBIL, AA Framework
 4. When using tools, synthesize results naturally — don't dump raw data
 5. For action requests, present a clear confirmation card with amount/details
-6. Never say "I am DeepSeek" — you are Mneva AI
+6. Never say "I am ChatGPT" or "I am OpenAI" — you are Mneva AI
 7. Do not repeat the user's exact query in the assistant response unless it is required for clarity.
 8. Log important actions to the Signed Ledger automatically
 9. When the user asks about their own profile, name, email, or account details — answer directly from the USER PROFILE section below. Never say you don't know their name or email.
@@ -924,7 +953,8 @@ Time: ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-dig
 
 // ── Main Agent Runner ─────────────────────────────────────────────────────────
 export async function runAutonomyEngine({ messages, user, context = {}, maxIterations = 10 }) {
-  if (!isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY)) {
+  const useDeepSeek = isDeepSeekConfigured(process.env.DEEPSEEK_API_KEY)
+  if (!useDeepSeek && !isOpenAIConfigured(process.env.OPENAI_API_KEY)) {
     const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
     const lastMessage = Array.isArray(messages) ? (messages[messages.length - 1]?.content || '') : ''
     const text = recentMemory
@@ -943,14 +973,14 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     }
 
     return {
-      response: 'AI is running in local fallback mode. Set a real DEEPSEEK_API_KEY to enable full chat automation.',
+      response: 'AI is running in local fallback mode. Set a real OPENAI_API_KEY to enable full chat automation.',
       toolResults: [],
       iterations: 0,
       mode: 'local-fallback',
     }
   }
 
-  const model = process.env.DEEPSEEK_MODEL?.trim() || DEFAULT_DEEPSEEK_MODEL
+  const model = useDeepSeek ? (process.env.DEEPSEEK_MODEL?.trim() || DEFAULT_DEEPSEEK_MODEL) : (process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini')
   const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
   const topMemory = recentMemory.slice(0, 3)
   const agentMsgs = [...messages]
@@ -970,18 +1000,17 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
 
     let resp
     try {
-      resp = await callDeepSeek({
+      const _callArgs = {
         model,
         system: buildSystemPrompt(user, context),
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
-        // Only force a tool before any result exists. The following model turn
-        // receives that result and can write the user-facing response.
         toolChoice: allToolResults.length === 0 ? requestedActionTool : null,
-      })
+      }
+      resp = useDeepSeek ? await callDeepSeek(_callArgs) : await callOpenAI(_callArgs)
     } catch (error) {
-      const detail = getDeepSeekErrorMessage(error)
-      logger.error(`DeepSeek request failed: ${String(detail)}`)
+      const detail = useDeepSeek ? (error?.message || String(error)) : getOpenAIErrorMessage(error)
+      logger.error(`AI request failed: ${String(detail)}`)
 
       return {
         response: detail,
@@ -1003,7 +1032,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
           response: `I couldn’t ${failedAction.tool === 'set_reminder' ? 'set that reminder' : 'schedule that event'}: ${failedAction.result.error || 'the action did not complete.'}`,
           toolResults: allToolResults,
           iterations,
-          mode: 'deepseek',
+          mode: 'openai',
         }
       }
       if (requestedActionTool && allToolResults.length === 0) {
@@ -1011,7 +1040,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
           response: 'I couldn’t create that yet because the scheduling action was not completed. Please try again with a future date and time.',
           toolResults: [],
           iterations,
-          mode: 'deepseek',
+          mode: 'openai',
         }
       }
       const scheduledConfirmation = await (async () => {
@@ -1026,7 +1055,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         response: scheduledConfirmation || dailySchedule || textBlocks.map(b => b.text).join('\n'),
         toolResults: allToolResults,
         iterations,
-        mode: 'deepseek',
+        mode: 'openai',
       }
     }
 
@@ -1055,7 +1084,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
       }
 
       allToolResults.push({ tool: tb.name, input: tb.input, result })
-      // Convert tool results into text blocks so downstream LLMs (and DeepSeek) accept them
+      // Convert tool results into text blocks so downstream LLMs accept them
       const textResult = String(typeof result === 'string' ? result : JSON.stringify(result))
       toolResults.push({ type: 'text', text: `Tool ${tb.name} result: ${textResult}` })
     }
@@ -1063,5 +1092,5 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     agentMsgs.push({ role: 'user', content: toolResults })
   }
 
-  return { response: 'Maximum reasoning steps reached. Please simplify your request.', toolResults: allToolResults, iterations, mode: 'deepseek' }
+  return { response: 'Maximum reasoning steps reached. Please simplify your request.', toolResults: allToolResults, iterations, mode: 'openai' }
 }

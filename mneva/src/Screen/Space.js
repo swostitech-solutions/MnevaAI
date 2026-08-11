@@ -76,7 +76,16 @@ const MODULES = [
     icon: "grid",
     iconColor: "#4285F4",
     iconBg: "#E8F0FE",
-    screen: null, // opens bottom sheet
+    screen: null,
+  },
+  {
+    id: "8",
+    title: "Media & Discovery",
+    subtitle: "Music, News, Movies & Sports",
+    icon: "play-circle",
+    iconColor: "#6C47FF",
+    iconBg: "#F0EEFF",
+    screen: "MediaDiscovery",
   },
 ];
 

@@ -8,7 +8,6 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
-
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const TOOL_ICONS = {

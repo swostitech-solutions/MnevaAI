@@ -8,7 +8,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
-
 const TAB_BAR_H = 50;
 const INBOX_TABS = ['All', 'Unread', 'Flagged'];
 const PALETTE = ['#1F9A5A', '#9B72FF', '#F5A623', '#E0546E', '#4FA6E8'];
