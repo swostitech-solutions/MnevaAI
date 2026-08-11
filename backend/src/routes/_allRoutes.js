@@ -159,15 +159,39 @@ agentRouter.post('/draft', async (req, res) => {
     const apiKey = process.env.OPENAI_API_KEY?.trim()
     if (!apiKey) return res.status(503).json({ error: 'AI not configured' })
     const content = `From: ${from || ''}\nSubject: ${subject || ''}\n\n${body || preview || ''}`
-    const url = 'https://api.openai.com/v1/chat/completions'
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-    const r = await fetch(url, {
+
+    // Build schedule context — check tasks and reminders for conflicts
+    let scheduleContext = ''
+    try {
+      const userId = req.user.id
+      const [tasks, notifications] = await Promise.all([
+        prisma.task.findMany({ where: { userId, status: 'PENDING' }, orderBy: { createdAt: 'desc' }, take: 10 }),
+        prisma.notification.findMany({
+          where: { userId, OR: [{ message: { contains: '"source":"reminder"' } }, { message: { contains: '"source":"calendar"' } }] },
+          orderBy: { createdAt: 'desc' }, take: 10,
+        }),
+      ])
+      const scheduled = notifications.map(n => {
+        try {
+          const meta = JSON.parse(n.message)
+          if (!meta.start) return null
+          const t = new Date(meta.start).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+          return `\u2022 ${n.title.replace(/^[^a-zA-Z]+/, '')} \u2014 ${t}`
+        } catch { return null }
+      }).filter(Boolean)
+      const pendingTasks = tasks.map(t => `\u2022 ${t.title}`)
+      const all = [...scheduled, ...pendingTasks]
+      if (all.length) scheduleContext = `\n\nUSER'S CURRENT SCHEDULE & PENDING TASKS:\n${all.join('\n')}\n\nIMPORTANT: If this email requests a meeting or asks for availability, check the schedule above for conflicts and mention them in the draft reply. Suggest an alternative time if there is a conflict.`
+    } catch { /* best-effort */ }
+
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: `You are ${req.user?.name || 'the user'}'s AI Chief of Staff. Write a concise professional reply to the email below. Return ONLY the reply body — no subject, no greeting, no sign-off. Under 100 words.` },
+          { role: 'system', content: `You are ${req.user?.name || 'the user'}'s AI Chief of Staff. Write a concise professional reply to the email below. Return ONLY the reply body \u2014 no subject, no greeting, no sign-off. Under 120 words.${scheduleContext}` },
           { role: 'user', content },
         ],
         temperature: 0.4,

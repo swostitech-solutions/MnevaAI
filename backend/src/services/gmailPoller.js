@@ -7,10 +7,42 @@ import { sendEmail } from './gmail.service.js'
 const activePollers = new Map()
 const POLL_INTERVAL_MS = 60_000
 
-async function generateReplyDraft(email, userName) {
+async function generateReplyDraft(email, userName, userId) {
   try {
     const apiKey = process.env.OPENAI_API_KEY?.trim()
     if (!apiKey || apiKey.includes('replace')) return null
+
+    // Fetch user's upcoming tasks/reminders for schedule-aware drafting
+    let scheduleContext = ''
+    try {
+      const tasks = await prisma.task.findMany({
+        where: { userId, status: 'PENDING' },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      })
+      const notifications = await prisma.notification.findMany({
+        where: {
+          userId,
+          OR: [
+            { message: { contains: '"source":"reminder"' } },
+            { message: { contains: '"source":"calendar"' } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      })
+      const scheduled = notifications.map(n => {
+        try {
+          const meta = JSON.parse(n.message)
+          if (!meta.start) return null
+          const t = new Date(meta.start).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+          return `• ${n.title.replace(/^[^a-zA-Z]+/, '')} — ${t}`
+        } catch { return null }
+      }).filter(Boolean)
+      const pendingTasks = tasks.map(t => `• ${t.title}`)
+      const all = [...scheduled, ...pendingTasks]
+      if (all.length) scheduleContext = `\n\nUSER'S CURRENT SCHEDULE & PENDING TASKS:\n${all.join('\n')}\n\nIMPORTANT: If this email requests a meeting or asks for availability, check the schedule above for conflicts and mention them in the draft reply. Suggest an alternative time if there is a conflict.`
+    } catch { /* schedule context is best-effort */ }
 
     const body = (email.body || email.preview || '').slice(0, 1500)
     const payload = {
@@ -18,7 +50,7 @@ async function generateReplyDraft(email, userName) {
       messages: [
         {
           role: 'system',
-          content: `You are ${userName}'s AI Chief of Staff. Write a concise, professional reply draft to the email below. Match a natural human tone. Return ONLY the reply body text — no subject line, no "Dear...", no sign-off needed. Keep it under 100 words.`,
+          content: `You are ${userName}'s AI Chief of Staff. Write a concise, professional reply draft to the email below. Match a natural human tone. Return ONLY the reply body text — no subject line, no "Dear...", no sign-off needed. Keep it under 120 words.${scheduleContext}`,
         },
         {
           role: 'user',
@@ -63,7 +95,7 @@ async function pollOnce(userId, io) {
         fullEmail = { ...email, body: body.body }
       } catch { /* use preview fallback */ }
 
-      const draft = await generateReplyDraft(fullEmail, user.name || 'User')
+      const draft = await generateReplyDraft(fullEmail, user.name || 'User', userId)
 
       const notif = await prisma.notification.create({
         data: {

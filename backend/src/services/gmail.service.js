@@ -191,7 +191,7 @@ export async function listEmails(user, filter = 'all', limit = 20) {
     const ts = internalDate ? Number(internalDate) : Date.parse(dateHeader)
     const parsedDate = Number.isFinite(ts) ? new Date(ts) : null
     const date = parsedDate ? parsedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : (dateHeader || '')
-    const time = parsedDate ? parsedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''
+    const time = parsedDate ? parsedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : ''
 
     const labelIds = messageData.data.labelIds || []
     const category = labelIds.includes('CATEGORY_SOCIAL') ? 'Social'
