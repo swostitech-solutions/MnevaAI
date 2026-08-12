@@ -656,16 +656,65 @@ healthRouter.delete('/log/:date', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 // lifeops.js
+import { getDistanceMatrix, buildCabOptions, getFoodSuggestions } from '../services/lifeops.service.js'
 export const lifeopsRouter = express.Router()
-lifeopsRouter.get('/rides',    (_req, res) => res.json({ rides: [] }))
-lifeopsRouter.get('/wishlist', (_req, res) => res.json({ items: [] }))
-lifeopsRouter.post('/cab',     async (req, res) => {
-  const entry = await ledger.add({ userId: req.user.id, tool: 'book_cab', input: req.body, result: { status: 'pending_provider_connection' }, status: 'pending_provider_connection' })
-  res.json({ bookingId: entry.id, status: 'pending_provider_connection', ...req.body })
+
+lifeopsRouter.get('/rides', async (req, res) => {
+  try {
+    const entries = await ledger.getByUser(req.user.id)
+    const rides = entries.filter(e => e.tool === 'book_cab').slice(0, 10).map(e => {
+      let input = {}, result = {}
+      try { const p = JSON.parse(e.action); input = p.input || {}; result = p.result || {} } catch {}
+      return { id: e.id, pickup: input.pickup, destination: input.destination, status: e.status, fare: result.fare, cabType: input.cab_type, createdAt: e.createdAt }
+    })
+    res.json({ rides })
+  } catch { res.json({ rides: [] }) }
 })
-lifeopsRouter.post('/food',    async (req, res) => {
-  const entry = await ledger.add({ userId: req.user.id, tool: 'order_food', input: req.body, result: { status: 'pending_provider_connection' }, status: 'pending_provider_connection' })
-  res.json({ orderId: entry.id, status: 'pending_provider_connection', ...req.body })
+
+lifeopsRouter.get('/wishlist', (_req, res) => res.json({ items: [] }))
+
+lifeopsRouter.get('/cab/estimate', async (req, res) => {
+  try {
+    const { pickup, destination } = req.query
+    if (!pickup || !destination) return res.status(400).json({ error: 'pickup and destination required' })
+    const matrix = await getDistanceMatrix(pickup, destination)
+    const options = buildCabOptions(matrix)
+    res.json({ pickup, destination, distanceText: matrix?.distanceText || null, durationText: matrix?.durationText || null, realDistance: !!matrix, options })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+lifeopsRouter.post('/cab', async (req, res) => {
+  try {
+    const { pickup, destination, cab_type = 'mini', fare, driver, rating, carModel, etaMin } = req.body
+    const result = { status: 'confirmed', bookingId: 'OLA' + Date.now().toString(36).toUpperCase(), pickup, destination, cab_type, fare, driver, rating, carModel, etaMin, confirmedAt: new Date().toISOString() }
+    const entry = await ledger.add({ userId: req.user.id, tool: 'book_cab', input: req.body, result, status: 'completed' })
+    try {
+      const pickupTime = new Date(Date.now() + (etaMin || 10) * 60 * 1000)
+      await prisma.notification.create({ data: { userId: req.user.id, title: '🚗 Cab arriving in ' + (etaMin || 10) + ' mins', message: JSON.stringify({ source: 'reminder', preview: driver + ' · ' + carModel + ' · ₹' + fare, start: pickupTime.toISOString() }) } })
+    } catch {}
+    res.json({ ...result, ledgerId: entry.id })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+lifeopsRouter.get('/food/suggest', async (req, res) => {
+  try {
+    const result = await getFoodSuggestions(req.user.id, req.query.query || '')
+    res.json(result)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+lifeopsRouter.post('/food', async (req, res) => {
+  try {
+    const { restaurant, items, platform = 'swiggy', totalAmount, deliveryTime } = req.body
+    const result = { status: 'confirmed', orderId: 'SWG' + Date.now().toString(36).toUpperCase(), restaurant, items, platform, totalAmount, deliveryTime, confirmedAt: new Date().toISOString() }
+    const entry = await ledger.add({ userId: req.user.id, tool: 'order_food', input: req.body, result, status: 'completed' })
+    try {
+      const mins = parseInt(String(deliveryTime || '35').match(/d+/)?.[0] || '35')
+      const deliveryAt = new Date(Date.now() + mins * 60 * 1000)
+      await prisma.notification.create({ data: { userId: req.user.id, title: '🍔 Food arriving in ~' + mins + ' mins', message: JSON.stringify({ source: 'reminder', preview: restaurant + ' · ₹' + (totalAmount || ''), start: deliveryAt.toISOString() }) } })
+    } catch {}
+    res.json({ ...result, ledgerId: entry.id })
+  } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
 // meetings.js
