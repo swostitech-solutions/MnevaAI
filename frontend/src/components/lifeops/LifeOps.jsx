@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { lifeApi } from '../../services/api'
 import toast from 'react-hot-toast'
 
@@ -14,7 +14,10 @@ export default function LifeOps() {
   const [foodForm, setFoodForm] = useState({ restaurant: 'Paradise Restaurant', items: ['Chicken Biryani'], platform: 'swiggy' })
 
   const { data: rides }    = useQuery({ queryKey: ['rides'],    queryFn: lifeApi.rides,    staleTime: 5 * 60000 })
+  const { data: foodOrders } = useQuery({ queryKey: ['orders'],  queryFn: lifeApi.orders,  staleTime: 5 * 60000 })
   const { data: wishlist } = useQuery({ queryKey: ['wishlist'], queryFn: lifeApi.wishlist, staleTime: 5 * 60000 })
+
+  const queryClient = useQueryClient()
 
   const bookCab = async () => {
     try {
@@ -23,6 +26,7 @@ export default function LifeOps() {
         ? '🚗 Cab request logged — connect Ola/Uber in Settings to enable live booking'
         : `🚗 Cab booked! Booking ID: ${r?.bookingId}`
       toast.success(msg)
+      queryClient.invalidateQueries({ queryKey: ['rides'] })
       setCabModal(false)
     } catch { toast.error('Booking failed') }
   }
@@ -34,6 +38,7 @@ export default function LifeOps() {
         ? '🍛 Order logged — connect Swiggy/Zomato in Settings to enable live ordering'
         : `🍛 Order placed! Order ID: ${r?.orderId}`
       toast.success(msg)
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
       setFoodModal(false)
     } catch { toast.error('Order failed') }
   }
@@ -71,48 +76,69 @@ export default function LifeOps() {
         {/* Ride History */}
         <div className="card" style={{ padding: 18 }}>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>🚗 Ride History</div>
-          {rides?.rides?.map(r => (
+          {rides?.rides?.length > 0 ? rides.rides.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--rim1)' }}>
               <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(61,139,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>🚗</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{r.from} → {r.to}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink3)' }}>{r.type} · {r.date} · {r.driver}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{r.pickup} → {r.destination}</div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)' }}>{r.cabType} · {r.status}</div>
               </div>
-              <span className="badge badge-go">₹{r.fare}</span>
+              {r.fare && <span className="badge badge-go">₹{r.fare}</span>}
             </div>
-          ))}
+          )) : <div style={{ fontSize: 12, color: 'var(--ink3)', padding: '8px 0' }}>No rides yet</div>}
           <button className="btn-ghost" style={{ width: '100%', marginTop: 12, fontSize: 12, padding: '8px' }} onClick={() => setCabModal(true)}>
             🚗 Book New Ride
           </button>
         </div>
 
-        {/* Wishlist */}
+        {/* Food Order History */}
         <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>🛒 Wishlist Price Alerts</div>
-          {wishlist?.items?.map(item => (
-            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--rim1)' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>🍛 Food Orders</div>
+          {foodOrders?.orders?.length > 0 ? foodOrders.orders.map(o => (
+            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--rim1)' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(0,227,150,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
+                {o.platform === 'zomato' ? '🔴' : '🧡'}
+              </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{item.name}</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 2, alignItems: 'center' }}>
-                  {item.dropPct > 0 && <span style={{ fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>₹{item.origPrice.toLocaleString('en-IN')}</span>}
-                  <span style={{ fontSize: 12, fontWeight: 700, color: item.dropPct > 0 ? 'var(--go)' : 'var(--ink2)' }}>₹{item.curPrice.toLocaleString('en-IN')}</span>
-                  <span style={{ fontSize: 10.5, color: 'var(--ink3)' }}>· {item.platform}</span>
-                </div>
-                <div style={{ fontSize: 10.5, color: 'var(--ink3)', marginTop: 1 }}>Target: ₹{item.target.toLocaleString('en-IN')}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{o.restaurant}</div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)' }}>{Array.isArray(o.items) ? o.items.join(', ') : o.items} · {o.platform}</div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                {item.dropPct > 0
-                  ? <span className="badge badge-go">↓{item.dropPct}%</span>
-                  : <span className="badge badge-pulse">Watching</span>}
-                {item.available && item.curPrice <= item.target && (
-                  <div style={{ marginTop: 5 }}>
-                    <button className="btn-approve" style={{ fontSize: 10 }} onClick={() => toast.success(`🛒 Buy ${item.name} link sent to your phone!`)}>Buy Now</button>
-                  </div>
-                )}
-              </div>
+              {o.totalAmount && <span className="badge badge-go">₹{o.totalAmount}</span>}
             </div>
-          ))}
+          )) : <div style={{ fontSize: 12, color: 'var(--ink3)', padding: '8px 0' }}>No orders yet</div>}
+          <button className="btn-ghost" style={{ width: '100%', marginTop: 12, fontSize: 12, padding: '8px' }} onClick={() => setFoodModal(true)}>
+            🍛 Order Food
+          </button>
         </div>
+
+      </motion.div>
+
+      {/* Wishlist */}
+      <motion.div variants={up} className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>🛒 Wishlist Price Alerts</div>
+        {wishlist?.items?.length > 0 ? wishlist.items.map(item => (
+          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--rim1)' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{item.name}</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 2, alignItems: 'center' }}>
+                {item.dropPct > 0 && <span style={{ fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>₹{item.origPrice.toLocaleString('en-IN')}</span>}
+                <span style={{ fontSize: 12, fontWeight: 700, color: item.dropPct > 0 ? 'var(--go)' : 'var(--ink2)' }}>₹{item.curPrice.toLocaleString('en-IN')}</span>
+                <span style={{ fontSize: 10.5, color: 'var(--ink3)' }}>· {item.platform}</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink3)', marginTop: 1 }}>Target: ₹{item.target.toLocaleString('en-IN')}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              {item.dropPct > 0
+                ? <span className="badge badge-go">↓{item.dropPct}%</span>
+                : <span className="badge badge-pulse">Watching</span>}
+              {item.available && item.curPrice <= item.target && (
+                <div style={{ marginTop: 5 }}>
+                  <button className="btn-approve" style={{ fontSize: 10 }} onClick={() => toast.success(`🛒 Buy ${item.name} link sent to your phone!`)}>Buy Now</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )) : <div style={{ fontSize: 12, color: 'var(--ink3)' }}>No wishlist items</div>}
       </motion.div>
 
       {/* Modals */}

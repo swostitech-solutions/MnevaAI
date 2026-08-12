@@ -696,6 +696,18 @@ lifeopsRouter.post('/cab', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+lifeopsRouter.get('/orders', async (req, res) => {
+  try {
+    const entries = await ledger.getByUser(req.user.id)
+    const orders = entries.filter(e => e.tool === 'order_food').slice(0, 10).map(e => {
+      let input = {}, result = {}
+      try { const p = JSON.parse(e.action); input = p.input || {}; result = p.result || {} } catch {}
+      return { id: e.id, restaurant: input.restaurant, items: input.items, platform: input.platform, totalAmount: result.totalAmount, deliveryTime: result.deliveryTime, status: e.status, createdAt: e.createdAt }
+    })
+    res.json({ orders })
+  } catch { res.json({ orders: [] }) }
+})
+
 lifeopsRouter.get('/food/suggest', async (req, res) => {
   try {
     const result = await getFoodSuggestions(req.user.id, req.query.query || '')

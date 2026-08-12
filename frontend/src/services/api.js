@@ -111,6 +111,7 @@ export const healthApi = {
 }
 export const lifeApi = {
   rides:    ()   => api.get('/lifeops/rides').then(r => r.data),
+  orders:   ()   => api.get('/lifeops/orders').then(r => r.data),
   wishlist: ()   => api.get('/lifeops/wishlist').then(r => r.data),
   cab:      d    => api.post('/lifeops/cab', d).then(r => r.data),
   food:     d    => api.post('/lifeops/food', d).then(r => r.data),

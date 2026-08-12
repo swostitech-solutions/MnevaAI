@@ -18,6 +18,7 @@ export default function LifeOps({ navigation }) {
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
 
   const [rides, setRides] = useState([]);
+  const [foodOrders, setFoodOrders] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -70,11 +71,13 @@ export default function LifeOps({ navigation }) {
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
-      const [r, w] = await Promise.all([
+      const [r, f, w] = await Promise.all([
         apiFetch('/api/lifeops/rides'),
+        apiFetch('/api/lifeops/orders'),
         apiFetch('/api/lifeops/wishlist'),
       ]);
       setRides(r.rides || []);
+      setFoodOrders(f.orders || []);
       setWishlist(w.items || []);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
@@ -134,7 +137,7 @@ export default function LifeOps({ navigation }) {
       });
       setFoodResult(res);
       setFoodStep('confirmed');
-      loadData(true);
+      loadData(true); // refreshes food orders list
     } catch {}
     finally { setOrderingFood(false); }
   };
@@ -241,6 +244,39 @@ export default function LifeOps({ navigation }) {
                     {ride.status || 'Pending'}
                   </Text>
                 </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Food Orders */}
+        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>RECENT FOOD ORDERS</Text>
+        <View style={styles.sectionCard}>
+          {loading ? (
+            [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
+          ) : foodOrders.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Feather name="shopping-bag" size={26} color="#C7CBD3" />
+              <Text style={styles.emptyText}>No orders yet. Order food above.</Text>
+            </View>
+          ) : (
+            foodOrders.map((order, i) => (
+              <View key={order.id || i} style={[styles.listRow, i !== foodOrders.length - 1 && styles.listRowDivider]}>
+                <View style={styles.foodIconWrap}>
+                  <Feather name="shopping-bag" size={16} color="#F5A623" />
+                </View>
+                <View style={styles.listTextWrap}>
+                  <Text style={styles.listTitle}>{order.restaurant}</Text>
+                  <Text style={styles.listSubtitle}>
+                    {Array.isArray(order.items) ? order.items.join(', ') : order.items}
+                    {order.platform ? ` · ${order.platform}` : ''}
+                  </Text>
+                </View>
+                {order.totalAmount ? (
+                  <View style={[styles.rideBadge, { backgroundColor: '#FEF3C7' }]}>
+                    <Text style={[styles.rideBadgeText, { color: '#D97706' }]}>₹{order.totalAmount}</Text>
+                  </View>
+                ) : null}
               </View>
             ))
           )}
@@ -815,6 +851,7 @@ const styles = StyleSheet.create({
   listRowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
   rideIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFFDF6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   wishIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  foodIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   listTextWrap: { flex: 1 },
   listTitle: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
   listSubtitle: { fontSize: 12, color: '#9AA1AE' },
