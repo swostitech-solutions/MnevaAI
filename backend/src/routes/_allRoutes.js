@@ -729,6 +729,37 @@ lifeopsRouter.post('/food', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// Hotel search — GET /api/lifeops/hotel/search?city=Goa&checkIn=2025-08-01&checkOut=2025-08-03
+lifeopsRouter.get('/hotel/search', async (req, res) => {
+  try {
+    const { city, checkIn, checkOut, adults = 1 } = req.query
+    if (!city || !checkIn || !checkOut) return res.status(400).json({ error: 'city, checkIn and checkOut are required' })
+    const { searchHotels } = await import('../services/hotel.service.js')
+    const hotels = await searchHotels({ cityName: city, checkIn, checkOut, adults: parseInt(adults) })
+    res.json({ hotels })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Hotel book — POST /api/lifeops/hotel/book
+lifeopsRouter.post('/hotel/book', async (req, res) => {
+  try {
+    const { offerId, hotelName, roomType, price, checkIn, checkOut, city } = req.body
+    if (!offerId) return res.status(400).json({ error: 'offerId is required' })
+    const { bookHotel } = await import('../services/hotel.service.js')
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true, email: true } })
+    const result = await bookHotel({
+      hotelId:   offerId,
+      hotelName, roomType, price, checkIn, checkOut, city,
+      guestName: user?.name || 'Guest User',
+    })
+    const entry = await ledger.add({ userId: req.user.id, tool: 'book_hotel', input: req.body, result, status: 'completed' })
+    try {
+      await prisma.notification.create({ data: { userId: req.user.id, title: '🏨 Hotel booked — ' + hotelName, message: JSON.stringify({ source: 'reminder', preview: roomType + ' · ' + checkIn + ' → ' + checkOut + ' · ₹' + price }) } })
+    } catch {}
+    res.json({ ...result, hotelName, roomType, price, checkIn, checkOut, city, ledgerId: entry.id })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // meetings.js
 export const meetingsRouter = express.Router()
 

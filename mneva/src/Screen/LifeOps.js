@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, TextInput, Modal, TouchableWithoutFeedback,
-  KeyboardAvoidingView, Platform, useWindowDimensions,
+  KeyboardAvoidingView, Platform, useWindowDimensions, Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,7 +19,16 @@ export default function LifeOps({ navigation }) {
 
   const [rides, setRides] = useState([]);
   const [foodOrders, setFoodOrders] = useState([]);
-  const [wishlist, setWishlist] = useState([]);
+  const [movieModal, setMovieModal] = useState(false);
+  const [movieStep, setMovieStep] = useState('input'); // 'input' | 'shows' | 'seats' | 'confirmed'
+  const [movieCity, setMovieCity] = useState('');
+  const [movieTitle, setMovieTitle] = useState('');
+  const [selectedCinema, setSelectedCinema] = useState(null);
+  const [selectedShow, setSelectedShow] = useState(null);
+  const [selectedSeats, setSelectedSeats] = useState([]);
+  const [bookingMovie, setBookingMovie] = useState(false);
+  const [movieResult, setMovieResult] = useState(null);
+  const [bookedTickets, setBookedTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -48,19 +57,31 @@ export default function LifeOps({ navigation }) {
 
   // Flight modal
   const [flightModal, setFlightModal] = useState(false);
+  const [flightStep, setFlightStep] = useState('input'); // 'input' | 'flights' | 'seats' | 'confirmed'
   const [flightFrom, setFlightFrom] = useState('');
   const [flightTo, setFlightTo] = useState('');
   const [flightDate, setFlightDate] = useState('');
+  const [flightClass, setFlightClass] = useState('Economy');
+  const [selectedFlight, setSelectedFlight] = useState(null);
+  const [selectedSeat, setSelectedSeat] = useState(null);
   const [bookingFlight, setBookingFlight] = useState(false);
   const [flightResult, setFlightResult] = useState(null);
+  const [bookedFlights, setBookedFlights] = useState([]);
 
   // Hotel modal
   const [hotelModal, setHotelModal] = useState(false);
+  const [hotelStep, setHotelStep] = useState('input'); // 'input' | 'options' | 'room' | 'confirmed'
   const [hotelCity, setHotelCity] = useState('');
   const [hotelCheckin, setHotelCheckin] = useState('');
   const [hotelCheckout, setHotelCheckout] = useState('');
+  const [selectedHotel, setSelectedHotel] = useState(null);
+  const [selectedRoom, setSelectedRoom] = useState(null);
   const [bookingHotel, setBookingHotel] = useState(false);
   const [hotelResult, setHotelResult] = useState(null);
+  const [bookedHotels, setBookedHotels] = useState([]);
+  const [hotelSearchResults, setHotelSearchResults] = useState([]);
+  const [hotelSearchLoading, setHotelSearchLoading] = useState(false);
+  const [hotelSearchError, setHotelSearchError] = useState(null);
 
   // Track Orders modal
   const [trackModal, setTrackModal] = useState(false);
@@ -71,14 +92,12 @@ export default function LifeOps({ navigation }) {
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
-      const [r, f, w] = await Promise.all([
+      const [r, f] = await Promise.all([
         apiFetch('/api/lifeops/rides'),
         apiFetch('/api/lifeops/orders'),
-        apiFetch('/api/lifeops/wishlist'),
       ]);
       setRides(r.rides || []);
       setFoodOrders(f.orders || []);
-      setWishlist(w.items || []);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
@@ -142,32 +161,6 @@ export default function LifeOps({ navigation }) {
     finally { setOrderingFood(false); }
   };
 
-  const bookFlight = async () => {
-    if (!flightFrom.trim() || !flightTo.trim()) return;
-    setBookingFlight(true);
-    try {
-      const res = await apiFetch('/api/lifeops/flight', {
-        method: 'POST',
-        body: { from: flightFrom.trim(), to: flightTo.trim(), date: flightDate.trim() },
-      });
-      setFlightResult(res);
-    } catch { setFlightResult({ status: 'search_initiated' }); }
-    finally { setBookingFlight(false); }
-  };
-
-  const bookHotel = async () => {
-    if (!hotelCity.trim()) return;
-    setBookingHotel(true);
-    try {
-      const res = await apiFetch('/api/lifeops/hotel', {
-        method: 'POST',
-        body: { city: hotelCity.trim(), checkin: hotelCheckin.trim(), checkout: hotelCheckout.trim() },
-      });
-      setHotelResult(res);
-    } catch { setHotelResult({ status: 'search_initiated' }); }
-    finally { setBookingHotel(false); }
-  };
-
   const trackOrder = async () => {
     if (!trackId.trim()) return;
     setTracking(true);
@@ -181,10 +174,10 @@ export default function LifeOps({ navigation }) {
   const QUICK_ACTIONS = [
     { icon: 'truck', label: 'Book Cab', color: '#1F9A5A', bg: '#EFFDF6', onPress: () => { setCabResult(null); setCabStep('input'); setCabEstimate(null); setSelectedCab(null); setPickup(''); setDestination(''); setCabModal(true); } },
     { icon: 'shopping-bag', label: 'Order Food', color: '#F5A623', bg: '#FEF3C7', onPress: () => { setFoodResult(null); setFoodStep('input'); setFoodQuery(''); setFoodSuggestions([]); setSelectedRestaurant(null); setFoodModal(true); } },
-    { icon: 'heart', label: 'Wishlist', color: '#E0546E', bg: '#FCEAED', onPress: () => {} },
+    { icon: 'film', label: 'Book Movie', color: '#6C47FF', bg: '#F3EFFE', onPress: () => { setMovieResult(null); setMovieCity(''); setMovieTitle(''); setMovieModal(true); } },
     { icon: 'package', label: 'Deliveries', color: '#4FA6E8', bg: '#EAF3FD', onPress: () => {} },
-    { icon: 'send', label: 'Book Flight', color: '#9B72FF', bg: '#F3EFFE', onPress: () => { setFlightResult(null); setFlightModal(true); } },
-    { icon: 'coffee', label: 'Book Hotel', color: '#E0546E', bg: '#FCEAED', onPress: () => { setHotelResult(null); setHotelModal(true); } },
+    { icon: 'send', label: 'Book Flight', color: '#9B72FF', bg: '#F3EFFE', onPress: () => { setFlightResult(null); setFlightStep('input'); setFlightFrom(''); setFlightTo(''); setFlightDate(''); setFlightClass('Economy'); setSelectedFlight(null); setSelectedSeat(null); setFlightModal(true); } },
+    { icon: 'coffee', label: 'Book Hotel', color: '#E0546E', bg: '#FCEAED', onPress: () => { setHotelResult(null); setHotelStep('input'); setHotelCity(''); setHotelCheckin(''); setHotelCheckout(''); setSelectedHotel(null); setSelectedRoom(null); setHotelSearchResults([]); setHotelSearchError(null); setHotelModal(true); } },
     { icon: 'map-pin', label: 'Track Orders', color: '#F5A623', bg: '#FEF3C7', onPress: () => { setTrackResult(null); setTrackModal(true); } },
   ];
 
@@ -282,25 +275,117 @@ export default function LifeOps({ navigation }) {
           )}
         </View>
 
-        {/* Wishlist */}
-        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>WISHLIST</Text>
+        {/* Book Movies */}
+        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>BOOK MOVIES</Text>
         <View style={styles.sectionCard}>
-          {loading ? (
-            [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
-          ) : wishlist.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="heart" size={26} color="#C7CBD3" />
-              <Text style={styles.emptyText}>Your wishlist is empty</Text>
+          <TouchableOpacity
+            style={styles.movieBannerRow}
+            activeOpacity={0.8}
+            onPress={() => { setMovieResult(null); setMovieStep('input'); setMovieCity(''); setMovieTitle(''); setSelectedCinema(null); setSelectedShow(null); setSelectedSeats([]); setMovieModal(true); }}
+          >
+            <LinearGradient colors={['#6C47FF', '#4A2FCC']} style={styles.movieBannerIcon}>
+              <Feather name="film" size={22} color="#FFFFFF" />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.movieBannerTitle}>Book Cinema Tickets</Text>
+              <Text style={styles.movieBannerSub}>PVR · INOX · Cinepolis</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color="#6C47FF" />
+          </TouchableOpacity>
+          {bookedTickets.length === 0 ? (
+            <View style={[styles.emptyWrap, { paddingVertical: 16 }]}>
+              <Text style={styles.emptyText}>No bookings yet. Tap above to book.</Text>
             </View>
           ) : (
-            wishlist.map((item, i) => (
-              <View key={item.id || i} style={[styles.listRow, i !== wishlist.length - 1 && styles.listRowDivider]}>
-                <View style={styles.wishIconWrap}>
-                  <Feather name="heart" size={16} color="#E0546E" />
+            bookedTickets.map((t, i) => (
+              <View key={i} style={[styles.listRow, i !== bookedTickets.length - 1 && styles.listRowDivider]}>
+                <View style={styles.movieIconWrap}>
+                  <Feather name="film" size={15} color="#6C47FF" />
                 </View>
                 <View style={styles.listTextWrap}>
-                  <Text style={styles.listTitle}>{item.name}</Text>
-                  <Text style={styles.listSubtitle}>{item.price ? `₹${item.price}` : ''} {item.platform ? `· ${item.platform}` : ''}</Text>
+                  <Text style={styles.listTitle}>{t.movie}</Text>
+                  <Text style={styles.listSubtitle}>{t.cinema} · {t.show} · {t.seats.join(', ')}</Text>
+                </View>
+                <View style={[styles.rideBadge, { backgroundColor: '#F3EFFE' }]}>
+                  <Text style={[styles.rideBadgeText, { color: '#6C47FF' }]}>₹{t.amount}</Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Book Flight */}
+        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>BOOK FLIGHT</Text>
+        <View style={styles.sectionCard}>
+          <TouchableOpacity
+            style={styles.movieBannerRow}
+            activeOpacity={0.8}
+            onPress={() => { setFlightResult(null); setFlightStep('input'); setFlightFrom(''); setFlightTo(''); setFlightDate(''); setFlightClass('Economy'); setSelectedFlight(null); setSelectedSeat(null); setFlightModal(true); }}
+          >
+            <LinearGradient colors={['#9B72FF', '#7C5CE8']} style={styles.movieBannerIcon}>
+              <Feather name="send" size={22} color="#FFFFFF" />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.movieBannerTitle}>Book Flight Tickets</Text>
+              <Text style={styles.movieBannerSub}>IndiGo · Air India · Vistara · SpiceJet</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color="#9B72FF" />
+          </TouchableOpacity>
+          {bookedFlights.length === 0 ? (
+            <View style={[styles.emptyWrap, { paddingVertical: 16 }]}>
+              <Text style={styles.emptyText}>No bookings yet. Tap above to book.</Text>
+            </View>
+          ) : (
+            bookedFlights.map((f, i) => (
+              <View key={i} style={[styles.listRow, i !== bookedFlights.length - 1 && styles.listRowDivider]}>
+                <View style={[styles.movieIconWrap, { backgroundColor: '#F3EFFE' }]}>
+                  <Feather name="send" size={15} color="#9B72FF" />
+                </View>
+                <View style={styles.listTextWrap}>
+                  <Text style={styles.listTitle}>{f.airline} {f.flight} · Seat {f.seat}</Text>
+                  <Text style={styles.listSubtitle}>{f.from} → {f.to} · {f.depart} · {f.class}</Text>
+                </View>
+                <View style={[styles.rideBadge, { backgroundColor: '#F3EFFE' }]}>
+                  <Text style={[styles.rideBadgeText, { color: '#9B72FF' }]}>₹{f.price.toLocaleString('en-IN')}</Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Book Hotel */}
+        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>BOOK HOTEL</Text>
+        <View style={styles.sectionCard}>
+          <TouchableOpacity
+            style={styles.movieBannerRow}
+            activeOpacity={0.8}
+            onPress={() => { setHotelResult(null); setHotelStep('input'); setHotelCity(''); setHotelCheckin(''); setHotelCheckout(''); setSelectedHotel(null); setSelectedRoom(null); setHotelSearchResults([]); setHotelSearchError(null); setHotelModal(true); }}
+          >
+            <LinearGradient colors={['#E0546E', '#C8405A']} style={styles.movieBannerIcon}>
+              <Feather name="home" size={22} color="#FFFFFF" />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.movieBannerTitle}>Book Hotel Stay</Text>
+              <Text style={styles.movieBannerSub}>MakeMyTrip · Goibibo · OYO</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color="#E0546E" />
+          </TouchableOpacity>
+          {bookedHotels.length === 0 ? (
+            <View style={[styles.emptyWrap, { paddingVertical: 16 }]}>
+              <Text style={styles.emptyText}>No bookings yet. Tap above to book.</Text>
+            </View>
+          ) : (
+            bookedHotels.map((h, i) => (
+              <View key={i} style={[styles.listRow, i !== bookedHotels.length - 1 && styles.listRowDivider]}>
+                <View style={[styles.movieIconWrap, { backgroundColor: '#FCEAED' }]}>
+                  <Feather name="home" size={15} color="#E0546E" />
+                </View>
+                <View style={styles.listTextWrap}>
+                  <Text style={styles.listTitle}>{h.hotel}</Text>
+                  <Text style={styles.listSubtitle}>{h.room} · {h.city} · {h.checkin} → {h.checkout}</Text>
+                </View>
+                <View style={[styles.rideBadge, { backgroundColor: '#FCEAED' }]}>
+                  <Text style={[styles.rideBadgeText, { color: '#E0546E' }]}>₹{h.price.toLocaleString('en-IN')}</Text>
                 </View>
               </View>
             ))
@@ -448,41 +533,20 @@ export default function LifeOps({ navigation }) {
                 <Feather name="send" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
-                <Text style={styles.agentTitle}>Book Flight</Text>
+                <Text style={styles.agentTitle}>
+                  {flightStep === 'input' ? 'Book Flight' : flightStep === 'flights' ? 'Choose Flight' : flightStep === 'seats' ? 'Pick Seat' : 'Booking Confirmed!'}
+                </Text>
                 <Text style={styles.agentSubtitle}>IndiGo · Air India · Vistara</Text>
               </View>
-              <View style={[styles.agentPill, { backgroundColor: '#F3EFFE' }]}>
-                <View style={[styles.agentPillDot, { backgroundColor: '#9B72FF' }]} />
-                <Text style={[styles.agentPillText, { color: '#7C5CE8' }]}>AI Ready</Text>
-              </View>
-            </View>
-            {flightResult ? (
-              <View style={styles.resultWrap}>
-                <LinearGradient colors={['#F3EFFE', '#E9E0FF']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#9B72FF" />
-                </LinearGradient>
-                <Text style={styles.resultTitle}>Search Initiated</Text>
-                <Text style={styles.resultSub}>Your AI twin is scanning the best fares</Text>
-                <View style={styles.resultRouteRow}>
-                  <View style={[styles.resultRouteDot, { backgroundColor: '#9B72FF' }]} />
-                  <Text style={styles.resultRouteText}>{flightFrom}</Text>
-                </View>
-                <View style={styles.resultRouteDivider} />
-                <View style={styles.resultRouteRow}>
-                  <Feather name="map-pin" size={12} color="#E0546E" />
-                  <Text style={styles.resultRouteText}>{flightTo}</Text>
-                </View>
-                {flightDate ? (
-                  <View style={[styles.resultInfoChip, { backgroundColor: '#F3EFFE', marginTop: 10 }]}>
-                    <Feather name="calendar" size={13} color="#9B72FF" />
-                    <Text style={[styles.resultInfoChipText, { color: '#7C5CE8' }]}>{flightDate}</Text>
-                  </View>
-                ) : null}
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#F3EFFE' }]} onPress={() => { setFlightModal(false); setFlightFrom(''); setFlightTo(''); setFlightDate(''); setFlightResult(null); }}>
-                  <Text style={[styles.resultDoneBtnText, { color: '#9B72FF' }]}>Done</Text>
+              {(flightStep === 'flights' || flightStep === 'seats') && (
+                <TouchableOpacity onPress={() => setFlightStep(flightStep === 'seats' ? 'flights' : 'input')} style={[styles.backChip, { borderColor: '#9B72FF' }]}>
+                  <Feather name="arrow-left" size={14} color="#9B72FF" />
                 </TouchableOpacity>
-              </View>
-            ) : (
+              )}
+            </View>
+
+            {/* Step 1 — Input */}
+            {flightStep === 'input' && (
               <>
                 <View style={styles.routeInputBlock}>
                   <View style={styles.routeInputRow}>
@@ -497,21 +561,143 @@ export default function LifeOps({ navigation }) {
                 </View>
                 <Text style={styles.inputLabel}>Date <Text style={styles.optionalTag}>(optional)</Text></Text>
                 <TextInput style={styles.modalInput} placeholder="e.g. 25 Jul 2025" placeholderTextColor="#9AA1AE" value={flightDate} onChangeText={setFlightDate} />
-                <View style={[styles.aiContextRow, { backgroundColor: '#F3EFFE' }]}>
-                  <Feather name="zap" size={12} color="#9B72FF" />
-                  <Text style={[styles.aiContextText, { color: '#5B3FBF' }]}>AI will compare fares across all major airlines and find the cheapest option</Text>
+                <Text style={styles.inputLabel}>Class</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                  {['Economy', 'Business', 'First'].map(c => (
+                    <TouchableOpacity key={c} onPress={() => setFlightClass(c)}
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                        backgroundColor: flightClass === c ? '#9B72FF' : '#F5F6F8',
+                        borderWidth: 1.5, borderColor: flightClass === c ? '#9B72FF' : 'transparent' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: flightClass === c ? '#FFFFFF' : '#374151' }}>{c}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
                 <TouchableOpacity
                   style={[styles.actionBtn, (!flightFrom.trim() || !flightTo.trim()) && styles.actionBtnDisabled]}
-                  onPress={bookFlight}
-                  disabled={!flightFrom.trim() || !flightTo.trim() || bookingFlight}
+                  disabled={!flightFrom.trim() || !flightTo.trim()}
+                  onPress={() => setFlightStep('flights')}
                 >
                   <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
-                    <Feather name="send" size={16} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>{bookingFlight ? 'Scanning fares…' : 'Search Flights via AI'}</Text>
+                    <Feather name="search" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>Search Flights</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </>
+            )}
+
+            {/* Step 2 — Flight options */}
+            {flightStep === 'flights' && (
+              <>
+                <Text style={[styles.inputLabel, { marginBottom: 12 }]}>{flightFrom} → {flightTo} · {flightClass}</Text>
+                <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                  {[
+                    { airline: 'IndiGo',    flight: '6E-204',  depart: '06:00', arrive: '08:10', duration: '2h 10m', price: flightClass === 'Economy' ? 3200  : flightClass === 'Business' ? 8500  : 14000 },
+                    { airline: 'Air India', flight: 'AI-505',  depart: '08:30', arrive: '10:45', duration: '2h 15m', price: flightClass === 'Economy' ? 4100  : flightClass === 'Business' ? 10200 : 18500 },
+                    { airline: 'Vistara',   flight: 'UK-812',  depart: '11:15', arrive: '13:20', duration: '2h 05m', price: flightClass === 'Economy' ? 4800  : flightClass === 'Business' ? 11500 : 21000 },
+                    { airline: 'SpiceJet',  flight: 'SG-118',  depart: '14:00', arrive: '16:15', duration: '2h 15m', price: flightClass === 'Economy' ? 2900  : flightClass === 'Business' ? 7800  : 13500 },
+                    { airline: 'Akasa Air', flight: 'QP-1302', depart: '18:45', arrive: '20:55', duration: '2h 10m', price: flightClass === 'Economy' ? 2600  : flightClass === 'Business' ? 7200  : 12000 },
+                  ].map((f) => (
+                    <TouchableOpacity key={f.flight}
+                      style={[styles.cabOptionCard, selectedFlight?.flight === f.flight && styles.cabOptionCardSelected,
+                        { borderColor: selectedFlight?.flight === f.flight ? '#9B72FF' : 'transparent',
+                          backgroundColor: selectedFlight?.flight === f.flight ? '#F3EFFE' : '#F5F6F8' }]}
+                      onPress={() => { setSelectedFlight(f); setFlightStep('seats'); }}
+                      activeOpacity={0.8}>
+                      <View style={styles.cabOptionLeft}>
+                        <Text style={styles.cabOptionLabel}>{f.airline}</Text>
+                        <Text style={styles.cabOptionMeta}>{f.flight} · {f.depart} → {f.arrive}</Text>
+                        <Text style={styles.cabOptionDriver}>{f.duration} · Non-stop</Text>
+                      </View>
+                      <View style={styles.cabOptionRight}>
+                        <Text style={[styles.cabOptionFare, { color: '#9B72FF' }]}>₹{f.price.toLocaleString('en-IN')}</Text>
+                        <Text style={styles.cabOptionEta}>{flightClass}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* Step 3 — Seat picker */}
+            {flightStep === 'seats' && selectedFlight && (
+              <>
+                <Text style={[styles.inputLabel, { marginBottom: 4 }]}>{selectedFlight.airline} {selectedFlight.flight} · {selectedFlight.depart} → {selectedFlight.arrive}</Text>
+                <Text style={[styles.listSubtitle, { marginBottom: 14 }]}>Tap a seat to select</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                  {['1A','1B','1C','2A','2B','2C','3A','3B','3C','4A','4B','4C'].map(seat => {
+                    const taken = ['1B','2A','3C','4B'].includes(seat);
+                    const picked = selectedSeat === seat;
+                    return (
+                      <TouchableOpacity key={seat} disabled={taken}
+                        onPress={() => setSelectedSeat(seat)}
+                        style={{ width: 52, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: taken ? '#E5E7EB' : picked ? '#9B72FF' : '#F3EFFE',
+                          borderWidth: 1.5, borderColor: taken ? '#D1D5DB' : picked ? '#7C5CE8' : '#C4B5FD' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: taken ? '#9CA3AF' : picked ? '#FFFFFF' : '#7C5CE8' }}>{seat}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={[styles.cartTotalRow, { marginBottom: 14 }]}>
+                  <Text style={styles.cartTotalLabel}>Total</Text>
+                  <Text style={styles.cartTotalAmount}>₹{selectedFlight.price.toLocaleString('en-IN')}</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, !selectedSeat && styles.actionBtnDisabled]}
+                  disabled={!selectedSeat || bookingFlight}
+                  onPress={async () => {
+                    setBookingFlight(true);
+                    await new Promise(r => setTimeout(r, 900));
+                    const booking = {
+                      airline: selectedFlight.airline, flight: selectedFlight.flight,
+                      from: flightFrom, to: flightTo,
+                      depart: selectedFlight.depart, arrive: selectedFlight.arrive,
+                      date: flightDate || 'Flexible', class: flightClass,
+                      seat: selectedSeat, price: selectedFlight.price,
+                      bookingId: 'FLT' + Date.now().toString(36).toUpperCase(),
+                    };
+                    setFlightResult(booking);
+                    setBookedFlights(prev => [booking, ...prev]);
+                    setFlightStep('confirmed');
+                    setBookingFlight(false);
+                  }}
+                >
+                  <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="credit-card" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{bookingFlight ? 'Booking…' : `Pay ₹${selectedFlight.price.toLocaleString('en-IN')}`}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Step 4 — Confirmed */}
+            {flightStep === 'confirmed' && flightResult && (
+              <View style={styles.resultWrap}>
+                <LinearGradient colors={['#F3EFFE', '#E9E0FF']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color="#9B72FF" />
+                </LinearGradient>
+                <Text style={styles.resultTitle}>Flight Booked!</Text>
+                <Text style={styles.resultSub}>Have a great flight ✈️</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F3EFFE', marginTop: 12 }]}>
+                  <Feather name="send" size={13} color="#9B72FF" />
+                  <Text style={[styles.resultInfoChipText, { color: '#7C5CE8' }]}>{flightResult.airline} {flightResult.flight} · {flightResult.depart} → {flightResult.arrive}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="map-pin" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{flightResult.from} → {flightResult.to} · {flightResult.date}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="tag" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>Seat {flightResult.seat} · {flightResult.class} · ₹{flightResult.price.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{flightResult.bookingId}</Text>
+                </View>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#F3EFFE' }]} onPress={() => setFlightModal(false)}>
+                  <Text style={[styles.resultDoneBtnText, { color: '#9B72FF' }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -530,66 +716,204 @@ export default function LifeOps({ navigation }) {
                 <Feather name="home" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
-                <Text style={styles.agentTitle}>Book Hotel</Text>
+                <Text style={styles.agentTitle}>
+                  {hotelStep === 'input' ? 'Book Hotel' : hotelStep === 'options' ? 'Choose Hotel' : hotelStep === 'room' ? 'Pick Room' : 'Booking Confirmed!'}
+                </Text>
                 <Text style={styles.agentSubtitle}>MakeMyTrip · Goibibo · OYO</Text>
               </View>
-              <View style={[styles.agentPill, { backgroundColor: '#FCEAED' }]}>
-                <View style={[styles.agentPillDot, { backgroundColor: '#E0546E' }]} />
-                <Text style={[styles.agentPillText, { color: '#C8405A' }]}>AI Ready</Text>
-              </View>
-            </View>
-            {hotelResult ? (
-              <View style={styles.resultWrap}>
-                <LinearGradient colors={['#FCEAED', '#FAD4DB']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#E0546E" />
-                </LinearGradient>
-                <Text style={styles.resultTitle}>Search Initiated</Text>
-                <Text style={styles.resultSub}>Your AI twin is finding the best rates</Text>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#FCEAED', marginTop: 12 }]}>
-                  <Feather name="map-pin" size={13} color="#E0546E" />
-                  <Text style={[styles.resultInfoChipText, { color: '#C8405A' }]}>{hotelCity}</Text>
-                </View>
-                {(hotelCheckin || hotelCheckout) ? (
-                  <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                    <Feather name="calendar" size={13} color="#6B7280" />
-                    <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>
-                      {hotelCheckin || '—'} → {hotelCheckout || '—'}
-                    </Text>
-                  </View>
-                ) : null}
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#FCEAED' }]} onPress={() => { setHotelModal(false); setHotelCity(''); setHotelCheckin(''); setHotelCheckout(''); setHotelResult(null); }}>
-                  <Text style={[styles.resultDoneBtnText, { color: '#E0546E' }]}>Done</Text>
+              {(hotelStep === 'options' || hotelStep === 'room') && (
+                <TouchableOpacity onPress={() => setHotelStep(hotelStep === 'room' ? 'options' : 'input')} style={[styles.backChip, { borderColor: '#E0546E' }]}>
+                  <Feather name="arrow-left" size={14} color="#E0546E" />
                 </TouchableOpacity>
-              </View>
-            ) : (
+              )}
+            </View>
+
+            {/* Step 1 — Input */}
+            {/* Step 1 — Input */}
+            {hotelStep === 'input' && (
               <>
                 <Text style={styles.inputLabel}>City</Text>
                 <TextInput style={styles.modalInput} placeholder="e.g. Goa, Delhi, Mumbai" placeholderTextColor="#9AA1AE" value={hotelCity} onChangeText={setHotelCity} />
                 <View style={styles.dateRow}>
                   <View style={styles.dateCol}>
-                    <Text style={styles.inputLabel}>Check-in <Text style={styles.optionalTag}>(optional)</Text></Text>
-                    <TextInput style={styles.modalInput} placeholder="25 Jul 2025" placeholderTextColor="#9AA1AE" value={hotelCheckin} onChangeText={setHotelCheckin} />
+                    <Text style={styles.inputLabel}>Check-in</Text>
+                    <TextInput style={styles.modalInput} placeholder="2025-08-01" placeholderTextColor="#9AA1AE" value={hotelCheckin} onChangeText={setHotelCheckin} />
                   </View>
                   <View style={styles.dateCol}>
-                    <Text style={styles.inputLabel}>Check-out <Text style={styles.optionalTag}>(optional)</Text></Text>
-                    <TextInput style={styles.modalInput} placeholder="28 Jul 2025" placeholderTextColor="#9AA1AE" value={hotelCheckout} onChangeText={setHotelCheckout} />
+                    <Text style={styles.inputLabel}>Check-out</Text>
+                    <TextInput style={styles.modalInput} placeholder="2025-08-03" placeholderTextColor="#9AA1AE" value={hotelCheckout} onChangeText={setHotelCheckout} />
                   </View>
                 </View>
+                {hotelSearchError ? (
+                  <View style={styles.errorRow}>
+                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Text style={styles.errorText}>{hotelSearchError}</Text>
+                  </View>
+                ) : null}
                 <View style={[styles.aiContextRow, { backgroundColor: '#FCEAED' }]}>
                   <Feather name="zap" size={12} color="#E0546E" />
-                  <Text style={[styles.aiContextText, { color: '#7B1D2E' }]}>AI will compare prices across platforms and shortlist top-rated options</Text>
+                  <Text style={[styles.aiContextText, { color: '#7B1D2E' }]}>Live hotel inventory via Booking.com — real prices, real availability</Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.actionBtn, !hotelCity.trim() && styles.actionBtnDisabled]}
-                  onPress={bookHotel}
-                  disabled={!hotelCity.trim() || bookingHotel}
+                  style={[styles.actionBtn, (!hotelCity.trim() || !hotelCheckin.trim() || !hotelCheckout.trim()) && styles.actionBtnDisabled]}
+                  disabled={!hotelCity.trim() || !hotelCheckin.trim() || !hotelCheckout.trim() || hotelSearchLoading}
+                  onPress={async () => {
+                    setHotelSearchLoading(true);
+                    setHotelSearchError(null);
+                    try {
+                      const res = await apiFetch(`/api/lifeops/hotel/search?city=${encodeURIComponent(hotelCity.trim())}&checkIn=${hotelCheckin.trim()}&checkOut=${hotelCheckout.trim()}`);
+                      if (!res.hotels || res.hotels.length === 0) throw new Error('No hotels found for this city and dates');
+                      setHotelSearchResults(res.hotels);
+                      setHotelStep('options');
+                    } catch (e) {
+                      setHotelSearchError(e?.message || 'Search failed. Try again.');
+                    } finally {
+                      setHotelSearchLoading(false);
+                    }
+                  }}
                 >
                   <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
-                    <Feather name="home" size={16} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>{bookingHotel ? 'Finding best rates…' : 'Search Hotels via AI'}</Text>
+                    <Feather name="search" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{hotelSearchLoading ? 'Searching live inventory…' : 'Search Hotels'}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </>
+            )}
+
+            {/* Step 2 — Real hotel results from Booking.com */}
+            {hotelStep === 'options' && (
+              <>
+                <Text style={[styles.inputLabel, { marginBottom: 12 }]}>{hotelSearchResults.length} hotels in {hotelCity}</Text>
+                <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                  {hotelSearchResults.map((h, i) => (
+                    <TouchableOpacity key={h.offerId || i}
+                      style={[styles.cabOptionCard, selectedHotel?.offerId === h.offerId && styles.cabOptionCardSelected,
+                        { borderColor: selectedHotel?.offerId === h.offerId ? '#E0546E' : 'transparent',
+                          backgroundColor: selectedHotel?.offerId === h.offerId ? '#FCEAED' : '#F5F6F8' }]}
+                      onPress={() => { setSelectedHotel(h); setHotelStep('room'); }}
+                      activeOpacity={0.8}>
+                      <View style={styles.cabOptionLeft}>
+                        <Text style={styles.cabOptionLabel} numberOfLines={1}>{h.name}</Text>
+                        <Text style={styles.cabOptionMeta}>{h.rating ? '⭐'.repeat(Math.min(parseInt(h.rating), 5)) + ' · ' : ''}{h.roomType}</Text>
+                        <Text style={styles.cabOptionDriver}>{h.checkIn} → {h.checkOut}</Text>
+                      </View>
+                      <View style={styles.cabOptionRight}>
+                        <Text style={[styles.cabOptionFare, { color: '#E0546E' }]}>₹{Math.round(h.price).toLocaleString('en-IN')}</Text>
+                        <Text style={styles.cabOptionEta}>total</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* Step 3 — Room confirmation (Booking.com offer) */}
+            {hotelStep === 'room' && selectedHotel && (
+              <>
+                <Text style={[styles.inputLabel, { marginBottom: 4 }]}>{selectedHotel.name}</Text>
+                <Text style={[styles.listSubtitle, { marginBottom: 14 }]}>Confirm your room</Text>
+                <View style={[styles.cabOptionCard, { borderColor: '#E0546E', backgroundColor: '#FCEAED', borderWidth: 2 }]}>
+                  <View style={styles.cabOptionLeft}>
+                    <Text style={styles.cabOptionLabel}>{selectedHotel.roomType}</Text>
+                    <Text style={styles.cabOptionMeta}>{selectedHotel.beds || 'Standard configuration'}</Text>
+                    <Text style={styles.cabOptionDriver}>{selectedHotel.boardType || 'Room only'} · {selectedHotel.checkIn} → {selectedHotel.checkOut}</Text>
+                  </View>
+                  <View style={styles.cabOptionRight}>
+                    <Text style={[styles.cabOptionFare, { color: '#E0546E' }]}>₹{Math.round(selectedHotel.price).toLocaleString('en-IN')}</Text>
+                    <Text style={styles.cabOptionEta}>total</Text>
+                  </View>
+                </View>
+                <View style={[styles.aiContextRow, { backgroundColor: '#FCEAED', marginTop: 12 }]}>
+                  <Feather name="shield" size={12} color="#E0546E" />
+                  <Text style={[styles.aiContextText, { color: '#7B1D2E' }]}>Real inventory via Booking.com. Payment is completed on their platform after confirmation.</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { marginTop: 12 }]}
+                  disabled={bookingHotel}
+                  onPress={async () => {
+                    setBookingHotel(true);
+                    try {
+                      const res = await apiFetch('/api/lifeops/hotel/book', {
+                        method: 'POST',
+                        body: {
+                          offerId:   selectedHotel.offerId,
+                          hotelName: selectedHotel.name,
+                          roomType:  selectedHotel.roomType,
+                          price:     selectedHotel.price,
+                          checkIn:   selectedHotel.checkIn,
+                          checkOut:  selectedHotel.checkOut,
+                          city:      hotelCity,
+                        },
+                      });
+                      const booking = {
+                        hotel:     selectedHotel.name,
+                        city:      hotelCity,
+                        checkin:   selectedHotel.checkIn,
+                        checkout:  selectedHotel.checkOut,
+                        room:      selectedHotel.roomType,
+                        price:     Math.round(selectedHotel.price),
+                        bookingId: res.bookingId,
+                        providerRef: res.providerRef,
+                        deepLink:  res.deepLink,
+                      };
+                      setHotelResult(booking);
+                      setBookedHotels(prev => [booking, ...prev]);
+                      setHotelStep('confirmed');
+                    } catch (e) {
+                      setHotelSearchError(e?.message || 'Booking failed. Try again.');
+                      setHotelStep('input');
+                    } finally {
+                      setBookingHotel(false);
+                    }
+                  }}
+                >
+                  <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="credit-card" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{bookingHotel ? 'Reserving…' : `Confirm · ₹${Math.round(selectedHotel.price).toLocaleString('en-IN')}`}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Step 4 — Confirmed */}
+            {hotelStep === 'confirmed' && hotelResult && (
+              <View style={styles.resultWrap}>
+                <LinearGradient colors={['#FCEAED', '#FAD4DB']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color="#E0546E" />
+                </LinearGradient>
+                <Text style={styles.resultTitle}>Hotel Reserved!</Text>
+                <Text style={styles.resultSub}>Complete payment on Booking.com 🏨</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#FCEAED', marginTop: 12 }]}>
+                  <Feather name="home" size={13} color="#E0546E" />
+                  <Text style={[styles.resultInfoChipText, { color: '#C8405A' }]}>{hotelResult.hotel} · {hotelResult.room}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="map-pin" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{hotelResult.city}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="calendar" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{hotelResult.checkin} → {hotelResult.checkout} · ₹{hotelResult.price.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{hotelResult.bookingId}</Text>
+                </View>
+                {hotelResult.deepLink && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { marginTop: 16, width: '100%' }]}
+                    onPress={() => Linking.openURL(hotelResult.deepLink)}
+                  >
+                    <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                      <Feather name="external-link" size={15} color="#FFFFFF" />
+                      <Text style={styles.actionBtnText}>Complete on Booking.com</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#FCEAED' }]} onPress={() => setHotelModal(false)}>
+                  <Text style={[styles.resultDoneBtnText, { color: '#E0546E' }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -665,6 +989,167 @@ export default function LifeOps({ navigation }) {
                   </LinearGradient>
                 </TouchableOpacity>
               </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Movie Booking Modal */}
+      <Modal visible={movieModal} transparent animationType="slide" onRequestClose={() => setMovieModal(false)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableWithoutFeedback onPress={() => setMovieModal(false)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.agentHeader}>
+              <LinearGradient colors={['#6C47FF', '#4A2FCC']} style={styles.agentIconGrad}>
+                <Feather name="film" size={20} color="#FFFFFF" />
+              </LinearGradient>
+              <View style={styles.agentHeaderText}>
+                <Text style={styles.agentTitle}>
+                  {movieStep === 'input' ? 'Book Movie Tickets' : movieStep === 'shows' ? 'Choose Showtime' : movieStep === 'seats' ? 'Pick Seats' : 'Booking Confirmed!'}
+                </Text>
+                <Text style={styles.agentSubtitle}>PVR · INOX · Cinepolis</Text>
+              </View>
+              {(movieStep === 'shows' || movieStep === 'seats') && (
+                <TouchableOpacity onPress={() => setMovieStep(movieStep === 'seats' ? 'shows' : 'input')} style={[styles.backChip, { borderColor: '#6C47FF' }]}>
+                  <Feather name="arrow-left" size={14} color="#6C47FF" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Step 1 — Input */}
+            {movieStep === 'input' && (
+              <>
+                <Text style={styles.inputLabel}>Movie Name</Text>
+                <TextInput style={styles.modalInput} placeholder="e.g. Pushpa 2, Kalki 2898 AD" placeholderTextColor="#9AA1AE" value={movieTitle} onChangeText={setMovieTitle} />
+                <Text style={styles.inputLabel}>City</Text>
+                <TextInput style={styles.modalInput} placeholder="e.g. Bengaluru, Mumbai, Delhi" placeholderTextColor="#9AA1AE" value={movieCity} onChangeText={setMovieCity} />
+                <Text style={styles.inputLabel}>Cinema</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                  {['PVR', 'INOX', 'Cinepolis'].map(c => (
+                    <TouchableOpacity key={c} onPress={() => setSelectedCinema(c)}
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                        backgroundColor: selectedCinema === c ? '#6C47FF' : '#F5F6F8',
+                        borderWidth: 1.5, borderColor: selectedCinema === c ? '#6C47FF' : 'transparent' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCinema === c ? '#FFFFFF' : '#374151' }}>{c}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, (!movieTitle.trim() || !movieCity.trim() || !selectedCinema) && styles.actionBtnDisabled]}
+                  disabled={!movieTitle.trim() || !movieCity.trim() || !selectedCinema}
+                  onPress={() => setMovieStep('shows')}
+                >
+                  <LinearGradient colors={['#6C47FF', '#4A2FCC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="search" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>Find Shows</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Step 2 — Showtimes */}
+            {movieStep === 'shows' && (
+              <>
+                <Text style={[styles.inputLabel, { marginBottom: 12 }]}>{movieTitle} · {selectedCinema}, {movieCity}</Text>
+                <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+                  {[
+                    { time: '10:30 AM', format: 'IMAX 3D', price: 450, seats: 42 },
+                    { time: '1:45 PM',  format: '4DX',     price: 520, seats: 18 },
+                    { time: '4:00 PM',  format: '2D',      price: 280, seats: 67 },
+                    { time: '7:15 PM',  format: '3D',      price: 350, seats: 31 },
+                    { time: '10:30 PM', format: '2D',      price: 260, seats: 55 },
+                  ].map((show) => (
+                    <TouchableOpacity key={show.time}
+                      style={[styles.cabOptionCard, selectedShow?.time === show.time && styles.cabOptionCardSelected, { borderColor: selectedShow?.time === show.time ? '#6C47FF' : 'transparent', backgroundColor: selectedShow?.time === show.time ? '#F3EFFE' : '#F5F6F8' }]}
+                      onPress={() => { setSelectedShow(show); setMovieStep('seats'); }}
+                      activeOpacity={0.8}>
+                      <View style={styles.cabOptionLeft}>
+                        <Text style={styles.cabOptionLabel}>{show.time}</Text>
+                        <Text style={styles.cabOptionMeta}>{show.format} · {show.seats} seats left</Text>
+                      </View>
+                      <Text style={[styles.cabOptionFare, { color: '#6C47FF' }]}>₹{show.price}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* Step 3 — Seat picker */}
+            {movieStep === 'seats' && selectedShow && (
+              <>
+                <Text style={[styles.inputLabel, { marginBottom: 4 }]}>{selectedShow.time} · {selectedShow.format}</Text>
+                <Text style={[styles.listSubtitle, { marginBottom: 14 }]}>Tap seats to select (max 4)</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                  {['A1','A2','A3','A4','B1','B2','B3','B4','C1','C2','C3','C4'].map(seat => {
+                    const taken = ['A2','B3','C1'].includes(seat);
+                    const picked = selectedSeats.includes(seat);
+                    return (
+                      <TouchableOpacity key={seat} disabled={taken}
+                        onPress={() => setSelectedSeats(s => picked ? s.filter(x => x !== seat) : s.length < 4 ? [...s, seat] : s)}
+                        style={{ width: 48, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: taken ? '#E5E7EB' : picked ? '#6C47FF' : '#F3EFFE',
+                          borderWidth: 1.5, borderColor: taken ? '#D1D5DB' : picked ? '#4A2FCC' : '#A78BFA' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: taken ? '#9CA3AF' : picked ? '#FFFFFF' : '#6C47FF' }}>{seat}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={[styles.cartTotalRow, { marginBottom: 14 }]}>
+                  <Text style={styles.cartTotalLabel}>Total ({selectedSeats.length} seats)</Text>
+                  <Text style={styles.cartTotalAmount}>₹{selectedSeats.length * selectedShow.price}</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, selectedSeats.length === 0 && styles.actionBtnDisabled]}
+                  disabled={selectedSeats.length === 0 || bookingMovie}
+                  onPress={async () => {
+                    setBookingMovie(true);
+                    await new Promise(r => setTimeout(r, 900));
+                    const ticket = { movie: movieTitle, cinema: `${selectedCinema}, ${movieCity}`, show: `${selectedShow.time} ${selectedShow.format}`, seats: selectedSeats, amount: selectedSeats.length * selectedShow.price, bookingId: 'BMS' + Date.now().toString(36).toUpperCase() };
+                    setMovieResult(ticket);
+                    setBookedTickets(prev => [ticket, ...prev]);
+                    setMovieStep('confirmed');
+                    setBookingMovie(false);
+                  }}
+                >
+                  <LinearGradient colors={['#6C47FF', '#4A2FCC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="credit-card" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{bookingMovie ? 'Booking…' : `Pay ₹${selectedSeats.length * selectedShow.price}`}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Step 4 — Confirmed */}
+            {movieStep === 'confirmed' && movieResult && (
+              <View style={styles.resultWrap}>
+                <LinearGradient colors={['#F3EFFE', '#E9E0FF']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color="#6C47FF" />
+                </LinearGradient>
+                <Text style={styles.resultTitle}>Tickets Booked!</Text>
+                <Text style={styles.resultSub}>Enjoy the show 🎬</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F3EFFE', marginTop: 12 }]}>
+                  <Feather name="film" size={13} color="#6C47FF" />
+                  <Text style={[styles.resultInfoChipText, { color: '#4A2FCC' }]}>{movieResult.movie} · {movieResult.show}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="map-pin" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{movieResult.cinema}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="tag" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>Seats: {movieResult.seats.join(', ')} · ₹{movieResult.amount}</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{movieResult.bookingId}</Text>
+                </View>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#F3EFFE' }]} onPress={() => setMovieModal(false)}>
+                  <Text style={[styles.resultDoneBtnText, { color: '#6C47FF' }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -850,7 +1335,11 @@ const styles = StyleSheet.create({
   listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
   listRowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
   rideIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFFDF6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  wishIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  movieIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F3EFFE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  movieBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F1F4', marginBottom: 4 },
+  movieBannerIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  movieBannerTitle: { fontSize: 14, fontWeight: '800', color: '#14171F' },
+  movieBannerSub: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
   foodIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   listTextWrap: { flex: 1 },
   listTitle: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
