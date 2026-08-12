@@ -740,6 +740,32 @@ lifeopsRouter.get('/hotel/search', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// Flight search — GET /api/lifeops/flight/search?from=BLR&to=BOM&date=2026-08-20
+lifeopsRouter.get('/flight/search', async (req, res) => {
+  try {
+    const { from, to, date } = req.query
+    if (!from || !to || !date) return res.status(400).json({ error: 'from, to and date are required' })
+    const { searchFlights } = await import('../services/flight.service.js')
+    const flights = await searchFlights({ from, to, date })
+    res.json({ flights })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Flight book — POST /api/lifeops/flight/book
+lifeopsRouter.post('/flight/book', async (req, res) => {
+  try {
+    const { flightId, airline, flightCode, from, to, depart, arrive, date, cabinClass, seat, price } = req.body
+    if (!from || !to) return res.status(400).json({ error: 'from and to are required' })
+    const { bookFlight } = await import('../services/flight.service.js')
+    const result = bookFlight({ flightId, airline, flightCode, from, to, depart, arrive, date, cabinClass, seat, price })
+    const entry = await ledger.add({ userId: req.user.id, tool: 'book_flight', input: req.body, result, status: 'completed' })
+    try {
+      await prisma.notification.create({ data: { userId: req.user.id, title: `✈️ Flight booked — ${airline} ${from}→${to}`, message: JSON.stringify({ source: 'reminder', preview: `${depart} → ${arrive} · ₹${price}`, start: date }) } })
+    } catch {}
+    res.json({ ...result, ledgerId: entry.id })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // Hotel book — POST /api/lifeops/hotel/book
 lifeopsRouter.post('/hotel/book', async (req, res) => {
   try {

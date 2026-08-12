@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -57,7 +58,7 @@ export default function LifeOps({ navigation }) {
 
   // Flight modal
   const [flightModal, setFlightModal] = useState(false);
-  const [flightStep, setFlightStep] = useState('input'); // 'input' | 'flights' | 'seats' | 'confirmed'
+  const [flightStep, setFlightStep] = useState('input');
   const [flightFrom, setFlightFrom] = useState('');
   const [flightTo, setFlightTo] = useState('');
   const [flightDate, setFlightDate] = useState('');
@@ -67,6 +68,10 @@ export default function LifeOps({ navigation }) {
   const [bookingFlight, setBookingFlight] = useState(false);
   const [flightResult, setFlightResult] = useState(null);
   const [bookedFlights, setBookedFlights] = useState([]);
+  const [flightSearchResults, setFlightSearchResults] = useState([]);
+  const [flightSearchLoading, setFlightSearchLoading] = useState(false);
+  const [flightSearchError, setFlightSearchError] = useState(null);
+  const [showFlightDatePicker, setShowFlightDatePicker] = useState(false);
 
   // Hotel modal
   const [hotelModal, setHotelModal] = useState(false);
@@ -74,6 +79,8 @@ export default function LifeOps({ navigation }) {
   const [hotelCity, setHotelCity] = useState('');
   const [hotelCheckin, setHotelCheckin] = useState('');
   const [hotelCheckout, setHotelCheckout] = useState('');
+  const [showCheckinPicker, setShowCheckinPicker] = useState(false);
+  const [showCheckoutPicker, setShowCheckoutPicker] = useState(false);
   const [selectedHotel, setSelectedHotel] = useState(null);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [bookingHotel, setBookingHotel] = useState(false);
@@ -551,16 +558,30 @@ export default function LifeOps({ navigation }) {
                 <View style={styles.routeInputBlock}>
                   <View style={styles.routeInputRow}>
                     <View style={[styles.routeDotGreen, { backgroundColor: '#9B72FF' }]} />
-                    <TextInput style={styles.routeInput} placeholder="From — e.g. Bengaluru (BLR)" placeholderTextColor="#9AA1AE" value={flightFrom} onChangeText={setFlightFrom} />
+                    <TextInput style={styles.routeInput} placeholder="From — IATA code e.g. BLR" placeholderTextColor="#9AA1AE" value={flightFrom} onChangeText={t => setFlightFrom(t.toUpperCase())} autoCapitalize="characters" maxLength={3} />
                   </View>
                   <View style={styles.routeInputDivider} />
                   <View style={styles.routeInputRow}>
                     <Feather name="map-pin" size={13} color="#E0546E" />
-                    <TextInput style={styles.routeInput} placeholder="To — e.g. Mumbai (BOM)" placeholderTextColor="#9AA1AE" value={flightTo} onChangeText={setFlightTo} />
+                    <TextInput style={styles.routeInput} placeholder="To — IATA code e.g. BOM" placeholderTextColor="#9AA1AE" value={flightTo} onChangeText={t => setFlightTo(t.toUpperCase())} autoCapitalize="characters" maxLength={3} />
                   </View>
                 </View>
-                <Text style={styles.inputLabel}>Date <Text style={styles.optionalTag}>(optional)</Text></Text>
-                <TextInput style={styles.modalInput} placeholder="e.g. 25 Jul 2025" placeholderTextColor="#9AA1AE" value={flightDate} onChangeText={setFlightDate} />
+                <Text style={styles.inputLabel}>Date</Text>
+                <TouchableOpacity style={styles.modalInput} onPress={() => setShowFlightDatePicker(true)}>
+                  <Text style={{ color: flightDate ? '#1A1D23' : '#9AA1AE', fontSize: 14 }}>{flightDate || 'Select date'}</Text>
+                </TouchableOpacity>
+                {showFlightDatePicker && (
+                  <DateTimePicker
+                    value={flightDate ? new Date(flightDate) : new Date()}
+                    mode="date"
+                    minimumDate={new Date()}
+                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                    onChange={(_, date) => {
+                      setShowFlightDatePicker(false);
+                      if (date) setFlightDate(date.toISOString().slice(0, 10));
+                    }}
+                  />
+                )}
                 <Text style={styles.inputLabel}>Class</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
                   {['Economy', 'Business', 'First'].map(c => (
@@ -572,44 +593,61 @@ export default function LifeOps({ navigation }) {
                     </TouchableOpacity>
                   ))}
                 </View>
+                {flightSearchError ? (
+                  <View style={styles.errorRow}>
+                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Text style={styles.errorText}>{flightSearchError}</Text>
+                  </View>
+                ) : null}
+                <View style={[styles.aiContextRow, { backgroundColor: '#F3EFFE' }]}>
+                  <Feather name="zap" size={12} color="#9B72FF" />
+                  <Text style={[styles.aiContextText, { color: '#7C5CE8' }]}>Live flight prices via Skyscanner — real availability</Text>
+                </View>
                 <TouchableOpacity
-                  style={[styles.actionBtn, (!flightFrom.trim() || !flightTo.trim()) && styles.actionBtnDisabled]}
-                  disabled={!flightFrom.trim() || !flightTo.trim()}
-                  onPress={() => setFlightStep('flights')}
+                  style={[styles.actionBtn, (!flightFrom.trim() || !flightTo.trim() || !flightDate) && styles.actionBtnDisabled]}
+                  disabled={!flightFrom.trim() || !flightTo.trim() || !flightDate || flightSearchLoading}
+                  onPress={async () => {
+                    setFlightSearchLoading(true);
+                    setFlightSearchError(null);
+                    try {
+                      const res = await apiFetch(`/api/lifeops/flight/search?from=${flightFrom.trim()}&to=${flightTo.trim()}&date=${flightDate}`);
+                      if (!res.flights || res.flights.length === 0) throw new Error('No flights found for this route and date');
+                      setFlightSearchResults(res.flights);
+                      setFlightStep('flights');
+                    } catch (e) {
+                      setFlightSearchError(e?.message || 'Search failed. Try again.');
+                    } finally {
+                      setFlightSearchLoading(false);
+                    }
+                  }}
                 >
                   <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="search" size={16} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>Search Flights</Text>
+                    <Text style={styles.actionBtnText}>{flightSearchLoading ? 'Searching live flights…' : 'Search Flights'}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </>
             )}
 
-            {/* Step 2 — Flight options */}
+            {/* Step 2 — Real flight results */}
             {flightStep === 'flights' && (
               <>
-                <Text style={[styles.inputLabel, { marginBottom: 12 }]}>{flightFrom} → {flightTo} · {flightClass}</Text>
+                <Text style={[styles.inputLabel, { marginBottom: 12 }]}>{flightFrom} → {flightTo} · {flightDate} · {flightClass}</Text>
                 <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-                  {[
-                    { airline: 'IndiGo',    flight: '6E-204',  depart: '06:00', arrive: '08:10', duration: '2h 10m', price: flightClass === 'Economy' ? 3200  : flightClass === 'Business' ? 8500  : 14000 },
-                    { airline: 'Air India', flight: 'AI-505',  depart: '08:30', arrive: '10:45', duration: '2h 15m', price: flightClass === 'Economy' ? 4100  : flightClass === 'Business' ? 10200 : 18500 },
-                    { airline: 'Vistara',   flight: 'UK-812',  depart: '11:15', arrive: '13:20', duration: '2h 05m', price: flightClass === 'Economy' ? 4800  : flightClass === 'Business' ? 11500 : 21000 },
-                    { airline: 'SpiceJet',  flight: 'SG-118',  depart: '14:00', arrive: '16:15', duration: '2h 15m', price: flightClass === 'Economy' ? 2900  : flightClass === 'Business' ? 7800  : 13500 },
-                    { airline: 'Akasa Air', flight: 'QP-1302', depart: '18:45', arrive: '20:55', duration: '2h 10m', price: flightClass === 'Economy' ? 2600  : flightClass === 'Business' ? 7200  : 12000 },
-                  ].map((f) => (
-                    <TouchableOpacity key={f.flight}
-                      style={[styles.cabOptionCard, selectedFlight?.flight === f.flight && styles.cabOptionCardSelected,
-                        { borderColor: selectedFlight?.flight === f.flight ? '#9B72FF' : 'transparent',
-                          backgroundColor: selectedFlight?.flight === f.flight ? '#F3EFFE' : '#F5F6F8' }]}
-                      onPress={() => { setSelectedFlight(f); setFlightStep('seats'); }}
+                  {flightSearchResults.map((f) => (
+                    <TouchableOpacity key={f.id}
+                      style={[styles.cabOptionCard, selectedFlight?.id === f.id && styles.cabOptionCardSelected,
+                        { borderColor: selectedFlight?.id === f.id ? '#9B72FF' : 'transparent',
+                          backgroundColor: selectedFlight?.id === f.id ? '#F3EFFE' : '#F5F6F8' }]}
+                      onPress={() => { setSelectedFlight(f); setSelectedSeat(null); setFlightStep('seats'); }}
                       activeOpacity={0.8}>
                       <View style={styles.cabOptionLeft}>
                         <Text style={styles.cabOptionLabel}>{f.airline}</Text>
-                        <Text style={styles.cabOptionMeta}>{f.flight} · {f.depart} → {f.arrive}</Text>
-                        <Text style={styles.cabOptionDriver}>{f.duration} · Non-stop</Text>
+                        <Text style={styles.cabOptionMeta}>{f.flightCode} · {f.depart} → {f.arrive}</Text>
+                        <Text style={styles.cabOptionDriver}>{f.duration} · {f.stops === 0 ? 'Non-stop' : f.stops + ' stop'}</Text>
                       </View>
                       <View style={styles.cabOptionRight}>
-                        <Text style={[styles.cabOptionFare, { color: '#9B72FF' }]}>₹{f.price.toLocaleString('en-IN')}</Text>
+                        <Text style={[styles.cabOptionFare, { color: '#9B72FF' }]}>{f.priceFormatted}</Text>
                         <Text style={styles.cabOptionEta}>{flightClass}</Text>
                       </View>
                     </TouchableOpacity>
@@ -621,7 +659,7 @@ export default function LifeOps({ navigation }) {
             {/* Step 3 — Seat picker */}
             {flightStep === 'seats' && selectedFlight && (
               <>
-                <Text style={[styles.inputLabel, { marginBottom: 4 }]}>{selectedFlight.airline} {selectedFlight.flight} · {selectedFlight.depart} → {selectedFlight.arrive}</Text>
+                <Text style={[styles.inputLabel, { marginBottom: 4 }]}>{selectedFlight.airline} {selectedFlight.flightCode} · {selectedFlight.depart} → {selectedFlight.arrive}</Text>
                 <Text style={[styles.listSubtitle, { marginBottom: 14 }]}>Tap a seat to select</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
                   {['1A','1B','1C','2A','2B','2C','3A','3B','3C','4A','4B','4C'].map(seat => {
@@ -640,31 +678,38 @@ export default function LifeOps({ navigation }) {
                 </View>
                 <View style={[styles.cartTotalRow, { marginBottom: 14 }]}>
                   <Text style={styles.cartTotalLabel}>Total</Text>
-                  <Text style={styles.cartTotalAmount}>₹{selectedFlight.price.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.cartTotalAmount}>{selectedFlight.priceFormatted}</Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.actionBtn, !selectedSeat && styles.actionBtnDisabled]}
                   disabled={!selectedSeat || bookingFlight}
                   onPress={async () => {
                     setBookingFlight(true);
-                    await new Promise(r => setTimeout(r, 900));
-                    const booking = {
-                      airline: selectedFlight.airline, flight: selectedFlight.flight,
-                      from: flightFrom, to: flightTo,
-                      depart: selectedFlight.depart, arrive: selectedFlight.arrive,
-                      date: flightDate || 'Flexible', class: flightClass,
-                      seat: selectedSeat, price: selectedFlight.price,
-                      bookingId: 'FLT' + Date.now().toString(36).toUpperCase(),
-                    };
-                    setFlightResult(booking);
-                    setBookedFlights(prev => [booking, ...prev]);
-                    setFlightStep('confirmed');
-                    setBookingFlight(false);
+                    try {
+                      const res = await apiFetch('/api/lifeops/flight/book', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          flightId: selectedFlight.id, airline: selectedFlight.airline,
+                          flightCode: selectedFlight.flightCode,
+                          from: flightFrom, to: flightTo,
+                          depart: selectedFlight.depart, arrive: selectedFlight.arrive,
+                          date: flightDate, cabinClass: flightClass,
+                          seat: selectedSeat, price: selectedFlight.price,
+                        }),
+                      });
+                      setFlightResult(res);
+                      setBookedFlights(prev => [res, ...prev]);
+                      setFlightStep('confirmed');
+                    } catch (e) {
+                      setFlightSearchError(e?.message || 'Booking failed');
+                    } finally {
+                      setBookingFlight(false);
+                    }
                   }}
                 >
                   <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="credit-card" size={16} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>{bookingFlight ? 'Booking…' : `Pay ₹${selectedFlight.price.toLocaleString('en-IN')}`}</Text>
+                    <Text style={styles.actionBtnText}>{bookingFlight ? 'Booking…' : `Confirm — ${selectedFlight.priceFormatted}`}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </>
@@ -680,7 +725,7 @@ export default function LifeOps({ navigation }) {
                 <Text style={styles.resultSub}>Have a great flight ✈️</Text>
                 <View style={[styles.resultInfoChip, { backgroundColor: '#F3EFFE', marginTop: 12 }]}>
                   <Feather name="send" size={13} color="#9B72FF" />
-                  <Text style={[styles.resultInfoChipText, { color: '#7C5CE8' }]}>{flightResult.airline} {flightResult.flight} · {flightResult.depart} → {flightResult.arrive}</Text>
+                  <Text style={[styles.resultInfoChipText, { color: '#7C5CE8' }]}>{flightResult.airline} {flightResult.flightCode} · {flightResult.depart} → {flightResult.arrive}</Text>
                 </View>
                 <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
                   <Feather name="map-pin" size={13} color="#6B7280" />
@@ -688,12 +733,22 @@ export default function LifeOps({ navigation }) {
                 </View>
                 <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
                   <Feather name="tag" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>Seat {flightResult.seat} · {flightResult.class} · ₹{flightResult.price.toLocaleString('en-IN')}</Text>
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>Seat {flightResult.seat} · {flightResult.cabinClass} · ₹{Number(flightResult.price).toLocaleString('en-IN')}</Text>
                 </View>
                 <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
                   <Feather name="hash" size={13} color="#6B7280" />
                   <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{flightResult.bookingId}</Text>
                 </View>
+                <Text style={styles.resultSub}>Complete payment on Skyscanner ✈️</Text>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { marginTop: 8 }]}
+                  onPress={() => Linking.openURL(flightResult.deepLink)}
+                >
+                  <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="external-link" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>Complete on Skyscanner</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
                 <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#F3EFFE' }]} onPress={() => setFlightModal(false)}>
                   <Text style={[styles.resultDoneBtnText, { color: '#9B72FF' }]}>Done</Text>
                 </TouchableOpacity>
@@ -737,11 +792,43 @@ export default function LifeOps({ navigation }) {
                 <View style={styles.dateRow}>
                   <View style={styles.dateCol}>
                     <Text style={styles.inputLabel}>Check-in</Text>
-                    <TextInput style={styles.modalInput} placeholder="2025-08-01" placeholderTextColor="#9AA1AE" value={hotelCheckin} onChangeText={setHotelCheckin} />
+                    <TouchableOpacity style={styles.modalInput} onPress={() => setShowCheckinPicker(true)}>
+                      <Text style={{ color: hotelCheckin ? '#1A1D23' : '#9AA1AE', fontSize: 14 }}>
+                        {hotelCheckin || 'Select date'}
+                      </Text>
+                    </TouchableOpacity>
+                    {showCheckinPicker && (
+                      <DateTimePicker
+                        value={hotelCheckin ? new Date(hotelCheckin) : new Date()}
+                        mode="date"
+                        minimumDate={new Date()}
+                        display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                        onChange={(_, date) => {
+                          setShowCheckinPicker(false);
+                          if (date) setHotelCheckin(date.toISOString().slice(0, 10));
+                        }}
+                      />
+                    )}
                   </View>
                   <View style={styles.dateCol}>
                     <Text style={styles.inputLabel}>Check-out</Text>
-                    <TextInput style={styles.modalInput} placeholder="2025-08-03" placeholderTextColor="#9AA1AE" value={hotelCheckout} onChangeText={setHotelCheckout} />
+                    <TouchableOpacity style={styles.modalInput} onPress={() => setShowCheckoutPicker(true)}>
+                      <Text style={{ color: hotelCheckout ? '#1A1D23' : '#9AA1AE', fontSize: 14 }}>
+                        {hotelCheckout || 'Select date'}
+                      </Text>
+                    </TouchableOpacity>
+                    {showCheckoutPicker && (
+                      <DateTimePicker
+                        value={hotelCheckout ? new Date(hotelCheckout) : new Date()}
+                        mode="date"
+                        minimumDate={hotelCheckin ? new Date(new Date(hotelCheckin).getTime() + 86400000) : new Date()}
+                        display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                        onChange={(_, date) => {
+                          setShowCheckoutPicker(false);
+                          if (date) setHotelCheckout(date.toISOString().slice(0, 10));
+                        }}
+                      />
+                    )}
                   </View>
                 </View>
                 {hotelSearchError ? (
