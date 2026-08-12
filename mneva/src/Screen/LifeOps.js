@@ -22,17 +22,26 @@ export default function LifeOps({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Cab modal
+  // Cab modal — step: 'input' | 'options' | 'confirmed'
   const [cabModal, setCabModal] = useState(false);
+  const [cabStep, setCabStep] = useState('input');
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
+  const [cabEstimate, setCabEstimate] = useState(null);
+  const [fetchingCab, setFetchingCab] = useState(false);
+  const [cabError, setCabError] = useState(null);
+  const [selectedCab, setSelectedCab] = useState(null);
   const [bookingCab, setBookingCab] = useState(false);
   const [cabResult, setCabResult] = useState(null);
 
-  // Food modal
+  // Food modal — step: 'input' | 'restaurants' | 'cart' | 'confirmed'
   const [foodModal, setFoodModal] = useState(false);
-  const [restaurant, setRestaurant] = useState('');
-  const [items, setItems] = useState('');
+  const [foodStep, setFoodStep] = useState('input');
+  const [foodQuery, setFoodQuery] = useState('');
+  const [fetchingFood, setFetchingFood] = useState(false);
+  const [foodError, setFoodError] = useState(null);
+  const [foodSuggestions, setFoodSuggestions] = useState([]);
+  const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [orderingFood, setOrderingFood] = useState(false);
   const [foodResult, setFoodResult] = useState(null);
 
@@ -74,29 +83,57 @@ export default function LifeOps({ navigation }) {
   useEffect(() => { loadData(); }, []);
   useEffect(() => onAppDataRefresh(() => loadData(true)), []);
 
-  const bookCab = async () => {
+  const fetchCabEstimate = async () => {
     if (!pickup.trim() || !destination.trim()) return;
+    setFetchingCab(true);
+    setCabError(null);
+    try {
+      const res = await apiFetch(`/api/lifeops/cab/estimate?pickup=${encodeURIComponent(pickup.trim())}&destination=${encodeURIComponent(destination.trim())}`);
+      if (!res.options || res.options.length === 0) throw new Error('No options returned');
+      setCabEstimate(res);
+      setSelectedCab(null);
+      setCabStep('options');
+    } catch (e) { setCabError(e?.message || 'Failed to fetch fares. Try again.'); }
+    finally { setFetchingCab(false); }
+  };
+
+  const confirmCab = async () => {
+    if (!selectedCab) return;
     setBookingCab(true);
     try {
       const res = await apiFetch('/api/lifeops/cab', {
         method: 'POST',
-        body: { pickup: pickup.trim(), destination: destination.trim() },
+        body: { pickup: pickup.trim(), destination: destination.trim(), cab_type: selectedCab.type, fare: selectedCab.fare, driver: selectedCab.driver, rating: selectedCab.rating, carModel: selectedCab.carModel, etaMin: selectedCab.etaMin },
       });
       setCabResult(res);
+      setCabStep('confirmed');
       loadData(true);
     } catch {}
     finally { setBookingCab(false); }
   };
 
-  const orderFood = async () => {
-    if (!restaurant.trim()) return;
+  const fetchFoodSuggestions = async () => {
+    setFetchingFood(true);
+    setFoodError(null);
+    try {
+      const res = await apiFetch(`/api/lifeops/food/suggest?query=${encodeURIComponent(foodQuery.trim())}`);
+      if (!res.suggestions || res.suggestions.length === 0) throw new Error('No suggestions returned');
+      setFoodSuggestions(res.suggestions);
+      setFoodStep('restaurants');
+    } catch (e) { setFoodError(e?.message || 'Failed to fetch suggestions. Try again.'); }
+    finally { setFetchingFood(false); }
+  };
+
+  const confirmFood = async () => {
+    if (!selectedRestaurant) return;
     setOrderingFood(true);
     try {
       const res = await apiFetch('/api/lifeops/food', {
         method: 'POST',
-        body: { restaurant: restaurant.trim(), items: items.trim() },
+        body: { restaurant: selectedRestaurant.restaurant, items: selectedRestaurant.items, platform: selectedRestaurant.platform, totalAmount: selectedRestaurant.totalAmount, deliveryTime: selectedRestaurant.deliveryTime },
       });
       setFoodResult(res);
+      setFoodStep('confirmed');
       loadData(true);
     } catch {}
     finally { setOrderingFood(false); }
@@ -139,8 +176,8 @@ export default function LifeOps({ navigation }) {
   };
 
   const QUICK_ACTIONS = [
-    { icon: 'truck', label: 'Book Cab', color: '#1F9A5A', bg: '#EFFDF6', onPress: () => { setCabResult(null); setCabModal(true); } },
-    { icon: 'shopping-bag', label: 'Order Food', color: '#F5A623', bg: '#FEF3C7', onPress: () => { setFoodResult(null); setFoodModal(true); } },
+    { icon: 'truck', label: 'Book Cab', color: '#1F9A5A', bg: '#EFFDF6', onPress: () => { setCabResult(null); setCabStep('input'); setCabEstimate(null); setSelectedCab(null); setPickup(''); setDestination(''); setCabModal(true); } },
+    { icon: 'shopping-bag', label: 'Order Food', color: '#F5A623', bg: '#FEF3C7', onPress: () => { setFoodResult(null); setFoodStep('input'); setFoodQuery(''); setFoodSuggestions([]); setSelectedRestaurant(null); setFoodModal(true); } },
     { icon: 'heart', label: 'Wishlist', color: '#E0546E', bg: '#FCEAED', onPress: () => {} },
     { icon: 'package', label: 'Deliveries', color: '#4FA6E8', bg: '#EAF3FD', onPress: () => {} },
     { icon: 'send', label: 'Book Flight', color: '#9B72FF', bg: '#F3EFFE', onPress: () => { setFlightResult(null); setFlightModal(true); } },
@@ -243,82 +280,120 @@ export default function LifeOps({ navigation }) {
           </TouchableWithoutFeedback>
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
-
-            {/* AI Agent Header */}
             <View style={styles.agentHeader}>
               <LinearGradient colors={['#1F9A5A', '#3CB37A']} style={styles.agentIconGrad}>
                 <Feather name="navigation" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
-                <Text style={styles.agentTitle}>Book a Cab</Text>
-                <Text style={styles.agentSubtitle}>Ola · Uber · Rapido</Text>
+                <Text style={styles.agentTitle}>
+                  {cabStep === 'input' ? 'Book a Cab' : cabStep === 'options' ? 'Choose Ride' : 'Ride Confirmed'}
+                </Text>
+                <Text style={styles.agentSubtitle}>
+                  {cabStep === 'options' && cabEstimate?.distanceText ? `${cabEstimate.distanceText} · ${cabEstimate.durationText}` : 'Ola · Rapido · Auto'}
+                </Text>
               </View>
-              <View style={styles.agentPill}>
-                <View style={styles.agentPillDot} />
-                <Text style={styles.agentPillText}>AI Ready</Text>
-              </View>
+              {cabStep === 'options' && (
+                <TouchableOpacity onPress={() => setCabStep('input')} style={styles.backChip}>
+                  <Feather name="arrow-left" size={14} color="#1F9A5A" />
+                </TouchableOpacity>
+              )}
             </View>
 
-            {cabResult ? (
-              <View style={styles.resultWrap}>
-                <LinearGradient colors={['#EFFDF6', '#D4F5E5']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#1F9A5A" />
-                </LinearGradient>
-                <Text style={styles.resultTitle}>Booking Initiated</Text>
-                <Text style={styles.resultSub}>Your AI twin is coordinating the ride</Text>
-                <View style={styles.resultRouteRow}>
-                  <View style={styles.resultRouteDot} />
-                  <Text style={styles.resultRouteText}>{pickup}</Text>
-                </View>
-                <View style={[styles.resultRouteDivider]} />
-                <View style={styles.resultRouteRow}>
-                  <Feather name="map-pin" size={12} color="#E0546E" />
-                  <Text style={styles.resultRouteText}>{destination}</Text>
-                </View>
-                <TouchableOpacity style={styles.resultDoneBtn} onPress={() => { setCabModal(false); setPickup(''); setDestination(''); setCabResult(null); }}>
-                  <Text style={styles.resultDoneBtnText}>Done</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
+            {cabStep === 'input' && (
               <>
                 <View style={styles.routeInputBlock}>
                   <View style={styles.routeInputRow}>
                     <View style={styles.routeDotGreen} />
-                    <TextInput
-                      style={styles.routeInput}
-                      placeholder="Pickup — current location or address"
-                      placeholderTextColor="#9AA1AE"
-                      value={pickup}
-                      onChangeText={setPickup}
-                    />
+                    <TextInput style={styles.routeInput} placeholder="Pickup — current location or address" placeholderTextColor="#9AA1AE" value={pickup} onChangeText={setPickup} />
                   </View>
                   <View style={styles.routeInputDivider} />
                   <View style={styles.routeInputRow}>
                     <Feather name="map-pin" size={13} color="#E0546E" />
-                    <TextInput
-                      style={styles.routeInput}
-                      placeholder="Destination — where to?"
-                      placeholderTextColor="#9AA1AE"
-                      value={destination}
-                      onChangeText={setDestination}
-                    />
+                    <TextInput style={styles.routeInput} placeholder="Destination — where to?" placeholderTextColor="#9AA1AE" value={destination} onChangeText={setDestination} />
                   </View>
                 </View>
                 <View style={styles.aiContextRow}>
                   <Feather name="zap" size={12} color="#1F9A5A" />
-                  <Text style={styles.aiContextText}>AI will compare fares across Ola, Uber & Rapido and pick the best</Text>
+                  <Text style={styles.aiContextText}>AI fetches live fare estimates across Ola, Rapido & Auto</Text>
                 </View>
+                {cabError ? (
+                  <View style={styles.errorRow}>
+                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Text style={styles.errorText}>{cabError}</Text>
+                  </View>
+                ) : null}
                 <TouchableOpacity
                   style={[styles.actionBtn, (!pickup.trim() || !destination.trim()) && styles.actionBtnDisabled]}
-                  onPress={bookCab}
-                  disabled={!pickup.trim() || !destination.trim() || bookingCab}
+                  onPress={fetchCabEstimate}
+                  disabled={!pickup.trim() || !destination.trim() || fetchingCab}
                 >
                   <LinearGradient colors={['#1F9A5A', '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
-                    <Feather name="navigation" size={16} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>{bookingCab ? 'Finding best ride…' : 'Book Cab via AI'}</Text>
+                    <Feather name="search" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{fetchingCab ? 'Fetching fares…' : 'See Fare Options'}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </>
+            )}
+
+            {cabStep === 'options' && (
+              <>
+                <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                  {(cabEstimate?.options || []).map((opt) => (
+                    <TouchableOpacity
+                      key={opt.type}
+                      style={[styles.cabOptionCard, selectedCab?.type === opt.type && styles.cabOptionCardSelected]}
+                      onPress={() => setSelectedCab(opt)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.cabOptionLeft}>
+                        <Text style={styles.cabOptionLabel}>{opt.label}</Text>
+                        <Text style={styles.cabOptionMeta}>{opt.platform} · {opt.carModel}</Text>
+                        <Text style={styles.cabOptionDriver}>{opt.driver} ⭐ {opt.rating}</Text>
+                      </View>
+                      <View style={styles.cabOptionRight}>
+                        <Text style={styles.cabOptionFare}>₹{opt.fare}</Text>
+                        <Text style={styles.cabOptionEta}>{opt.etaMin} min</Text>
+                      </View>
+                      {selectedCab?.type === opt.type && (
+                        <View style={styles.cabOptionCheck}>
+                          <Feather name="check-circle" size={18} color="#1F9A5A" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { marginTop: 12 }, !selectedCab && styles.actionBtnDisabled]}
+                  onPress={confirmCab}
+                  disabled={!selectedCab || bookingCab}
+                >
+                  <LinearGradient colors={['#1F9A5A', '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="navigation" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{bookingCab ? 'Confirming…' : selectedCab ? `Confirm ${selectedCab.label} · ₹${selectedCab.fare}` : 'Select a ride'}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {cabStep === 'confirmed' && cabResult && (
+              <View style={styles.resultWrap}>
+                <LinearGradient colors={['#EFFDF6', '#D4F5E5']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color="#1F9A5A" />
+                </LinearGradient>
+                <Text style={styles.resultTitle}>Ride Confirmed!</Text>
+                <Text style={styles.resultSub}>{cabResult.driver} is on the way</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#EFFDF6', marginTop: 12 }]}>
+                  <Feather name="truck" size={13} color="#1F9A5A" />
+                  <Text style={[styles.resultInfoChipText, { color: '#1F5C3A' }]}>{cabResult.carModel} · ₹{cabResult.fare} · {cabResult.etaMin} min</Text>
+                </View>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{cabResult.bookingId}</Text>
+                </View>
+                <TouchableOpacity style={styles.resultDoneBtn} onPress={() => setCabModal(false)}>
+                  <Text style={styles.resultDoneBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -567,70 +642,126 @@ export default function LifeOps({ navigation }) {
           </TouchableWithoutFeedback>
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
-
-            {/* AI Agent Header */}
             <View style={styles.agentHeader}>
               <LinearGradient colors={['#F5A623', '#E8943A']} style={styles.agentIconGrad}>
                 <Feather name="shopping-bag" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
-                <Text style={styles.agentTitle}>Order Food</Text>
+                <Text style={styles.agentTitle}>
+                  {foodStep === 'input' ? 'Order Food' : foodStep === 'restaurants' ? 'Pick a Restaurant' : foodStep === 'cart' ? 'Your Order' : 'Order Placed!'}
+                </Text>
                 <Text style={styles.agentSubtitle}>Swiggy · Zomato</Text>
               </View>
-              <View style={[styles.agentPill, { backgroundColor: '#FEF3C7' }]}>
-                <View style={[styles.agentPillDot, { backgroundColor: '#F5A623' }]} />
-                <Text style={[styles.agentPillText, { color: '#D97706' }]}>AI Ready</Text>
-              </View>
+              {(foodStep === 'restaurants' || foodStep === 'cart') && (
+                <TouchableOpacity onPress={() => setFoodStep(foodStep === 'cart' ? 'restaurants' : 'input')} style={[styles.backChip, { borderColor: '#F5A623' }]}>
+                  <Feather name="arrow-left" size={14} color="#F5A623" />
+                </TouchableOpacity>
+              )}
             </View>
 
-            {foodResult ? (
+            {foodStep === 'input' && (
+              <>
+                <View style={styles.routeInputBlock}>
+                  <View style={styles.routeInputRow}>
+                    <Feather name="search" size={14} color="#9AA1AE" />
+                    <TextInput
+                      style={styles.routeInput}
+                      placeholder="What are you craving? e.g. biryani, pizza"
+                      placeholderTextColor="#9AA1AE"
+                      value={foodQuery}
+                      onChangeText={setFoodQuery}
+                    />
+                  </View>
+                </View>
+                <View style={[styles.aiContextRow, { backgroundColor: '#FEF9EE' }]}>
+                  <Feather name="zap" size={12} color="#F5A623" />
+                  <Text style={[styles.aiContextText, { color: '#92400E' }]}>AI picks the best restaurants based on your preferences</Text>
+                </View>
+                {foodError ? (
+                  <View style={styles.errorRow}>
+                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Text style={styles.errorText}>{foodError}</Text>
+                  </View>
+                ) : null}
+                <TouchableOpacity style={styles.actionBtn} onPress={fetchFoodSuggestions} disabled={fetchingFood}>
+                  <LinearGradient colors={['#F5A623', '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="search" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{fetchingFood ? 'Finding restaurants…' : 'Find Restaurants'}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {foodStep === 'restaurants' && (
+              <>
+                <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+                  {foodSuggestions.map((r, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[styles.foodRestCard, selectedRestaurant?.restaurant === r.restaurant && styles.foodRestCardSelected]}
+                      onPress={() => { setSelectedRestaurant(r); setFoodStep('cart'); }}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.foodRestTop}>
+                        <Text style={styles.foodRestName}>{r.restaurant}</Text>
+                        <View style={styles.foodRestRating}>
+                          <Text style={styles.foodRestRatingText}>⭐ {r.rating}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.foodRestMeta}>{r.cuisine} · {r.deliveryTime} · {r.platform}</Text>
+                      <Text style={styles.foodRestItems}>{(r.items || []).map(it => it.name).join(', ')}</Text>
+                      <Text style={styles.foodRestTotal}>₹{r.totalAmount}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {foodStep === 'cart' && selectedRestaurant && (
+              <>
+                <View style={styles.cartRestHeader}>
+                  <Text style={styles.cartRestName}>{selectedRestaurant.restaurant}</Text>
+                  <Text style={styles.cartRestMeta}>{selectedRestaurant.cuisine} · {selectedRestaurant.deliveryTime}</Text>
+                </View>
+                {(selectedRestaurant.items || []).map((item, i) => (
+                  <View key={i} style={styles.cartItemRow}>
+                    <View style={styles.cartItemDot} />
+                    <Text style={styles.cartItemName}>{item.name}</Text>
+                    <Text style={styles.cartItemPrice}>₹{item.price}</Text>
+                  </View>
+                ))}
+                <View style={styles.cartTotalRow}>
+                  <Text style={styles.cartTotalLabel}>Total</Text>
+                  <Text style={styles.cartTotalAmount}>₹{selectedRestaurant.totalAmount}</Text>
+                </View>
+                <TouchableOpacity style={[styles.actionBtn, { marginTop: 12 }]} onPress={confirmFood} disabled={orderingFood}>
+                  <LinearGradient colors={['#F5A623', '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <Feather name="shopping-bag" size={16} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>{orderingFood ? 'Placing order…' : `Place Order · ₹${selectedRestaurant.totalAmount}`}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {foodStep === 'confirmed' && foodResult && (
               <View style={styles.resultWrap}>
                 <LinearGradient colors={['#FEF3C7', '#FDE68A']} style={styles.resultIconWrap}>
                   <Feather name="check" size={28} color="#D97706" />
                 </LinearGradient>
-                <Text style={styles.resultTitle}>Order Initiated</Text>
-                <Text style={styles.resultSub}>Your AI twin is placing the order</Text>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#FEF3C7' }]}>
+                <Text style={styles.resultTitle}>Order Confirmed!</Text>
+                <Text style={styles.resultSub}>Arriving in {foodResult.deliveryTime || '35-45 mins'}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#FEF3C7', marginTop: 12 }]}>
                   <Feather name="shopping-bag" size={13} color="#D97706" />
-                  <Text style={[styles.resultInfoChipText, { color: '#D97706' }]}>{restaurant}</Text>
+                  <Text style={[styles.resultInfoChipText, { color: '#D97706' }]}>{foodResult.restaurant} · ₹{foodResult.totalAmount}</Text>
                 </View>
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#FEF3C7' }]} onPress={() => { setFoodModal(false); setRestaurant(''); setItems(''); setFoodResult(null); }}>
+                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color="#6B7280" />
+                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{foodResult.orderId}</Text>
+                </View>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#FEF3C7' }]} onPress={() => setFoodModal(false)}>
                   <Text style={[styles.resultDoneBtnText, { color: '#D97706' }]}>Done</Text>
                 </TouchableOpacity>
               </View>
-            ) : (
-              <>
-                <Text style={styles.inputLabel}>Restaurant</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. Domino's, Biryani Blues"
-                  placeholderTextColor="#9AA1AE"
-                  value={restaurant}
-                  onChangeText={setRestaurant}
-                />
-                <Text style={styles.inputLabel}>Items <Text style={styles.optionalTag}>(optional)</Text></Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. Margherita pizza, Coke"
-                  placeholderTextColor="#9AA1AE"
-                  value={items}
-                  onChangeText={setItems}
-                />
-                <View style={[styles.aiContextRow, { backgroundColor: '#FEF9EE' }]}>
-                  <Feather name="zap" size={12} color="#F5A623" />
-                  <Text style={[styles.aiContextText, { color: '#92400E' }]}>AI will find your usual order and confirm before placing</Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.actionBtn, !restaurant.trim() && styles.actionBtnDisabled]}
-                  onPress={orderFood}
-                  disabled={!restaurant.trim() || orderingFood}
-                >
-                  <LinearGradient colors={['#F5A623', '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
-                    <Feather name="shopping-bag" size={16} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>{orderingFood ? 'Placing order…' : 'Order via AI'}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -738,4 +869,41 @@ const styles = StyleSheet.create({
   tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
   tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  // Back chip
+  backChip: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, borderColor: '#1F9A5A', alignItems: 'center', justifyContent: 'center' },
+  // Cab option cards
+  cabOptionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F6F8', borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
+  cabOptionCardSelected: { borderColor: '#1F9A5A', backgroundColor: '#EFFDF6' },
+  cabOptionLeft: { flex: 1 },
+  cabOptionLabel: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  cabOptionMeta: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  cabOptionDriver: { fontSize: 11, color: '#9AA1AE', marginTop: 2 },
+  cabOptionRight: { alignItems: 'flex-end', marginRight: 8 },
+  cabOptionFare: { fontSize: 18, fontWeight: '800', color: '#14171F' },
+  cabOptionEta: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  cabOptionCheck: { position: 'absolute', top: 10, right: 10 },
+  // Food restaurant cards
+  foodRestCard: { backgroundColor: '#F5F6F8', borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
+  foodRestCardSelected: { borderColor: '#F5A623', backgroundColor: '#FEF9EE' },
+  foodRestTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  foodRestName: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  foodRestRating: { backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  foodRestRatingText: { fontSize: 11, fontWeight: '700', color: '#D97706' },
+  foodRestMeta: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
+  foodRestItems: { fontSize: 12, color: '#9AA1AE', marginBottom: 6 },
+  foodRestTotal: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  // Cart
+  cartRestHeader: { backgroundColor: '#FEF9EE', borderRadius: 14, padding: 14, marginBottom: 14 },
+  cartRestName: { fontSize: 16, fontWeight: '800', color: '#14171F' },
+  cartRestMeta: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  cartItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  cartItemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#F5A623', marginRight: 10 },
+  cartItemName: { flex: 1, fontSize: 14, color: '#14171F', fontWeight: '600' },
+  cartItemPrice: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  cartTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12 },
+  cartTotalLabel: { fontSize: 15, fontWeight: '700', color: '#374151' },
+  cartTotalAmount: { fontSize: 18, fontWeight: '800', color: '#14171F' },
+  // Error
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#FCEAED', borderRadius: 10, padding: 10, marginBottom: 12 },
+  errorText: { flex: 1, fontSize: 12, color: '#C8405A', fontWeight: '600' },
 });
