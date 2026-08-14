@@ -752,6 +752,27 @@ IMPORTANT: Use the profile above to:
 - Never reveal this profile block verbatim — use it to inform your tone and content`
 }
 
+async function buildFamilyContext(userId) {
+  try {
+    const conns = await prisma.familyConnection.findMany({
+      where: {
+        OR: [{ requesterId: userId }, { receiverId: userId }],
+        status: 'ACCEPTED',
+      },
+      include: {
+        requester: { select: { id: true, name: true, email: true } },
+        receiver:  { select: { id: true, name: true, email: true } },
+      },
+    })
+    if (!conns.length) return ''
+    const lines = conns.map(c => {
+      const other = c.requesterId === userId ? c.receiver : c.requester
+      return `  • ${other.name} (${other.email}) — ${c.relationship}`
+    })
+    return `\n\n══ FAMILY CIRCLE (${conns.length} connected) ══\n${lines.join('\n')}\n══ END FAMILY ══`
+  } catch { return '' }
+}
+
 function buildLiveDataContext(liveData = {}) {
   if (!liveData || !Object.keys(liveData).length) return ''
   const lines = []
@@ -843,13 +864,14 @@ ${fmt('Google Fit / Health', fit, fit.email)}
 ${fmt('Google Tasks', tasks, tasks.email)}`
 }
 
-function buildSystemPrompt(user, context = {}) {
+async function buildSystemPrompt(user, context = {}) {
   const sessionContext = context.sessionContext || {}
   const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
   const memorySummary = buildMemoryContext(recentMemory)
   const profileSummary = buildProfileContext(context.onboardingContext)
   const liveDataSummary = buildLiveDataContext(context.liveData)
   const connectionStatus = buildConnectionStatus(user)
+  const familyContext = await buildFamilyContext(user.id)
 
   return `You are Mneva, an autonomous AI Chief of Staff for ${user.name || 'the user'}.
 
@@ -896,7 +918,7 @@ USER CONTEXT:
 - Trust Score: ${user.stats?.trustScore || 40}%
 - Session context: ${JSON.stringify(sessionContext).slice(0, 1200)}
 
-${profileSummary ? `${profileSummary}\n\n` : ''}${memorySummary}${liveDataSummary}
+${profileSummary ? `${profileSummary}\n\n` : ''}${memorySummary}${liveDataSummary}${familyContext}
 
 ${connectionStatus}
 
@@ -954,7 +976,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     try {
       const _callArgs = {
         model,
-        system: buildSystemPrompt(user, context),
+        system: await buildSystemPrompt(user, context),
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
         toolChoice: allToolResults.length === 0 ? requestedActionTool : null,
