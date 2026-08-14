@@ -147,6 +147,22 @@ router.patch('/avatar', async (req, res) => {
   } catch { res.status(401).json({ error: 'Invalid token' }) }
 })
 
+// ── User Search (by email or phone) ──────────────────────────────────────────
+router.get('/users/search', async (req, res) => {
+  const h = req.headers.authorization
+  if (!h) return res.status(401).json({ error: 'No token' })
+  try {
+    jwt.verify(h.split(' ')[1], SECRET)
+    const q = String(req.query.q || '').trim().toLowerCase()
+    if (q.length < 3) return res.json({ user: null })
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: q, mode: 'insensitive' } },
+      select: { id: true, name: true, email: true, avatar: true },
+    })
+    res.json({ user: user || null })
+  } catch { res.status(401).json({ error: 'Invalid token' }) }
+})
+
 // ── Me ─────────────────────────────────────────────────────────────────────────
 router.get('/me', async (req, res) => {
   const h = req.headers.authorization

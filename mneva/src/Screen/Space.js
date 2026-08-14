@@ -87,6 +87,15 @@ const MODULES = [
     iconBg: "#F0EEFF",
     screen: "MediaDiscovery",
   },
+  {
+    id: "9",
+    title: "Family",
+    subtitle: "Family circle & shared life",
+    icon: "users",
+    iconColor: "#E8672A",
+    iconBg: "#FEF0E8",
+    screen: "Family",
+  },
 ];
 
 export default function Space({ navigation }) {

@@ -38,6 +38,10 @@ import Subscription from './src/Screen/Subscription';
 import Search from './src/Screen/Search';
 import MorningBriefing from './src/Screen/MorningBriefing';
 import Contacts from './src/Screen/Contacts';
+import Family from './src/Screen/Family';
+import FamilyTasks from './src/Screen/FamilyTasks';
+import ParentMedication from './src/Screen/ParentMedication';
+import PetCare from './src/Screen/PetCare';
 import PhoneAlerts from './src/Screen/PhoneAlerts';
 import PhoneAlertDetail from './src/Screen/PhoneAlertDetail';
 import { clearAuth, getStoredAuth } from './src/storage/auth';
@@ -300,6 +304,10 @@ export default function App() {
           <Stack.Screen name="SportsDiscovery" component={SportsDiscovery} />
           <Stack.Screen name="NewsDiscovery" component={NewsDiscovery} />
           <Stack.Screen name="NewsStory" component={NewsStory} />
+          <Stack.Screen name="Family" component={Family} />
+          <Stack.Screen name="FamilyTasks" component={FamilyTasks} />
+          <Stack.Screen name="ParentMedication" component={ParentMedication} />
+          <Stack.Screen name="PetCare" component={PetCare} />
         </Stack.Navigator>
         <ReminderAlert />
       </NavigationContainer>
