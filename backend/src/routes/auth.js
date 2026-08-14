@@ -165,7 +165,7 @@ router.patch('/avatar', async (req, res) => {
   } catch { res.status(401).json({ error: 'Invalid token' }) }
 })
 
-// ── User Search (by email or phone) ──────────────────────────────────────────
+// ── User Search (email + phone must both match; graceful if target has no phone yet) ──
 router.get('/users/search', async (req, res) => {
   const h = req.headers.authorization
   if (!h) return res.status(401).json({ error: 'No token' })
@@ -174,14 +174,22 @@ router.get('/users/search', async (req, res) => {
     const email = String(req.query.email || '').trim().toLowerCase()
     const phone = String(req.query.phone || '').trim()
     if (!email || !phone) return res.json({ user: null })
-    const user = await prisma.user.findFirst({
-      where: {
-        email: { equals: email, mode: 'insensitive' },
-        phone: { equals: phone },
-      },
-      select: { id: true, name: true, email: true, avatar: true },
+
+    // First find by email
+    const userByEmail = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { id: true, name: true, email: true, avatar: true, phone: true },
     })
-    res.json({ user: user || null })
+
+    if (!userByEmail) return res.json({ user: null })
+
+    // If user has a phone set, it must match exactly
+    if (userByEmail.phone && userByEmail.phone !== phone) return res.json({ user: null })
+
+    // If user has no phone yet, still return them so they can be found
+    // but flag it so the app can prompt them to add their phone
+    const { phone: _p, ...publicUser } = userByEmail
+    res.json({ user: publicUser, targetHasNoPhone: !userByEmail.phone })
   } catch { res.status(401).json({ error: 'Invalid token' }) }
 })
 
