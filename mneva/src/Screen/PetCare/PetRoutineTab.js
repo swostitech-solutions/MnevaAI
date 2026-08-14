@@ -7,7 +7,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch } from '../../api/client';
-import { usePet } from '../PetCare';
+import { usePet } from './PetContext';
 import { useSocket } from '../../services/socket';
 
 const REMINDER_TYPES = ['Vaccination', 'Medication', 'Grooming', 'Vet Appointment', 'Feeding'];

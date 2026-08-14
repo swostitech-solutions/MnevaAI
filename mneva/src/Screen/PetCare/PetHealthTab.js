@@ -7,7 +7,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch } from '../../api/client';
-import { usePet } from '../PetCare';
+import { usePet } from './PetContext';
 
 const VACCINE_STATUS = ['Up to date', 'Due soon', 'Overdue'];
 const statusColor = (s) => s === 'Up to date' ? '#1F9A5A' : s === 'Due soon' ? '#D97706' : '#E0546E';

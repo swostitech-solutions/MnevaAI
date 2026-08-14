@@ -45,7 +45,9 @@ import PetCare from './src/Screen/PetCare';
 import PhoneAlerts from './src/Screen/PhoneAlerts';
 import PhoneAlertDetail from './src/Screen/PhoneAlertDetail';
 import { clearAuth, getStoredAuth } from './src/storage/auth';
-import { apiFetch, onSessionExpired } from './src/api/client';
+import { apiFetch, onSessionExpired, pingBackend } from './src/api/client';
+// Wake Render backend immediately on JS bundle load — before any screen mounts
+pingBackend();
 import { getSocket, resetSocket } from './src/services/socket';
 import { refreshAppData } from './src/services/dataRefresh';
 import ReminderAlert from './src/components/ReminderAlert';

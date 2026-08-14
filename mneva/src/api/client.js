@@ -16,7 +16,11 @@ async function getToken() {
   return AsyncStorage.getItem('mneva_token');
 }
 
-export async function apiFetch(path, options = {}) {
+// Wake Render free-tier backend immediately on app launch (fire-and-forget)
+export function pingBackend() {
+  fetch(`${BASE_URL}/api/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
+}
+
   // `retry: false` is used by higher-level recovery loops which already own
   // their retry/backoff policy. Do not pass this app-only option to fetch.
   const { retry, ...fetchOptions } = options;
@@ -34,10 +38,10 @@ export async function apiFetch(path, options = {}) {
   // Render can take a moment to wake and mobile radios can take a few seconds
   // to reconnect after the app resumes. Reads are safe to retry and should not
   // leave a screen empty just because its first request raced that recovery.
-  const maxAttempts = retryable ? 4 : 1;
+  const maxAttempts = retryable ? 3 : 1;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 50000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
       const res = await fetch(`${BASE_URL}${path}`, {
         ...fetchOptions,

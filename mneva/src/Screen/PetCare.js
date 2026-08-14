@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   useWindowDimensions, Animated, Pressable,
@@ -13,10 +13,7 @@ import PetRoutineTab from './PetCare/PetRoutineTab';
 import { apiFetch } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
-
-// ── Shared context so all tabs share the same pet data ──────────────────────
-export const PetContext = createContext(null);
-export const usePet = () => useContext(PetContext);
+import { PetContext } from './PetCare/PetContext';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: 'user' },
