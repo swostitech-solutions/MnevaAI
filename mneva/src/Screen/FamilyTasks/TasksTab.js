@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getStoredAuth } from '../../storage/auth';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform,
@@ -20,6 +21,11 @@ export default function TasksTab({ horizontalPad, insets }) {
   const { tasks, connections } = useFamilyTask();
   const [filter, setFilter] = useState('All');
   const [createModal, setCreateModal] = useState(false);
+  const [myId, setMyId] = useState(null);
+
+  useEffect(() => {
+    getStoredAuth().then(({ user }) => { if (user?.id) setMyId(user.id); }).catch(() => {});
+  }, []);
 
   const filtered = FILTER_MAP[filter]
     ? tasks.filter(t => t.status === FILTER_MAP[filter])
@@ -58,7 +64,7 @@ export default function TasksTab({ horizontalPad, insets }) {
             <Text style={styles.emptySubtitle}>Tap the button below to create{'\n'}your first family task</Text>
           </View>
         ) : (
-          filtered.map(task => <TaskCard key={task.id} task={task} />)
+          filtered.map(task => <TaskCard key={task.id} task={task} myId={myId} />)
         )}
       </ScrollView>
 
@@ -86,13 +92,22 @@ export default function TasksTab({ horizontalPad, insets }) {
 }
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
-function TaskCard({ task }) {
+function TaskCard({ task, myId }) {
+  const { updateTaskStatus } = useFamilyTask();
   const s = TASK_STATUSES[task.status] || TASK_STATUSES.DRAFT;
   const pc = PRIORITY_COLOR[task.priority] || '#9AA1AE';
   const pb = PRIORITY_BG[task.priority]   || '#F5F6F8';
   const doneItems  = task.checklist?.filter(i => i.done).length || 0;
   const totalItems = task.checklist?.length || 0;
   const progress   = totalItems > 0 ? doneItems / totalItems : 0;
+
+  const isAssignee = myId && task.assignedTo?.id === myId;
+  const isCreator  = myId && task.createdBy?.id === myId;
+
+  const doStatus = (status) => updateTaskStatus(task.id, status).catch(e => Alert.alert('Error', e?.message || 'Failed'));
+
+  const assigneeName = task.assignedTo?.name || 'Unassigned';
+  const creatorName  = task.createdBy?.name;
 
   return (
     <View style={[styles.card, { borderLeftColor: pc }]}>
@@ -114,9 +129,9 @@ function TaskCard({ task }) {
         {task.assignedTo ? (
           <View style={styles.assigneeChip}>
             <View style={styles.assigneeAvatar}>
-              <Text style={styles.assigneeAvatarText}>{task.assignedTo.charAt(0).toUpperCase()}</Text>
+              <Text style={styles.assigneeAvatarText}>{assigneeName.charAt(0).toUpperCase()}</Text>
             </View>
-            <Text style={styles.assigneeText}>{task.assignedTo}</Text>
+            <Text style={styles.assigneeText}>{assigneeName}</Text>
           </View>
         ) : (
           <View style={styles.unassignedChip}>
@@ -124,6 +139,12 @@ function TaskCard({ task }) {
             <Text style={styles.unassignedText}>Unassigned</Text>
           </View>
         )}
+        {creatorName ? (
+          <View style={styles.metaChip}>
+            <Feather name="user" size={11} color="#6B7280" />
+            <Text style={styles.metaChipText}>by {creatorName}</Text>
+          </View>
+        ) : null}
         {task.dueDate ? (
           <View style={styles.metaChip}>
             <Feather name="calendar" size={11} color="#6B7280" />
@@ -151,6 +172,40 @@ function TaskCard({ task }) {
           <Text style={styles.progressText}>{doneItems}/{totalItems}</Text>
         </View>
       )}
+
+      {/* Action buttons */}
+      {isAssignee && task.status === 'PENDING_ACCEPTANCE' && (
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionAccept]} onPress={() => doStatus('ACCEPTED')}>
+            <Feather name="check" size={13} color="#1F9A5A" />
+            <Text style={[styles.actionBtnText, { color: '#1F9A5A' }]}>Accept</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={() => doStatus('REJECTED')}>
+            <Feather name="x" size={13} color="#E0546E" />
+            <Text style={[styles.actionBtnText, { color: '#E0546E' }]}>Reject</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {(isAssignee || isCreator) && task.status === 'ACCEPTED' && (
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionProgress]} onPress={() => doStatus('IN_PROGRESS')}>
+            <Feather name="play" size={13} color="#9B72FF" />
+            <Text style={[styles.actionBtnText, { color: '#9B72FF' }]}>Start</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {(isAssignee || isCreator) && task.status === 'IN_PROGRESS' && (
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionAccept]} onPress={() => doStatus('COMPLETED')}>
+            <Feather name="check-circle" size={13} color="#1F9A5A" />
+            <Text style={[styles.actionBtnText, { color: '#1F9A5A' }]}>Complete</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={() => doStatus('CANCELLED')}>
+            <Feather name="slash" size={13} color="#6B7280" />
+            <Text style={[styles.actionBtnText, { color: '#6B7280' }]}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -162,7 +217,7 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
 
   const [title, setTitle]           = useState('');
   const [description, setDesc]      = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
+  const [assignee, setAssignee] = useState(null); // { id, name, connectionId }
   const [priority, setPriority]     = useState('Medium');
   const [category, setCategory]     = useState('');
   const [dueDate, setDueDate]       = useState('');
@@ -171,7 +226,7 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
   const [checklist, setChecklist]   = useState([]);
 
   const reset = () => {
-    setTitle(''); setDesc(''); setAssignedTo(''); setPriority('Medium');
+    setTitle(''); setDesc(''); setAssignee(null); setPriority('Medium');
     setCategory(''); setDueDate(''); setRecurrence('None'); setCLInput(''); setChecklist([]);
   };
 
@@ -181,10 +236,19 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
     setCLInput('');
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!title.trim()) return Alert.alert('Title required', 'Please enter a task title.');
-    createTask({ title: title.trim(), description, assignedTo, priority, category, dueDate, recurrence, checklist });
-    reset(); onClose();
+    if (!assignee) return Alert.alert('Assign required', 'Please select a family member to assign this task.');
+    try {
+      await createTask({
+        connectionId: assignee.connectionId,
+        assigneeId:   assignee.id,
+        title: title.trim(), description, priority, category, dueDate, recurrence, checklist,
+      });
+      reset(); onClose();
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Failed to create task');
+    }
   };
 
   return (
@@ -199,7 +263,7 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
             <View style={{ flex: 1 }}>
               <Text style={styles.sheetHeroTitle}>New Task</Text>
               <Text style={styles.sheetHeroSub}>
-                {assignedTo ? `Will be assigned to ${assignedTo}` : 'Saved as draft until assigned'}
+                {assignee ? `Will be assigned to ${assignee.name}` : 'Select a family member to assign'}
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.sheetCloseBtn}>
@@ -226,29 +290,29 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarRow}>
                 <TouchableOpacity
-                  style={[styles.avatarOption, assignedTo === '' && styles.avatarOptionActive]}
-                  onPress={() => setAssignedTo('')}
+                  style={[styles.avatarOption, assignee === null && styles.avatarOptionActive]}
+                  onPress={() => setAssignee(null)}
                 >
                   <View style={[styles.avatarCircle, { backgroundColor: '#F0F1F4' }]}>
                     <Feather name="slash" size={14} color="#9AA1AE" />
                   </View>
-                  <Text style={[styles.avatarLabel, assignedTo === '' && styles.avatarLabelActive]}>None</Text>
+                  <Text style={[styles.avatarLabel, assignee === null && styles.avatarLabelActive]}>None</Text>
                 </TouchableOpacity>
                 {accepted.map(c => (
                   <TouchableOpacity
                     key={c.id}
-                    style={[styles.avatarOption, assignedTo === c.name && styles.avatarOptionActive]}
-                    onPress={() => setAssignedTo(c.name)}
+                    style={[styles.avatarOption, assignee?.id === c.otherId && styles.avatarOptionActive]}
+                    onPress={() => setAssignee({ id: c.otherId, name: c.name, connectionId: c.id })}
                   >
                     <LinearGradient
-                      colors={assignedTo === c.name ? ['#0F5132', '#1F9A5A'] : ['#E8EAF0', '#DDE0E8']}
+                      colors={assignee?.id === c.otherId ? ['#0F5132', '#1F9A5A'] : ['#E8EAF0', '#DDE0E8']}
                       style={styles.avatarCircle}
                     >
-                      <Text style={[styles.avatarInitial, { color: assignedTo === c.name ? '#FFFFFF' : '#6B7280' }]}>
+                      <Text style={[styles.avatarInitial, { color: assignee?.id === c.otherId ? '#FFFFFF' : '#6B7280' }]}>
                         {c.name.charAt(0).toUpperCase()}
                       </Text>
                     </LinearGradient>
-                    <Text style={[styles.avatarLabel, assignedTo === c.name && styles.avatarLabelActive]} numberOfLines={1}>
+                    <Text style={[styles.avatarLabel, assignee?.id === c.otherId && styles.avatarLabelActive]} numberOfLines={1}>
                       {c.name}
                     </Text>
                   </TouchableOpacity>
@@ -341,9 +405,9 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
               activeOpacity={0.85}
             >
               <LinearGradient colors={['#0F5132', '#1F9A5A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.submitGrad}>
-                <Feather name={assignedTo ? 'send' : 'save'} size={16} color="#FFFFFF" />
+                <Feather name={assignee ? 'send' : 'save'} size={16} color="#FFFFFF" />
                 <Text style={styles.submitText}>
-                  {assignedTo ? `Assign to ${assignedTo}` : 'Save as Draft'}
+                  {assignee ? `Assign to ${assignee.name}` : 'Select Assignee First'}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -435,4 +499,11 @@ const styles = StyleSheet.create({
   submitBtnDisabled: { opacity: 0.4 },
   submitGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
   submitText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  // Action buttons
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingVertical: 8, borderWidth: 1.5 },
+  actionAccept: { backgroundColor: '#EFFDF6', borderColor: '#1F9A5A' },
+  actionReject: { backgroundColor: '#FCEAED', borderColor: '#E0546E' },
+  actionProgress: { backgroundColor: '#F3EFFE', borderColor: '#9B72FF' },
+  actionBtnText: { fontSize: 12, fontWeight: '700' },
 });

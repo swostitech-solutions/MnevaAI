@@ -49,6 +49,8 @@ model User {
   userProfile   UserProfile?
   familyConnectionsSent     FamilyConnection[] @relation("ConnectionRequester")
   familyConnectionsReceived FamilyConnection[] @relation("ConnectionReceiver")
+  familyTasksCreated        FamilyTask[]       @relation("FamilyTaskCreator")
+  familyTasksAssigned       FamilyTask[]       @relation("FamilyTaskAssignee")
 
   conversations Conversation[]
   agents        Agent[]
@@ -301,10 +303,37 @@ model FamilyConnection {
 
   requester User @relation("ConnectionRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   receiver  User @relation("ConnectionReceiver",  fields: [receiverId],  references: [id], onDelete: Cascade)
+  tasks     FamilyTask[]
 
   @@unique([requesterId, receiverId])
   @@index([requesterId])
   @@index([receiverId])
+}
+
+model FamilyTask {
+  id           String   @id @default(uuid())
+  connectionId String
+  creatorId    String
+  assigneeId   String
+  title        String
+  description  String?
+  status       String   @default("PENDING_ACCEPTANCE")
+  priority     String   @default("Medium")
+  category     String?
+  dueDate      String?
+  recurrence   String   @default("None")
+  checklist    Json     @default("[]")
+  comments     Json     @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  connection FamilyConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  creator    User @relation("FamilyTaskCreator",  fields: [creatorId],  references: [id], onDelete: Cascade)
+  assignee   User @relation("FamilyTaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+  @@index([creatorId])
+  @@index([assigneeId])
 }
 
 model TrustScore {
