@@ -47,6 +47,8 @@ model User {
   agentLedgers  AgentLedger[]
   trustScore    TrustScore?
   userProfile   UserProfile?
+  familyConnectionsSent     FamilyConnection[] @relation("ConnectionRequester")
+  familyConnectionsReceived FamilyConnection[] @relation("ConnectionReceiver")
 
   conversations Conversation[]
   agents        Agent[]
@@ -286,6 +288,23 @@ model AgentLedger {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model FamilyConnection {
+  id           String   @id @default(uuid())
+  requesterId  String
+  receiverId   String
+  relationship String
+  status       String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  requester User @relation("ConnectionRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("ConnectionReceiver",  fields: [receiverId],  references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+  @@index([requesterId])
+  @@index([receiverId])
 }
 
 model TrustScore {

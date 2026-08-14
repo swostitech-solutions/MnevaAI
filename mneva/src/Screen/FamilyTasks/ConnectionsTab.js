@@ -34,8 +34,12 @@ export default function ConnectionsTab({ horizontalPad, insets }) {
   const sent     = connections.filter(c => c.status === 'PENDING' && c.direction === 'SENT');
   const rejected = connections.filter(c => c.status === 'REJECTED');
 
-  const doSend = (name, relationship, email) => {
-    sendRequest(name, relationship, email);
+  const doSend = async (name, relationship, email) => {
+    try {
+      await sendRequest(name, relationship, email);
+    } catch (err) {
+      alert(err?.message || 'Failed to send request');
+    }
   };
 
   return (
@@ -208,19 +212,20 @@ function RequestSheet({ visible, onClose, insets, onSubmit }) {
   const [searching, setSearching]   = useState(false);
   const [foundUser, setFoundUser]   = useState(null);
   const [notFound, setNotFound]     = useState(false);
+  const [noPhoneWarning, setNoPhoneWarning] = useState(false);
   const [rel, setRel]               = useState('');
   const debounceRef                 = useRef(null);
 
   useEffect(() => {
     if (!visible) {
-      setEmailQuery(''); setPhoneQuery(''); setFoundUser(null); setNotFound(false); setRel(''); setSearching(false);
+      setEmailQuery(''); setPhoneQuery(''); setFoundUser(null); setNotFound(false); setNoPhoneWarning(false); setRel(''); setSearching(false);
     }
   }, [visible]);
 
   // Search only when both fields have enough input
   useEffect(() => {
     clearTimeout(debounceRef.current);
-    setFoundUser(null); setNotFound(false);
+    setFoundUser(null); setNotFound(false); setNoPhoneWarning(false);
     const email = emailQuery.trim();
     const phone = phoneQuery.trim();
     if (email.length < 3 || phone.length < 10) { setSearching(false); return; }
@@ -232,6 +237,7 @@ function RequestSheet({ visible, onClose, insets, onSubmit }) {
         );
         setFoundUser(data.user || null);
         setNotFound(!data.user);
+        setNoPhoneWarning(!!data.targetHasNoPhone);
       } catch {
         setNotFound(true);
       } finally {
@@ -322,6 +328,14 @@ function RequestSheet({ visible, onClose, insets, onSubmit }) {
                   <Text style={styles.notFoundTitle}>No user found</Text>
                   <Text style={styles.notFoundSub}>No Mneva account matches this email & phone combination.</Text>
                 </View>
+              </View>
+            )}
+
+            {/* Found user — no phone warning */}
+            {foundUser && noPhoneWarning && (
+              <View style={styles.warnBox}>
+                <Feather name="alert-circle" size={16} color="#D97706" />
+                <Text style={styles.warnText}>This user hasn't added their phone yet. They should add it in Settings → Account.</Text>
               </View>
             )}
 
@@ -475,6 +489,8 @@ const styles = StyleSheet.create({
   notFoundBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FCEAED', borderRadius: 14, padding: 14, marginTop: 12 },
   notFoundTitle: { fontSize: 13, fontWeight: '800', color: '#E0546E' },
   notFoundSub: { fontSize: 12, color: '#E0546E', opacity: 0.8, marginTop: 2 },
+  warnBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, marginTop: 8 },
+  warnText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17 },
   // dual-field search (email + phone must both match)
   profileCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16, marginTop: 12, borderWidth: 1.5, borderColor: '#D1FAE5' },
   profileCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
