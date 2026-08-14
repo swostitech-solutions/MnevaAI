@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Switch, ActivityIndicator, useWindowDimensions, Alert,
+  Switch, ActivityIndicator, useWindowDimensions, Alert, TextInput, Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
@@ -50,7 +50,29 @@ const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner Circle' };
 
-function AccountTab({ user, currentLevel, navigation }) {
+function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
+  const [phoneModal, setPhoneModal] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
+
+  const handleSavePhone = async () => {
+    if (!/^[6-9]\d{9}$/.test(phoneInput.trim())) {
+      setPhoneError('Enter a valid 10-digit Indian mobile number');
+      return;
+    }
+    setPhoneSaving(true); setPhoneError('');
+    try {
+      await apiFetch('/api/auth/phone', { method: 'PATCH', body: { phone: phoneInput.trim() } });
+      setPhoneModal(false);
+      onPhoneUpdated(phoneInput.trim());
+    } catch (err) {
+      setPhoneError(err.message || 'Failed to update phone');
+    } finally {
+      setPhoneSaving(false);
+    }
+  };
+
   const getInitials = (name) => {
     if (!name) return 'ME';
     const parts = name.trim().split(' ');
@@ -85,6 +107,7 @@ function AccountTab({ user, currentLevel, navigation }) {
 
   const INFO_ROWS = [
     { label: 'Email',        value: user?.email || '—',                    icon: 'mail' },
+    { label: 'Phone',        value: user?.phone || 'Not added',             icon: 'phone', action: () => { setPhoneInput(user?.phone || ''); setPhoneError(''); setPhoneModal(true); } },
     { label: 'Plan',         value: user?.plan  || 'Free',                 icon: 'star' },
     { label: 'Trust Level',  value: `L${currentLevel} · ${LEVEL_NAMES[currentLevel] || ''}`, icon: 'shield' },
     { label: 'Member Since', value: memberSince,                           icon: 'calendar' },
@@ -106,12 +129,19 @@ function AccountTab({ user, currentLevel, navigation }) {
       {/* Info rows */}
       <Text style={styles.sectionLabel}>Account Details</Text>
       <View style={styles.card}>
-        {INFO_ROWS.map(({ label, value, icon }, i) => (
-          <View key={label} style={[styles.infoRow, i !== INFO_ROWS.length - 1 && styles.divider]}>
+        {INFO_ROWS.map(({ label, value, icon, action }, i) => (
+          <TouchableOpacity
+            key={label}
+            style={[styles.infoRow, i !== INFO_ROWS.length - 1 && styles.divider]}
+            onPress={action}
+            activeOpacity={action ? 0.7 : 1}
+            disabled={!action}
+          >
             <Feather name={icon} size={15} color="#9AA1AE" />
             <Text style={styles.infoLabel}>{label}</Text>
-            <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
-          </View>
+            <Text style={[styles.infoValue, !user?.phone && label === 'Phone' && { color: '#E0546E' }]} numberOfLines={1}>{value}</Text>
+            {action && <Feather name="edit-2" size={13} color="#9AA1AE" style={{ marginLeft: 6 }} />}
+          </TouchableOpacity>
         ))}
       </View>
 
@@ -139,6 +169,37 @@ function AccountTab({ user, currentLevel, navigation }) {
           <Feather name="chevron-right" size={16} color="#C7CBD3" />
         </TouchableOpacity>
       </View>
+      {/* Phone update modal */}
+      <Modal visible={phoneModal} transparent animationType="fade" onRequestClose={() => setPhoneModal(false)}>
+        <View style={styles.phoneModalOverlay}>
+          <View style={styles.phoneModalBox}>
+            <Text style={styles.phoneModalTitle}>{user?.phone ? 'Update Phone Number' : 'Add Phone Number'}</Text>
+            <Text style={styles.phoneModalSub}>Required to be found in Family & Space features</Text>
+            <View style={styles.phoneModalRow}>
+              <View style={styles.phoneModalPrefix}><Text style={styles.phoneModalPrefixText}>🇮🇳 +91</Text></View>
+              <TextInput
+                style={styles.phoneModalInput}
+                placeholder="10-digit mobile number"
+                placeholderTextColor="#9CA3AF"
+                value={phoneInput}
+                onChangeText={setPhoneInput}
+                keyboardType="phone-pad"
+                maxLength={10}
+                autoFocus
+              />
+            </View>
+            {phoneError ? <Text style={styles.phoneModalError}>{phoneError}</Text> : null}
+            <View style={styles.phoneModalBtns}>
+              <TouchableOpacity style={styles.phoneModalCancel} onPress={() => setPhoneModal(false)}>
+                <Text style={styles.phoneModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.phoneModalSave} onPress={handleSavePhone} disabled={phoneSaving}>
+                {phoneSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.phoneModalSaveText}>Save</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -398,6 +459,7 @@ export default function Settings({ navigation, route }) {
             user={user}
             currentLevel={currentLevel}
             navigation={navigation}
+            onPhoneUpdated={(phone) => setUser(u => ({ ...u, phone }))}
           />
         )}
       </ScrollView>
@@ -472,4 +534,19 @@ const styles = StyleSheet.create({
   upgradeBtnText:  { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   dangerRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   dangerLabel:     { flex: 1, fontSize: 14, fontWeight: '600', marginLeft: 12 },
+  // Phone modal
+  phoneModalOverlay:   { flex: 1, backgroundColor: 'rgba(14,17,26,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  phoneModalBox:       { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24, width: '100%' },
+  phoneModalTitle:     { fontSize: 17, fontWeight: '800', color: '#14171F', marginBottom: 4 },
+  phoneModalSub:       { fontSize: 12, color: '#9AA1AE', marginBottom: 18 },
+  phoneModalRow:       { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E4E7EF', borderRadius: 12, overflow: 'hidden', marginBottom: 10 },
+  phoneModalPrefix:    { paddingHorizontal: 12, paddingVertical: 13, backgroundColor: '#F3F4F6', borderRightWidth: 1, borderRightColor: '#E4E7EF' },
+  phoneModalPrefixText:{ fontSize: 13, fontWeight: '600', color: '#374151' },
+  phoneModalInput:     { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: '#14171F' },
+  phoneModalError:     { fontSize: 12, color: '#E0546E', marginBottom: 10 },
+  phoneModalBtns:      { flexDirection: 'row', gap: 10, marginTop: 6 },
+  phoneModalCancel:    { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center' },
+  phoneModalCancelText:{ fontSize: 14, fontWeight: '700', color: '#6B7280' },
+  phoneModalSave:      { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: '#1F9A5A', alignItems: 'center' },
+  phoneModalSaveText:  { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
 });

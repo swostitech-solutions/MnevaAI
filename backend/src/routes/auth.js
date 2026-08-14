@@ -137,6 +137,21 @@ router.post('/resend-otp',
   }
 )
 
+// ── Update Phone ─────────────────────────────────────────────────────────────────
+router.patch('/phone', async (req, res) => {
+  const h = req.headers.authorization
+  if (!h) return res.status(401).json({ error: 'No token' })
+  try {
+    const d = jwt.verify(h.split(' ')[1], SECRET)
+    const { phone } = req.body
+    if (!phone || !/^[6-9]\d{9}$/.test(phone)) return res.status(400).json({ error: 'Valid 10-digit Indian mobile number required' })
+    const existing = await prisma.user.findFirst({ where: { phone, NOT: { id: d.id } } })
+    if (existing) return res.status(409).json({ error: 'Phone number already registered to another account' })
+    const updated = await prisma.user.update({ where: { id: d.id }, data: { phone } })
+    res.json(toPublicUser(updated))
+  } catch { res.status(401).json({ error: 'Invalid token' }) }
+})
+
 // ── Update Avatar ─────────────────────────────────────────────────────────────────
 router.patch('/avatar', async (req, res) => {
   const h = req.headers.authorization
