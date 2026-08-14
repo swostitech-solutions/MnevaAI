@@ -50,6 +50,7 @@ router.post('/register',
   [
     body('name').trim().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
     body('email').isEmail().withMessage('Valid email is required'),
+    body('phone').matches(/^[6-9]\d{9}$/).withMessage('Valid 10-digit Indian mobile number is required'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
     body('confirmPassword').custom((v, { req }) => {
       if (v !== req.body.password) throw new Error('Passwords do not match')
@@ -61,14 +62,16 @@ router.post('/register',
     const errs = validationResult(req)
     if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg })
 
-    const { email, password, name } = req.body
+    const { email, password, name, phone } = req.body
     if (await userStore.has(email)) return res.status(409).json({ error: 'Email already registered' })
+    const existingPhone = await prisma.user.findUnique({ where: { phone } })
+    if (existingPhone) return res.status(409).json({ error: 'Phone number already registered' })
 
     const hash = await bcrypt.hash(password, 10)
     const otp = generateOtp()
     const exp = new Date(Date.now() + 10 * 60 * 1000) // 10 min
 
-    const user = await userStore.create({ email, name, passwordHash: hash })
+    const user = await userStore.create({ email, name, phone, passwordHash: hash })
     await prisma.user.update({
       where: { id: user.id },
       data: { emailVerified: false, verifyToken: otp, verifyTokenExp: exp },
@@ -153,10 +156,14 @@ router.get('/users/search', async (req, res) => {
   if (!h) return res.status(401).json({ error: 'No token' })
   try {
     jwt.verify(h.split(' ')[1], SECRET)
-    const q = String(req.query.q || '').trim().toLowerCase()
-    if (q.length < 3) return res.json({ user: null })
+    const email = String(req.query.email || '').trim().toLowerCase()
+    const phone = String(req.query.phone || '').trim()
+    if (!email || !phone) return res.json({ user: null })
     const user = await prisma.user.findFirst({
-      where: { email: { equals: q, mode: 'insensitive' } },
+      where: {
+        email: { equals: email, mode: 'insensitive' },
+        phone: { equals: phone },
+      },
       select: { id: true, name: true, email: true, avatar: true },
     })
     res.json({ user: user || null })

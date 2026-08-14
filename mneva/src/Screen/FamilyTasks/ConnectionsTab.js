@@ -203,29 +203,33 @@ function SectionLabel({ text }) {
 }
 
 function RequestSheet({ visible, onClose, insets, onSubmit }) {
-  const [query, setQuery]         = useState('');
-  const [searching, setSearching] = useState(false);
-  const [foundUser, setFoundUser] = useState(null);  // { id, name, email, avatar }
-  const [notFound, setNotFound]   = useState(false);
-  const [rel, setRel]             = useState('');
-  const debounceRef               = useRef(null);
+  const [emailQuery, setEmailQuery] = useState('');
+  const [phoneQuery, setPhoneQuery] = useState('');
+  const [searching, setSearching]   = useState(false);
+  const [foundUser, setFoundUser]   = useState(null);
+  const [notFound, setNotFound]     = useState(false);
+  const [rel, setRel]               = useState('');
+  const debounceRef                 = useRef(null);
 
-  // Reset everything when sheet opens/closes
   useEffect(() => {
     if (!visible) {
-      setQuery(''); setFoundUser(null); setNotFound(false); setRel(''); setSearching(false);
+      setEmailQuery(''); setPhoneQuery(''); setFoundUser(null); setNotFound(false); setRel(''); setSearching(false);
     }
   }, [visible]);
 
-  // Real-time search — debounced 500ms
+  // Search only when both fields have enough input
   useEffect(() => {
     clearTimeout(debounceRef.current);
     setFoundUser(null); setNotFound(false);
-    if (query.trim().length < 3) { setSearching(false); return; }
+    const email = emailQuery.trim();
+    const phone = phoneQuery.trim();
+    if (email.length < 3 || phone.length < 10) { setSearching(false); return; }
     setSearching(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const data = await apiFetch(`/api/auth/users/search?q=${encodeURIComponent(query.trim())}`);
+        const data = await apiFetch(
+          `/api/auth/users/search?email=${encodeURIComponent(email)}&phone=${encodeURIComponent(phone)}`
+        );
         setFoundUser(data.user || null);
         setNotFound(!data.user);
       } catch {
@@ -235,7 +239,7 @@ function RequestSheet({ visible, onClose, insets, onSubmit }) {
       }
     }, 500);
     return () => clearTimeout(debounceRef.current);
-  }, [query]);
+  }, [emailQuery, phoneQuery]);
 
   const canSend = foundUser && rel;
 
@@ -259,7 +263,7 @@ function RequestSheet({ visible, onClose, insets, onSubmit }) {
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={styles.sheetHeroTitle}>Send Request</Text>
-              <Text style={styles.sheetHeroSub}>Search by registered email address</Text>
+              <Text style={styles.sheetHeroSub}>Both email & phone must match</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.sheetCloseBtn}>
               <Feather name="x" size={16} color="#FFFFFF" />
@@ -268,23 +272,43 @@ function RequestSheet({ visible, onClose, insets, onSubmit }) {
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ paddingHorizontal: 20 }}>
 
-            {/* Search input */}
+            {/* Email input */}
             <Text style={styles.label}>Email Address <Text style={styles.req}>*</Text></Text>
             <View style={styles.searchBox}>
-              <Feather name="search" size={16} color="#9AA1AE" style={{ marginRight: 8 }} />
+              <Feather name="mail" size={16} color="#9AA1AE" style={{ marginRight: 8 }} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="e.g. priya@gmail.com"
                 placeholderTextColor="#9AA1AE"
-                value={query}
-                onChangeText={setQuery}
+                value={emailQuery}
+                onChangeText={t => { setEmailQuery(t); setFoundUser(null); setNotFound(false); }}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoCorrect={false}
               />
+              {emailQuery.length > 0 && (
+                <TouchableOpacity onPress={() => { setEmailQuery(''); setFoundUser(null); setNotFound(false); }}>
+                  <Feather name="x-circle" size={16} color="#9AA1AE" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Phone input */}
+            <Text style={styles.label}>Mobile Number <Text style={styles.req}>*</Text></Text>
+            <View style={styles.searchBox}>
+              <Feather name="phone" size={16} color="#9AA1AE" style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="10-digit mobile number"
+                placeholderTextColor="#9AA1AE"
+                value={phoneQuery}
+                onChangeText={t => { setPhoneQuery(t); setFoundUser(null); setNotFound(false); }}
+                keyboardType="phone-pad"
+                maxLength={10}
+              />
               {searching && <ActivityIndicator size="small" color="#1F9A5A" />}
-              {query.length > 0 && !searching && (
-                <TouchableOpacity onPress={() => setQuery('')}>
+              {phoneQuery.length > 0 && !searching && (
+                <TouchableOpacity onPress={() => { setPhoneQuery(''); setFoundUser(null); setNotFound(false); }}>
                   <Feather name="x-circle" size={16} color="#9AA1AE" />
                 </TouchableOpacity>
               )}
@@ -296,7 +320,7 @@ function RequestSheet({ visible, onClose, insets, onSubmit }) {
                 <Feather name="user-x" size={18} color="#E0546E" />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.notFoundTitle}>No user found</Text>
-                  <Text style={styles.notFoundSub}>No Mneva account with this email or phone.</Text>
+                  <Text style={styles.notFoundSub}>No Mneva account matches this email & phone combination.</Text>
                 </View>
               </View>
             )}
@@ -451,7 +475,7 @@ const styles = StyleSheet.create({
   notFoundBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FCEAED', borderRadius: 14, padding: 14, marginTop: 12 },
   notFoundTitle: { fontSize: 13, fontWeight: '800', color: '#E0546E' },
   notFoundSub: { fontSize: 12, color: '#E0546E', opacity: 0.8, marginTop: 2 },
-  // (phone search removed — no phone field in schema)
+  // dual-field search (email + phone must both match)
   profileCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16, marginTop: 12, borderWidth: 1.5, borderColor: '#D1FAE5' },
   profileCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
   profileAvatar: { width: 50, height: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },

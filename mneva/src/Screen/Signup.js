@@ -20,6 +20,7 @@ import { apiFetch } from '../api/client';
 export default function Signup({ navigation }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,8 +33,12 @@ export default function Signup({ navigation }) {
   const handleSignup = async () => {
     setError('');
 
-    if (!fullName.trim() || !email.trim() || !password || !confirmPassword) {
+    if (!fullName.trim() || !email.trim() || !phone.trim() || !password || !confirmPassword) {
       setError('Please fill in all required fields');
+      return;
+    }
+    if (!/^[6-9]\d{9}$/.test(phone.trim())) {
+      setError('Enter a valid 10-digit Indian mobile number');
       return;
     }
     if (password !== confirmPassword) {
@@ -52,6 +57,7 @@ export default function Signup({ navigation }) {
         body: {
           name: fullName.trim(),
           email: email.trim().toLowerCase(),
+          phone: phone.trim(),
           password,
           confirmPassword,
           agreedToTerms: 'true',
@@ -103,6 +109,24 @@ export default function Signup({ navigation }) {
             onChangeText={setFullName}
             autoCapitalize="words"
           />
+        </View>
+
+        <View style={styles.inputWrapper}>
+          <Text style={styles.label}>Phone Number *</Text>
+          <View style={styles.phoneRow}>
+            <View style={styles.phonePrefix}>
+              <Text style={styles.phonePrefixText}>🇮🇳 +91</Text>
+            </View>
+            <TextInput
+              style={styles.phoneInput}
+              placeholder="10-digit mobile number"
+              placeholderTextColor="#9CA3AF"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
+          </View>
         </View>
 
         <View style={styles.inputWrapper}>
@@ -470,5 +494,33 @@ const styles = StyleSheet.create({
     color: '#7B5FE8',
     fontSize: 14,
     fontWeight: '700',
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E4E7EF',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  phonePrefix: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: '#F3F4F6',
+    borderRightWidth: 1,
+    borderRightColor: '#E4E7EF',
+  },
+  phonePrefixText: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  phoneInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    color: '#14171F',
+    fontSize: 15,
   },
 });

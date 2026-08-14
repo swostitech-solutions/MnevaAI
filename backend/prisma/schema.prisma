@@ -35,6 +35,7 @@ model User {
   plan             String         @default("Free")
   city             String?
   preferences      Json           @default("{}")
+  phone            String?        @unique
   emailVerified    Boolean        @default(false)
   verifyToken      String?
   verifyTokenExp   DateTime?

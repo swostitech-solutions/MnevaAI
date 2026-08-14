@@ -24,6 +24,7 @@ export const userStore = {
         ...(data.id ? { id: data.id } : {}),
         email: data.email.toLowerCase(),
         name: data.name,
+        phone: data.phone,
         passwordHash: data.passwordHash,
         avatar: data.avatar,
         trustLevel: data.trustLevel ?? 1,
