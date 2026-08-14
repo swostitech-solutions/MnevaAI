@@ -51,6 +51,9 @@ model User {
   familyConnectionsReceived FamilyConnection[] @relation("ConnectionReceiver")
   familyTasksCreated        FamilyTask[]       @relation("FamilyTaskCreator")
   familyTasksAssigned       FamilyTask[]       @relation("FamilyTaskAssignee")
+  parentMedications         ParentMedication[]
+  pets                      Pet[]
+  petReminders              PetReminder[]
 
   conversations Conversation[]
   agents        Agent[]
@@ -344,4 +347,76 @@ model TrustScore {
   rejectedActions Int    @default(0)
   executedActions Int    @default(0)
   user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Pet {
+  id             String   @id @default(uuid())
+  userId         String
+  name           String
+  species        String
+  breed          String?
+  sex            String?
+  dob            String?
+  microchip      String?
+  weight         String?
+  height         String?
+  coatType       String?
+  colorMarkings  String?
+  // Health (stored as JSON arrays)
+  vaccines       Json     @default("[]")
+  medications    Json     @default("[]")
+  allergies      Json     @default("[]")
+  vet            Json?
+  // Routine
+  feeding        Json?
+  groomings      Json     @default("[]")
+  exercises      Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminders PetReminder[]
+
+  @@index([userId])
+}
+
+model PetReminder {
+  id         String   @id @default(uuid())
+  petId      String
+  userId     String
+  type       String
+  title      String
+  remindAt   DateTime?
+  notes      String?
+  done       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  pet  Pet  @relation(fields: [petId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([petId])
+  @@index([userId])
+  @@index([remindAt])
+}
+
+model ParentMedication {
+  id         String   @id @default(uuid())
+  userId     String
+  medName    String
+  dosage     String
+  frequency  String
+  mealTime   String?
+  parent     String
+  startDate  String?
+  duration   String?
+  doctor     String?
+  notes      String?
+  refillDate String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

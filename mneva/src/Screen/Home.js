@@ -739,7 +739,8 @@ export default function Home({ navigation }) {
       ]);
 
       if (ledgerRes.status === 'fulfilled') {
-        const pending = (ledgerRes.value.entries || []).filter(e => e.status === 'pending_approval');
+        const seen = new Set();
+        const pending = (ledgerRes.value.entries || []).filter(e => e.status === 'pending_approval' && !seen.has(e.id) && seen.add(e.id));
         setPendingActions(pending);
       }
       if (portfolioRes.status === 'fulfilled' || spendingRes.status === 'fulfilled') {
@@ -953,7 +954,8 @@ export default function Home({ navigation }) {
         ]);
         if (briefData.status === 'fulfilled') setBrief(briefData.value);
         if (ledgerData.status === 'fulfilled') {
-          const pending = (ledgerData.value.entries || []).filter(e => e.status === 'pending_approval');
+          const seen = new Set();
+          const pending = (ledgerData.value.entries || []).filter(e => e.status === 'pending_approval' && !seen.has(e.id) && seen.add(e.id));
           setPendingActions(pending);
         }
         // Keep localPriorities in sync with DB on every poll cycle

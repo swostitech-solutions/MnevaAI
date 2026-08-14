@@ -40,6 +40,7 @@ import tmdbRoutes from './routes/tmdb.js'
 import notifyRoutes from './routes/notify.js'
 import { onboardingRouter as onboardingRoutes } from './routes/onboarding.js'
 import { familyRouter } from './routes/family.js'
+import { petRouter, startPetReminderPoller } from './routes/pet.js'
 import deviceNotificationRoutes from './routes/deviceNotifications.js'
 import { connectDatabase, disconnectDatabase } from './config/prisma.js'
 import { connectQdrant } from './config/qdrant.js'
@@ -177,6 +178,7 @@ app.use('/api/sms', smsRouter)
 app.use('/api/notify', notifyRoutes)
 app.use('/api/onboarding', authMiddleware, onboardingRoutes)
 app.use('/api/family',     authMiddleware, familyRouter)
+app.use('/api/pet',        authMiddleware, petRouter)
 
 app.use(errorHandler)
 
@@ -199,6 +201,7 @@ const io = new IO(server, {
 })
 setupSocket(io)
 app.set('io', io)
+startPetReminderPoller(io)
 
 let isShuttingDown = false
 

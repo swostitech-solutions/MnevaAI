@@ -228,3 +228,108 @@ familyRouter.delete('/tasks/:id', async (req, res) => {
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
+
+// ── Parent Medications ────────────────────────────────────────────────────────
+
+const fmtMed = (m) => ({
+  id: m.id, medName: m.medName, dosage: m.dosage, frequency: m.frequency,
+  mealTime: m.mealTime, parent: m.parent, startDate: m.startDate,
+  duration: m.duration, doctor: m.doctor, notes: m.notes,
+  refillDate: m.refillDate, active: m.active,
+  createdAt: m.createdAt, updatedAt: m.updatedAt,
+})
+
+async function syncMedMemory(userId, prismaClient) {
+  const meds = await prismaClient.parentMedication.findMany({
+    where: { userId, active: true },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (!meds.length) return
+  const summary = meds.map(m =>
+    `${m.parent}: ${m.medName} ${m.dosage}, ${m.frequency}${m.mealTime ? ', ' + m.mealTime : ''}${m.doctor ? ', Dr. ' + m.doctor : ''}${m.refillDate ? ', refill ' + m.refillDate : ''}`
+  ).join(' | ')
+  const memoryText = `Parent medications: ${summary}`
+  const profile = await prismaClient.userProfile.findUnique({ where: { userId } })
+  const existing = Array.isArray(profile?.aiMemories) ? profile.aiMemories : []
+  const filtered = existing.filter(e => !String(e?.text || e?.payload?.text || '').startsWith('Parent medications:'))
+  const updated = [{ text: memoryText, type: 'parent_medication', updatedAt: new Date().toISOString() }, ...filtered].slice(0, 50)
+  await prismaClient.userProfile.upsert({
+    where: { userId },
+    update: { aiMemories: updated },
+    create: { userId, aiMemories: updated },
+  })
+}
+
+familyRouter.get('/parent-medications', async (req, res) => {
+  try {
+    const meds = await prisma.parentMedication.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+    })
+    res.json({ medications: meds.map(fmtMed) })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+familyRouter.post('/parent-medications', async (req, res) => {
+  try {
+    const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate } = req.body
+    if (!medName?.trim() || !dosage?.trim() || !frequency || !parent) {
+      return res.status(400).json({ error: 'medName, dosage, frequency and parent are required' })
+    }
+    const med = await prisma.parentMedication.create({
+      data: {
+        userId: req.user.id,
+        medName: medName.trim(), dosage: dosage.trim(), frequency,
+        mealTime: mealTime || null, parent,
+        startDate: startDate?.trim() || null, duration: duration?.trim() || null,
+        doctor: doctor?.trim() || null, notes: notes?.trim() || null,
+        refillDate: refillDate?.trim() || null,
+      },
+    })
+    await syncMedMemory(req.user.id, prisma)
+    const formatted = fmtMed(med)
+    emit(req.app.get('io'), req.user.id, 'parent_med:created', formatted)
+    res.status(201).json({ medication: formatted })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+familyRouter.patch('/parent-medications/:id', async (req, res) => {
+  try {
+    const med = await prisma.parentMedication.findUnique({ where: { id: req.params.id } })
+    if (!med) return res.status(404).json({ error: 'Not found' })
+    if (med.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, active } = req.body
+    const updated = await prisma.parentMedication.update({
+      where: { id: req.params.id },
+      data: {
+        ...(medName    !== undefined && { medName: medName.trim() }),
+        ...(dosage     !== undefined && { dosage: dosage.trim() }),
+        ...(frequency  !== undefined && { frequency }),
+        ...(mealTime   !== undefined && { mealTime: mealTime || null }),
+        ...(parent     !== undefined && { parent }),
+        ...(startDate  !== undefined && { startDate: startDate?.trim() || null }),
+        ...(duration   !== undefined && { duration: duration?.trim() || null }),
+        ...(doctor     !== undefined && { doctor: doctor?.trim() || null }),
+        ...(notes      !== undefined && { notes: notes?.trim() || null }),
+        ...(refillDate !== undefined && { refillDate: refillDate?.trim() || null }),
+        ...(active     !== undefined && { active: Boolean(active) }),
+      },
+    })
+    await syncMedMemory(req.user.id, prisma)
+    const formatted = fmtMed(updated)
+    emit(req.app.get('io'), req.user.id, 'parent_med:updated', formatted)
+    res.json({ medication: formatted })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+familyRouter.delete('/parent-medications/:id', async (req, res) => {
+  try {
+    const med = await prisma.parentMedication.findUnique({ where: { id: req.params.id } })
+    if (!med) return res.status(404).json({ error: 'Not found' })
+    if (med.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    await prisma.parentMedication.delete({ where: { id: req.params.id } })
+    await syncMedMemory(req.user.id, prisma)
+    emit(req.app.get('io'), req.user.id, 'parent_med:deleted', { id: req.params.id })
+    res.json({ success: true })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
