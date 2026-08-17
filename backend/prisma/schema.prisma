@@ -54,6 +54,7 @@ model User {
   parentMedications         ParentMedication[]
   pets                      Pet[]
   petReminders              PetReminder[]
+  familyItems               FamilyItem[]
 
   conversations Conversation[]
   agents        Agent[]
@@ -396,6 +397,25 @@ model PetReminder {
 
   @@index([petId])
   @@index([userId])
+  @@index([remindAt])
+}
+
+// Generic family item store — covers Children, HomeMaintenance, Celebrations, Calendar
+model FamilyItem {
+  id        String   @id @default(uuid())
+  userId    String
+  domain    String   // 'children' | 'home' | 'celebration' | 'calendar'
+  type      String   // sub-type within domain e.g. 'child', 'activity', 'event', 'task', 'contact', 'warranty', 'occasion', 'gift'
+  data      Json     // full item payload
+  remindAt  DateTime?
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([domain])
   @@index([remindAt])
 }
 

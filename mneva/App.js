@@ -42,6 +42,14 @@ import Family from './src/Screen/Family';
 import FamilyTasks from './src/Screen/FamilyTasks';
 import ParentMedication from './src/Screen/ParentMedication';
 import PetCare from './src/Screen/PetCare';
+import ChildrenActivities from './src/Screen/ChildrenActivities';
+import HomeMaintenance from './src/Screen/HomeMaintenance';
+import CelebrationGifting from './src/Screen/CelebrationGifting';
+import FamilyCalendar from './src/Screen/FamilyCalendar';
+import ChildrenActivities from './src/Screen/ChildrenActivities';
+import HomeMaintenance from './src/Screen/HomeMaintenance';
+import CelebrationGifting from './src/Screen/CelebrationGifting';
+import FamilyCalendar from './src/Screen/FamilyCalendar';
 import PhoneAlerts from './src/Screen/PhoneAlerts';
 import PhoneAlertDetail from './src/Screen/PhoneAlertDetail';
 import { clearAuth, getStoredAuth } from './src/storage/auth';
@@ -310,6 +318,14 @@ export default function App() {
           <Stack.Screen name="FamilyTasks" component={FamilyTasks} />
           <Stack.Screen name="ParentMedication" component={ParentMedication} />
           <Stack.Screen name="PetCare" component={PetCare} />
+          <Stack.Screen name="ChildrenActivities" component={ChildrenActivities} />
+          <Stack.Screen name="HomeMaintenance" component={HomeMaintenance} />
+          <Stack.Screen name="CelebrationGifting" component={CelebrationGifting} />
+          <Stack.Screen name="FamilyCalendar" component={FamilyCalendar} />
+          <Stack.Screen name="ChildrenActivities" component={ChildrenActivities} />
+          <Stack.Screen name="HomeMaintenance" component={HomeMaintenance} />
+          <Stack.Screen name="CelebrationGifting" component={CelebrationGifting} />
+          <Stack.Screen name="FamilyCalendar" component={FamilyCalendar} />
         </Stack.Navigator>
         <ReminderAlert />
       </NavigationContainer>
