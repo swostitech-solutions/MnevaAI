@@ -9,7 +9,17 @@ export const prisma = new PrismaClient({
 });
 
 export async function connectDatabase() {
-  await prisma.$connect();
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try {
+      await prisma.$connect();
+      return prisma;
+    } catch (err) {
+      lastErr = err;
+      if (i < 2) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+  console.error('[DB] Could not connect after 3 attempts:', lastErr?.message);
   return prisma;
 }
 

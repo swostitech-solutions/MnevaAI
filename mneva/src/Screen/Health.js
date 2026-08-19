@@ -11,40 +11,101 @@ import { apiFetch } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
-const SYNC_FIELDS = [
-  { key: 'steps',     label: 'Steps',      unit: 'steps', icon: 'activity',    color: '#1F9A5A', keyboard: 'numeric' },
-  { key: 'heartRate', label: 'Heart Rate', unit: 'bpm',   icon: 'heart',       color: '#E0546E', keyboard: 'numeric' },
-  { key: 'sleep',     label: 'Sleep',      unit: 'hrs',   icon: 'moon',        color: '#615FF8', keyboard: 'decimal-pad' },
-  { key: 'calories',  label: 'Calories',   unit: 'kcal',  icon: 'zap',         color: '#F5A623', keyboard: 'numeric' },
-  { key: 'weight',    label: 'Weight',     unit: 'kg',    icon: 'trending-up', color: '#4FA6E8', keyboard: 'decimal-pad' },
-  { key: 'height',    label: 'Height',     unit: 'cm',    icon: 'bar-chart-2', color: '#9B72FF', keyboard: 'numeric' },
+const LOG_CATEGORIES = [
+  { key: 'activity',    label: 'Activity',    icon: 'activity',   color: '#1F9A5A' },
+  { key: 'body',        label: 'Body',        icon: 'trending-up',color: '#4FA6E8' },
+  { key: 'vitals',      label: 'Vitals',      icon: 'heart',      color: '#E0546E' },
+  { key: 'nutrition',   label: 'Nutrition',   icon: 'zap',        color: '#F5A623' },
+  { key: 'sleep',       label: 'Sleep',       icon: 'moon',       color: '#615FF8' },
+  { key: 'cycle',       label: 'Cycle',       icon: 'circle',     color: '#E879A0' },
 ];
 
-function SyncSheet({ visible, onClose, onSynced, bottomInset }) {
-  const [form, setForm] = useState({ steps: '', heartRate: '', sleep: '', calories: '', weight: '', height: '' });
-  const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState('');
+const CATEGORY_FIELDS = {
+  activity: [
+    { key: 'steps',           label: 'Steps',            unit: 'steps', keyboard: 'numeric' },
+    { key: 'activeMinutes',   label: 'Active Minutes',   unit: 'min',   keyboard: 'numeric' },
+    { key: 'workoutType',     label: 'Workout Type',     unit: '',      keyboard: 'default' },
+    { key: 'workoutDuration', label: 'Duration',         unit: 'min',   keyboard: 'numeric' },
+    { key: 'workoutCalories', label: 'Calories Burned',  unit: 'kcal',  keyboard: 'numeric' },
+    { key: 'distance',        label: 'Distance',         unit: 'km',    keyboard: 'decimal-pad' },
+  ],
+  body: [
+    { key: 'weight',      label: 'Weight',       unit: 'kg',  keyboard: 'decimal-pad' },
+    { key: 'height',      label: 'Height',       unit: 'cm',  keyboard: 'numeric' },
+    { key: 'bmi',         label: 'BMI',          unit: '',    keyboard: 'decimal-pad' },
+    { key: 'bodyFat',     label: 'Body Fat',     unit: '%',   keyboard: 'decimal-pad' },
+    { key: 'muscleMass',  label: 'Muscle Mass',  unit: 'kg',  keyboard: 'decimal-pad' },
+    { key: 'waist',       label: 'Waist',        unit: 'cm',  keyboard: 'numeric' },
+  ],
+  vitals: [
+    { key: 'heartRate',              label: 'Heart Rate',   unit: 'bpm',  keyboard: 'numeric' },
+    { key: 'bloodPressureSystolic',  label: 'BP Systolic',  unit: 'mmHg', keyboard: 'numeric' },
+    { key: 'bloodPressureDiastolic', label: 'BP Diastolic', unit: 'mmHg', keyboard: 'numeric' },
+    { key: 'bloodOxygen',            label: 'SpO₂',         unit: '%',    keyboard: 'numeric' },
+    { key: 'bodyTemp',               label: 'Temperature',  unit: '°C',   keyboard: 'decimal-pad' },
+  ],
+  nutrition: [
+    { key: 'calories', label: 'Calories',  unit: 'kcal', keyboard: 'numeric' },
+    { key: 'protein',  label: 'Protein',   unit: 'g',    keyboard: 'numeric' },
+    { key: 'carbs',    label: 'Carbs',     unit: 'g',    keyboard: 'numeric' },
+    { key: 'fat',      label: 'Fat',       unit: 'g',    keyboard: 'numeric' },
+    { key: 'fiber',    label: 'Fiber',     unit: 'g',    keyboard: 'numeric' },
+    { key: 'water',    label: 'Water',     unit: 'ml',   keyboard: 'numeric' },
+  ],
+  sleep: [
+    { key: 'sleep',        label: 'Total Sleep',  unit: 'hrs', keyboard: 'decimal-pad' },
+    { key: 'sleepBedtime', label: 'Bedtime',      unit: '',    keyboard: 'default' },
+    { key: 'sleepWakeup',  label: 'Wake Up',      unit: '',    keyboard: 'default' },
+    { key: 'sleepDeep',    label: 'Deep Sleep',   unit: 'hrs', keyboard: 'decimal-pad' },
+    { key: 'sleepRem',     label: 'REM Sleep',    unit: 'hrs', keyboard: 'decimal-pad' },
+    { key: 'sleepLight',   label: 'Light Sleep',  unit: 'hrs', keyboard: 'decimal-pad' },
+  ],
+  cycle: [
+    { key: 'cycleDay',   label: 'Cycle Day',   unit: '',  keyboard: 'numeric' },
+    { key: 'cyclePhase', label: 'Phase',       unit: '',  keyboard: 'default' },
+    { key: 'periodFlow', label: 'Flow',        unit: '',  keyboard: 'default' },
+    { key: 'symptoms',   label: 'Symptoms',    unit: '',  keyboard: 'default' },
+  ],
+};
 
-  const handleSync = async () => {
-    const payload = {};
-    SYNC_FIELDS.forEach(({ key }) => {
-      const v = form[key].trim();
-      if (v !== '') payload[key] = Number(v);
+function LogDataSheet({ visible, onClose, onSynced, bottomInset }) {
+  const [activeTab, setActiveTab] = useState('activity');
+  const [form, setForm] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  const handleSave = async () => {
+    const payload = { source: 'manual' };
+    Object.entries(form).forEach(([k, v]) => {
+      const trimmed = String(v || '').trim();
+      if (!trimmed) return;
+      const isText = ['workoutType', 'sleepBedtime', 'sleepWakeup', 'cyclePhase', 'periodFlow', 'symptoms'].includes(k);
+      payload[k] = isText ? trimmed : Number(trimmed);
     });
-    if (Object.keys(payload).length === 0) { setError('Enter at least one value.'); return; }
+    if (Object.keys(payload).length <= 1) { setError('Enter at least one value.'); return; }
     setError('');
     setLoading(true);
     try {
-      await apiFetch('/api/health-data/sync', { method: 'POST', body: JSON.stringify({ ...payload, source: 'manual' }) });
-      setForm({ steps: '', heartRate: '', sleep: '', calories: '', weight: '', height: '' });
-      onSynced();
-      onClose();
+      await apiFetch('/api/health-data/sync', { method: 'POST', body: JSON.stringify(payload) });
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        setForm({});
+        onSynced();
+        onClose();
+      }, 800);
     } catch {
-      setError('Sync failed. Please try again.');
+      setError('Save failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const cat = LOG_CATEGORIES.find(c => c.key === activeTab);
+  const fields = CATEGORY_FIELDS[activeTab] || [];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -54,31 +115,49 @@ function SyncSheet({ visible, onClose, onSynced, bottomInset }) {
       <KeyboardAvoidingView style={styles.sheetWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.sheetContent, { paddingBottom: 20 + bottomInset }]}>
           <View style={styles.sheetHandle} />
+
+          {/* Header */}
           <View style={styles.sheetHeader}>
             <View>
-              <Text style={styles.sheetTitle}>Manual Health Sync</Text>
-              <Text style={styles.sheetSubtitle}>Enter today's readings — leave blank to skip</Text>
+              <Text style={styles.sheetTitle}>Log Health Data</Text>
+              <Text style={styles.sheetSubtitle}>Manual entry — leave blank to skip</Text>
             </View>
-            <TouchableOpacity onPress={onClose}><Feather name="x" size={20} color="#6B7280" /></TouchableOpacity>
+            <TouchableOpacity onPress={onClose}>
+              <Feather name="x" size={20} color="#6B7280" />
+            </TouchableOpacity>
           </View>
 
+          {/* Category Tabs */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catTabsScroll} contentContainerStyle={styles.catTabsRow}>
+            {LOG_CATEGORIES.map(c => (
+              <TouchableOpacity
+                key={c.key}
+                style={[styles.catTab, activeTab === c.key && { backgroundColor: c.color + '18', borderColor: c.color }]}
+                onPress={() => { setActiveTab(c.key); setError(''); }}
+              >
+                <Feather name={c.icon} size={13} color={activeTab === c.key ? c.color : '#9AA1AE'} />
+                <Text style={[styles.catTabText, activeTab === c.key && { color: c.color }]}>{c.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Fields for active category */}
           <View style={styles.syncGrid}>
-            {SYNC_FIELDS.map(({ key, label, unit, icon, color }) => (
+            {fields.map(({ key, label, unit, keyboard }) => (
               <View key={key} style={styles.syncField}>
                 <View style={styles.syncFieldLabel}>
-                  <Feather name={icon} size={13} color={color} />
-                  <Text style={[styles.syncFieldLabelText, { color }]}>{label}</Text>
+                  <Text style={[styles.syncFieldLabelText, { color: cat.color }]}>{label}</Text>
                 </View>
                 <View style={styles.syncInputRow}>
                   <TextInput
                     style={styles.syncInput}
                     placeholder="—"
                     placeholderTextColor="#C7CBD3"
-                    keyboardType={SYNC_FIELDS.find(f => f.key === key).keyboard}
-                    value={form[key]}
-                    onChangeText={v => setForm(f => ({ ...f, [key]: v }))}
+                    keyboardType={keyboard}
+                    value={form[key] || ''}
+                    onChangeText={v => set(key, v)}
                   />
-                  <Text style={styles.syncUnit}>{unit}</Text>
+                  {!!unit && <Text style={styles.syncUnit}>{unit}</Text>}
                 </View>
               </View>
             ))}
@@ -87,13 +166,15 @@ function SyncSheet({ visible, onClose, onSynced, bottomInset }) {
           {!!error && <Text style={styles.syncError}>{error}</Text>}
 
           <TouchableOpacity
-            style={[styles.syncBtn, loading && { opacity: 0.6 }]}
-            onPress={handleSync}
-            disabled={loading}
+            style={[styles.syncBtn, { backgroundColor: cat.color }, (loading || success) && { opacity: 0.7 }]}
+            onPress={handleSave}
+            disabled={loading || success}
           >
             {loading
               ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <><Feather name="upload" size={16} color="#FFFFFF" /><Text style={styles.syncBtnText}>  Sync to Mneva</Text></>
+              : success
+                ? <><Feather name="check" size={16} color="#FFFFFF" /><Text style={styles.syncBtnText}>  Saved!</Text></>
+                : <><Feather name="save" size={16} color="#FFFFFF" /><Text style={styles.syncBtnText}>  Save {cat.label}</Text></>
             }
           </TouchableOpacity>
         </View>
@@ -128,7 +209,7 @@ export default function Health({ navigation }) {
   const [medications, setMedications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [syncVisible, setSyncVisible] = useState(false);
+  const [syncVisible, setLogVisible] = useState(false);
   const [fitConnected, setFitConnected] = useState(false);
 
   const loadData = async (isRefresh = false) => {
@@ -285,17 +366,17 @@ export default function Health({ navigation }) {
         </View>
       </ScrollView>
 
-      {/* FAB — Manual Sync */}
+      {/* FAB — Log Health Data */}
       <TouchableOpacity
         style={[styles.fab, { bottom: tabBarHeight + 16, right: horizontalPad }]}
-        onPress={() => setSyncVisible(true)}
+        onPress={() => setLogVisible(true)}
       >
-        <Feather name="upload" size={22} color="#FFFFFF" />
+        <Feather name="plus" size={24} color="#FFFFFF" />
       </TouchableOpacity>
 
-      <SyncSheet
+      <LogDataSheet
         visible={syncVisible}
-        onClose={() => setSyncVisible(false)}
+        onClose={() => setLogVisible(false)}
         onSynced={() => loadData(true)}
         bottomInset={insets.bottom}
       />
@@ -406,4 +487,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
   },
   syncBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  // Category tabs
+  catTabsScroll: { marginBottom: 16 },
+  catTabsRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
+  catTab: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1.5, borderColor: '#E3E5EA',
+    backgroundColor: '#F5F6F8',
+  },
+  catTabText: { fontSize: 12, fontWeight: '700', color: '#9AA1AE' },
 });

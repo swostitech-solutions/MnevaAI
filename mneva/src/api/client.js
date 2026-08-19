@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const BASE_URL = 'https://mneva-backend.onrender.com';
+export const BASE_URL = 'https://mneva-backend-v2.onrender.com';
 
 // Listeners notified when session expires (401) so screens can redirect to login
 const _sessionExpiredListeners = new Set();

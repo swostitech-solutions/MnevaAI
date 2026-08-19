@@ -583,29 +583,56 @@ healthRouter.get('/medications',  (_req, res) => res.json({ medications: [] }))
 // POST /api/health-data/sync — accepts data from iOS Shortcut / Apple Health / manual
 healthRouter.post('/sync', async (req, res) => {
   try {
-    const { steps, heartRate, sleep, calories, weight, height, source = 'manual' } = req.body
+    const {
+      source = 'manual',
+      // vitals
+      steps, heartRate, bloodPressureSystolic, bloodPressureDiastolic, bloodOxygen, bodyTemp,
+      // body
+      weight, height, bmi, bodyFat, muscleMass, waist,
+      // sleep
+      sleep, sleepBedtime, sleepWakeup, sleepDeep, sleepRem, sleepLight,
+      // nutrition
+      calories, protein, carbs, fat, fiber, water,
+      // activity
+      activeMinutes, workoutType, workoutDuration, workoutCalories, distance,
+      // cycle
+      cyclePhase, cycleDay, periodFlow, symptoms,
+    } = req.body
     const user = await userStore.getById(req.user.id)
     const prefs = user?.preferences || {}
     const today = new Date().toISOString().slice(0, 10)
     const existing = prefs.healthSync || {}
-    // merge — only overwrite fields that are provided
-    prefs.healthSync = {
-      ...existing,
-      source,
-      lastSynced: new Date().toISOString(),
-      date: today,
-      ...(steps     != null && { steps:     Number(steps) }),
-      ...(heartRate != null && { heartRate: Number(heartRate) }),
-      ...(sleep     != null && { sleep:     Number(sleep) }),
-      ...(calories  != null && { calories:  Number(calories) }),
-      ...(weight    != null && { weight:    Number(weight) }),
-      ...(height    != null && { height:    Number(height) }),
-    }
-    // also persist to per-date log for calendar view
+    const merge = (obj, key, val) => { if (val != null) obj[key] = typeof val === 'string' ? val : Number(val) }
+    const synced = { ...existing, source, lastSynced: new Date().toISOString(), date: today }
+    // vitals
+    merge(synced, 'steps', steps); merge(synced, 'heartRate', heartRate)
+    merge(synced, 'bloodPressureSystolic', bloodPressureSystolic); merge(synced, 'bloodPressureDiastolic', bloodPressureDiastolic)
+    merge(synced, 'bloodOxygen', bloodOxygen); merge(synced, 'bodyTemp', bodyTemp)
+    // body
+    merge(synced, 'weight', weight); merge(synced, 'height', height)
+    merge(synced, 'bmi', bmi); merge(synced, 'bodyFat', bodyFat)
+    merge(synced, 'muscleMass', muscleMass); merge(synced, 'waist', waist)
+    // sleep
+    merge(synced, 'sleep', sleep); merge(synced, 'sleepBedtime', sleepBedtime)
+    merge(synced, 'sleepWakeup', sleepWakeup); merge(synced, 'sleepDeep', sleepDeep)
+    merge(synced, 'sleepRem', sleepRem); merge(synced, 'sleepLight', sleepLight)
+    // nutrition
+    merge(synced, 'calories', calories); merge(synced, 'protein', protein)
+    merge(synced, 'carbs', carbs); merge(synced, 'fat', fat)
+    merge(synced, 'fiber', fiber); merge(synced, 'water', water)
+    // activity
+    merge(synced, 'activeMinutes', activeMinutes); merge(synced, 'workoutType', workoutType)
+    merge(synced, 'workoutDuration', workoutDuration); merge(synced, 'workoutCalories', workoutCalories)
+    merge(synced, 'distance', distance)
+    // cycle
+    merge(synced, 'cyclePhase', cyclePhase); merge(synced, 'cycleDay', cycleDay)
+    merge(synced, 'periodFlow', periodFlow); merge(synced, 'symptoms', symptoms)
+
+    prefs.healthSync = synced
     if (!prefs.healthLog) prefs.healthLog = {}
-    prefs.healthLog[today] = { ...prefs.healthSync }
+    prefs.healthLog[today] = { ...synced }
     await prisma.user.update({ where: { id: req.user.id }, data: { preferences: prefs } })
-    res.json({ success: true, synced: prefs.healthSync })
+    res.json({ success: true, synced })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 

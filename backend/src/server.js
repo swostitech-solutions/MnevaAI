@@ -229,7 +229,11 @@ const listenPort = Number(process.env.PORT) || 3001
 
 const redisClient = await connectRedis()
 const qdrantClient = await connectQdrant()
-await connectDatabase()
+try {
+  await connectDatabase()
+} catch (err) {
+  logger.warn(`⚠️ DB connect failed at startup: ${err.message} — will retry on first request`)
+}
 
 if (redisClient) {
   try {

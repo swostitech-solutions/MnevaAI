@@ -23,25 +23,27 @@ function generateOtp() {
 router.post('/login',
   [body('email').isEmail(), body('password').isLength({ min: 6 })],
   async (req, res) => {
-    const errs = validationResult(req)
-    if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid email or password format' })
-    const { email, password } = req.body
-    // Single DB query — select only the fields needed for login + JWT
-    const user = await prisma.user.findUnique({
-      where: { email: email?.toLowerCase()?.trim() },
-      select: { id: true, email: true, name: true, passwordHash: true, emailVerified: true, trustLevel: true, onboardingDone: true },
-    })
-    // Return same error for missing user and wrong password — prevents user enumeration
-    if (!user) {
-      // Run a dummy compare to prevent timing attacks
-      await bcrypt.compare(password, '$2a$10$dummyhashfortimingattackprevention000000000000000000000')
-      return res.status(401).json({ error: 'Invalid credentials' })
+    try {
+      const errs = validationResult(req)
+      if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid email or password format' })
+      const { email, password } = req.body
+      const user = await prisma.user.findUnique({
+        where: { email: email?.toLowerCase()?.trim() },
+        select: { id: true, email: true, name: true, passwordHash: true, emailVerified: true, trustLevel: true, onboardingDone: true },
+      })
+      if (!user) {
+        await bcrypt.compare(password, '$2a$10$dummyhashfortimingattackprevention000000000000000000000')
+        return res.status(401).json({ error: 'Invalid credentials' })
+      }
+      if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
+      const ok = await bcrypt.compare(password, user.passwordHash)
+      if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
+      res.json({ token: sign(user), user: toPublicUser(user) })
+    } catch (err) {
+      const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
+      if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
+      res.status(500).json({ error: 'Login failed. Please try again.' })
     }
-    if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
-    const ok = await bcrypt.compare(password, user.passwordHash)
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
-    // Return token immediately — client navigates without waiting for anything else
-    res.json({ token: sign(user), user: toPublicUser(user) })
   }
 )
 
@@ -59,31 +61,36 @@ router.post('/register',
     body('agreedToTerms').equals('true').withMessage('You must agree to the Terms of Service'),
   ],
   async (req, res) => {
-    const errs = validationResult(req)
-    if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg })
-
-    const { email, password, name, phone } = req.body
-    if (await userStore.has(email)) return res.status(409).json({ error: 'Email already registered' })
-    const existingPhone = await prisma.user.findUnique({ where: { phone } })
-    if (existingPhone) return res.status(409).json({ error: 'Phone number already registered' })
-
-    const hash = await bcrypt.hash(password, 10)
-    const otp = generateOtp()
-    const exp = new Date(Date.now() + 10 * 60 * 1000) // 10 min
-
-    const user = await userStore.create({ email, name, phone, passwordHash: hash })
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { emailVerified: false, verifyToken: otp, verifyTokenExp: exp },
-    })
-
     try {
-      await sendOtpEmail(email, name, otp)
-      res.status(201).json({ pendingVerification: true, email })
+      const errs = validationResult(req)
+      if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg })
+
+      const { email, password, name, phone } = req.body
+      if (await userStore.has(email)) return res.status(409).json({ error: 'Email already registered' })
+      const existingPhone = await prisma.user.findUnique({ where: { phone } })
+      if (existingPhone) return res.status(409).json({ error: 'Phone number already registered' })
+
+      const hash = await bcrypt.hash(password, 10)
+      const otp = generateOtp()
+      const exp = new Date(Date.now() + 10 * 60 * 1000)
+
+      const user = await userStore.create({ email, name, phone, passwordHash: hash })
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerified: false, verifyToken: otp, verifyTokenExp: exp },
+      })
+
+      try {
+        await sendOtpEmail(email, name, otp)
+        res.status(201).json({ pendingVerification: true, email })
+      } catch {
+        console.warn(`[DEV] OTP for ${email}: ${otp}`)
+        res.status(201).json({ pendingVerification: true, email, devOtp: otp })
+      }
     } catch (err) {
-      console.warn(`[DEV] OTP for ${email}: ${otp}`)
-      // Always return devOtp when email can't be sent (domain not verified / no Resend key)
-      res.status(201).json({ pendingVerification: true, email, devOtp: otp })
+      const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
+      if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
+      res.status(500).json({ error: err.message || 'Registration failed. Please try again.' })
     }
   }
 )
@@ -92,22 +99,27 @@ router.post('/register',
 router.post('/verify-email',
   [body('email').isEmail(), body('otp').isLength({ min: 6, max: 6 })],
   async (req, res) => {
-    const errs = validationResult(req)
-    if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid request' })
+    try {
+      const errs = validationResult(req)
+      if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid request' })
 
-    const { email, otp } = req.body
-    const user = await prisma.user.findUnique({ where: { email } })
-    if (!user) return res.status(404).json({ error: 'User not found' })
-    if (user.emailVerified) return res.status(400).json({ error: 'Email already verified' })
-    if (!user.verifyToken || user.verifyToken !== otp) return res.status(400).json({ error: 'Invalid verification code' })
-    if (user.verifyTokenExp && new Date() > user.verifyTokenExp) return res.status(400).json({ error: 'Code expired. Request a new one.' })
+      const { email, otp } = req.body
+      const user = await prisma.user.findUnique({ where: { email } })
+      if (!user) return res.status(404).json({ error: 'User not found' })
+      if (user.emailVerified) return res.status(400).json({ error: 'Email already verified' })
+      if (!user.verifyToken || user.verifyToken !== otp) return res.status(400).json({ error: 'Invalid verification code' })
+      if (user.verifyTokenExp && new Date() > user.verifyTokenExp) return res.status(400).json({ error: 'Code expired. Request a new one.' })
 
-    const verified = await prisma.user.update({
-      where: { email },
-      data: { emailVerified: true, verifyToken: null, verifyTokenExp: null },
-    })
-
-    res.json({ token: sign(verified), user: toPublicUser(verified) })
+      const verified = await prisma.user.update({
+        where: { email },
+        data: { emailVerified: true, verifyToken: null, verifyTokenExp: null },
+      })
+      res.json({ token: sign(verified), user: toPublicUser(verified) })
+    } catch (err) {
+      const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
+      if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
+      res.status(500).json({ error: 'Verification failed. Please try again.' })
+    }
   }
 )
 
@@ -115,24 +127,30 @@ router.post('/verify-email',
 router.post('/resend-otp',
   [body('email').isEmail()],
   async (req, res) => {
-    const errs = validationResult(req)
-    if (!errs.isEmpty()) return res.status(400).json({ error: 'Valid email required' })
-
-    const { email } = req.body
-    const user = await prisma.user.findUnique({ where: { email } })
-    if (!user) return res.status(404).json({ error: 'User not found' })
-    if (user.emailVerified) return res.status(400).json({ error: 'Email already verified' })
-
-    const otp = generateOtp()
-    const exp = new Date(Date.now() + 10 * 60 * 1000)
-    await prisma.user.update({ where: { email }, data: { verifyToken: otp, verifyTokenExp: exp } })
-
     try {
-      await sendOtpEmail(email, user.name, otp)
-      res.json({ sent: true })
-    } catch {
-      console.warn(`[DEV] Resent OTP for ${email}: ${otp}`)
-      res.json({ sent: true, devOtp: otp })
+      const errs = validationResult(req)
+      if (!errs.isEmpty()) return res.status(400).json({ error: 'Valid email required' })
+
+      const { email } = req.body
+      const user = await prisma.user.findUnique({ where: { email } })
+      if (!user) return res.status(404).json({ error: 'User not found' })
+      if (user.emailVerified) return res.status(400).json({ error: 'Email already verified' })
+
+      const otp = generateOtp()
+      const exp = new Date(Date.now() + 10 * 60 * 1000)
+      await prisma.user.update({ where: { email }, data: { verifyToken: otp, verifyTokenExp: exp } })
+
+      try {
+        await sendOtpEmail(email, user.name, otp)
+        res.json({ sent: true })
+      } catch {
+        console.warn(`[DEV] Resent OTP for ${email}: ${otp}`)
+        res.json({ sent: true, devOtp: otp })
+      }
+    } catch (err) {
+      const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
+      if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
+      res.status(500).json({ error: 'Failed to resend OTP. Please try again.' })
     }
   }
 )
