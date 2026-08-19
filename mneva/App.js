@@ -102,13 +102,9 @@ export default function App() {
   }, []);
 
   const refreshMountedData = useCallback(() => {
-    // One immediate pass handles a healthy connection; a second pass covers
-    // screens that were still mounting or a socket that has just reconnected.
-    refreshAppData();
     refreshTimersRef.current.forEach(clearTimeout);
-    refreshTimersRef.current = [
-      setTimeout(refreshAppData, 1500),
-    ];
+    refreshTimersRef.current = [];
+    refreshAppData();
   }, []);
 
   // A saved token alone does not mean the existing mobile connection is ready.
@@ -216,11 +212,16 @@ export default function App() {
   // Wi-Fi/cellular handoffs and idle radios also happen while foregrounded.
   // This inexpensive authenticated heartbeat keeps the session self-healing.
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (!/inactive|background/.test(appStateRef.current || '')) recoverSession().catch(() => {});
+    const interval = setInterval(async () => {
+      if (!/inactive|background/.test(appStateRef.current || '')) {
+        const recovered = await recoverSession().catch(() => false);
+        // If recovery succeeded after a previous failure, screens need a nudge
+        // because their useEffect already ran and won't re-fire automatically.
+        if (recovered) refreshMountedData();
+      }
     }, 60000);
     return () => clearInterval(interval);
-  }, [recoverSession]);
+  }, [recoverSession, refreshMountedData]);
 
   // This belongs at app level, not only Home: an expired session from any
   // screen must recover to sign-in instead of leaving that screen inert.

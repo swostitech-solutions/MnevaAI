@@ -52,6 +52,7 @@ import { startWorkflowWorker } from './queues/workflow.queue.js'
 import { isOpenAIConfigured } from './agents/autonomyEngine.js'
 
 const app = express()
+app.set('etag', false) // Prevent 304 Not Modified returning empty body to mobile clients
 
 // ── Security ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginEmbedderPolicy: false }))

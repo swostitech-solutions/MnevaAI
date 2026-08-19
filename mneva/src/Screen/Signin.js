@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -24,7 +25,16 @@ export default function Signin({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorDetail, setErrorDetail] = useState('');
+  const errorAnim = useRef(new Animated.Value(0)).current;
   const warmupDoneRef = useRef(false);
+
+  const showError = (msg, detail = '') => {
+    setError(msg);
+    setErrorDetail(detail);
+    errorAnim.setValue(0);
+    Animated.spring(errorAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }).start();
+  };
 
   // Warmup on mount (catches case where App.js warmup hasn't resolved yet)
   useEffect(() => {
@@ -35,8 +45,9 @@ export default function Signin({ navigation }) {
 
   const handleSignin = async () => {
     setError('');
+    setErrorDetail('');
     if (!email.trim() || !password) {
-      setError('Please enter both email and password');
+      showError('Missing credentials', 'Please enter both email and password.');
       return;
     }
 
@@ -56,8 +67,10 @@ export default function Signin({ navigation }) {
     } catch (err) {
       if (err.status === 403) {
         navigation.navigate('VerifyOtp', { email: email.trim().toLowerCase() });
+      } else if (err.status === 503) {
+        showError('Service unavailable', 'Our servers are waking up. Please try again in a moment.');
       } else {
-        setError(err.message || 'Invalid email or password');
+        showError('Sign in failed', err.message || 'The email or password you entered is incorrect.');
       }
     } finally {
       setLoading(false);
@@ -84,8 +97,6 @@ export default function Signin({ navigation }) {
 
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to continue to Mneva AI</Text>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <View style={styles.inputWrapper}>
           <Text style={styles.label}>Email</Text>
@@ -124,6 +135,37 @@ export default function Signin({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
+
+        {error ? (
+          <Animated.View
+            style={[
+              styles.errorBanner,
+              {
+                opacity: errorAnim,
+                transform: [{ translateY: errorAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) }],
+              },
+            ]}
+          >
+            <View style={styles.errorAccentBar} />
+            <View style={styles.errorIconWrap}>
+              <Ionicons name="shield-outline" size={18} color="#FF6B6B" />
+            </View>
+            <View style={styles.errorTextWrap}>
+              <View style={styles.errorTitleRow}>
+                <Text style={styles.errorLabel}>AUTH ERROR</Text>
+              </View>
+              <Text style={styles.errorTitle}>{error}</Text>
+              {errorDetail ? <Text style={styles.errorSub}>{errorDetail}</Text> : null}
+            </View>
+            <TouchableOpacity
+              onPress={() => { setError(''); setErrorDetail(''); }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.errorClose}
+            >
+              <Ionicons name="close" size={14} color="#6B7280" />
+            </TouchableOpacity>
+          </Animated.View>
+        ) : null}
 
         <TouchableOpacity
           style={[styles.signinButton, loading && styles.signinButtonDisabled]}
@@ -183,11 +225,72 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginBottom: 28,
   },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 13,
-    marginBottom: 16,
-    textAlign: 'center',
+  errorBanner: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingRight: 14,
+    marginBottom: 14,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  errorAccentBar: {
+    width: 4,
+    alignSelf: 'stretch',
+    backgroundColor: '#FF4D4D',
+    borderRadius: 4,
+    marginRight: 12,
+    marginLeft: 0,
+  },
+  errorIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#FFE8E8',
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  errorTextWrap: {
+    flex: 1,
+    marginRight: 8,
+  },
+  errorTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  errorLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FF4D4D',
+    letterSpacing: 1.2,
+  },
+  errorTitle: {
+    color: '#14171F',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  errorSub: {
+    color: '#6B7280',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  errorClose: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   inputWrapper: {
     width: '100%',

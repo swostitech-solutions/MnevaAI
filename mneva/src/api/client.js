@@ -18,7 +18,9 @@ async function getToken() {
 
 // Wake Render free-tier backend immediately on app launch (fire-and-forget)
 export function pingBackend() {
-  fetch(`${BASE_URL}/api/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 40000);
+  fetch(`${BASE_URL}/api/health`, { method: 'GET', cache: 'no-store', signal: controller.signal }).catch(() => {});
 }
 
 export async function apiFetch(path, options = {}) {
@@ -39,20 +41,25 @@ export async function apiFetch(path, options = {}) {
   const maxAttempts = retryable ? 3 : 1;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
     try {
       const res = await fetch(`${BASE_URL}${path}`, {
         ...fetchOptions,
-        cache: 'no-store',
-        headers,
+        cache: 'no-cache',
+        headers: {
+          ...headers,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+        },
         body: fetchOptions.body ? JSON.stringify(fetchOptions.body) : undefined,
         signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 401) {
-        _notifySessionExpired();
-        throw { status: 401, message: 'Session expired. Please sign in again.' };
+        // Only fire session-expired for authenticated routes, not the login endpoint itself
+        if (!path.includes('/auth/login')) _notifySessionExpired();
+        throw { status: 401, message: data.error === 'Invalid credentials' ? 'Invalid email or password.' : 'Session expired. Please sign in again.' };
       }
       if (!res.ok) {
         throw {
