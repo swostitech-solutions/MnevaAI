@@ -658,16 +658,10 @@ export default function Home({ navigation }) {
 
   const isMountedRef = useRef(false);
   const isLoadingRef = useRef(false);
-  const queuedRefreshRef = useRef(false);
 
   const loadData = async (isRefresh = false) => {
-    // Prevent concurrent loads
-    if (isLoadingRef.current) {
-      // A backend recovery can finish while the first (stale) screen load is
-      // still in flight. Queue one fresh load instead of silently dropping it.
-      queuedRefreshRef.current = true;
-      return;
-    }
+    // Prevent concurrent loads — drop duplicates, App.js recovery handles retry
+    if (isLoadingRef.current) return;
     isLoadingRef.current = true;
     if (!isRefresh) setBriefLoading(true);
     try {
@@ -764,10 +758,6 @@ export default function Home({ navigation }) {
       isLoadingRef.current = false;
       setBriefLoading(false);
       setRefreshing(false);
-      if (queuedRefreshRef.current) {
-        queuedRefreshRef.current = false;
-        setTimeout(() => loadData(true), 0);
-      }
     }
   };
 
@@ -788,16 +778,8 @@ export default function Home({ navigation }) {
   }, [navigation]);
 
   // Re-fetch when app comes back to foreground after being backgrounded
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        // A suspended mobile connection can become stale in seconds. Refresh
-        // on every resume; loadData already prevents concurrent requests.
-        loadData(true);
-      }
-    });
-    return () => sub.remove();
-  }, []);
+  // App.js already calls recoverSession + refreshAppData on AppState change,
+  // which triggers onAppDataRefresh above — no need for a second listener here.
 
   // Stop all speech when navigating away or app goes to background
   useEffect(() => {
