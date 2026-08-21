@@ -373,6 +373,10 @@ import { startWorkflowWorker } from "./queues/workflow.queue.js";
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
 
 const app = express();
+// React Native does not maintain the browser cache required to replay a 304
+// response, so conditional JSON responses arrive without a body and look like
+// empty application data. Always send the current JSON payload to mobile/API clients.
+app.disable("etag");
 
 // ── Security ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginEmbedderPolicy: false }));

@@ -20,7 +20,7 @@ export async function connectDatabase() {
     }
   }
   console.error('[DB] Could not connect after 3 attempts:', lastErr?.message);
-  return prisma;
+  throw lastErr || new Error('Database connection failed');
 }
 
 export async function disconnectDatabase() {
