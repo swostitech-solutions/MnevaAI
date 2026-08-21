@@ -377,6 +377,9 @@ const app = express();
 // response, so conditional JSON responses arrive without a body and look like
 // empty application data. Always send the current JSON payload to mobile/API clients.
 app.disable("etag");
+let isShuttingDown = false;
+let databaseReady = false;
+let selfPingTimer = null;
 
 // ── Security ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
@@ -431,16 +434,19 @@ app.get("/terms", (_, res) =>
   ),
 );
 
-app.get("/api/health", (_, res) =>
-  res.json({
-    status: "ok",
+app.get("/api/health", (_, res) => {
+  const ready = !isShuttingDown && databaseReady;
+  res.status(ready ? 200 : 503).json({
+    status: ready ? "ok" : "starting",
     service: "Mneva AI v2",
     version: "2.0.0",
+    database: databaseReady ? "ready" : "connecting",
+    shuttingDown: isShuttingDown,
     ai: isOpenAIConfigured(process.env.OPENAI_API_KEY),
     aiConfigured: isOpenAIConfigured(process.env.OPENAI_API_KEY),
     timestamp: new Date().toISOString(),
-  }),
-);
+  });
+});
 // Diagnostic endpoint to verify OpenAI API key and connectivity
 app.get("/api/debug/openai", async (_req, res) => {
   try {
@@ -560,20 +566,23 @@ const io = new IO(server, {
 setupSocket(io);
 app.set("io", io);
 
-let isShuttingDown = false;
-
 const shutdown = async (signal) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
   logger.info(`Received ${signal}; shutting down gracefully...`);
 
+  // Stop accepting/routing new work before closing dependencies. Previously
+  // the database was disconnected first, so Render could still send API
+  // requests to a process that was already tearing its data layer down.
+  io.close();
+  if (selfPingTimer) clearInterval(selfPingTimer);
+  await Promise.race([
+    new Promise((resolve) => server.close(resolve)),
+    new Promise((resolve) => setTimeout(resolve, 10000)),
+  ]);
+
   await Promise.allSettled([disconnectDatabase(), disconnectRedis()]);
-
-  server.close(() => {
-    process.exit(0);
-  });
-
-  setTimeout(() => process.exit(1), 10000);
+  process.exit(0);
 };
 
 const listenPort = Number(process.env.PORT) || 3001;
@@ -614,17 +623,23 @@ server.on("listening", () => {
 
   // Fire all three connections in parallel, non-blocking.
   (async () => {
-    const [redisResult, qdrantResult, dbResult] = await Promise.allSettled([
+    const [redisResult, qdrantResult] = await Promise.allSettled([
       connectRedis(),
       connectQdrant(),
-      connectDatabaseWithRetry(),
     ]);
 
     const redisClient =
       redisResult.status === "fulfilled" ? redisResult.value : null;
     const qdrantClient =
       qdrantResult.status === "fulfilled" ? qdrantResult.value : null;
-    const dbOk = dbResult.status === "fulfilled";
+    let dbOk = false;
+    try {
+      await connectDatabaseWithRetry();
+      databaseReady = true;
+      dbOk = true;
+    } catch (error) {
+      logger.error(`❌ Database initialization stopped: ${error.message}`);
+    }
 
     logger.info(`📦 Redis: ${redisClient ? "✅ Ready" : "⚠️  Not reachable"}`);
     logger.info(
@@ -633,10 +648,6 @@ server.on("listening", () => {
     logger.info(
       `🗄️  Database: ${dbOk ? "✅ Ready" : "⚠️  Not reachable — will retry on first request"}`,
     );
-    if (!dbOk)
-      logger.warn(
-        `⚠️ DB connect failed at startup: ${dbResult.reason?.message}`,
-      );
     logger.info(
       `🤖 OpenAI: ${isOpenAIConfigured(process.env.OPENAI_API_KEY) ? "✅ Ready" : "⚠️  Set OPENAI_API_KEY"}`,
     );
@@ -677,7 +688,7 @@ server.on("listening", () => {
     process.env.PUBLIC_URL ||
     "https://mneva-backend-v2.onrender.com";
   logger.info(`🔁 Self-ping target: ${SELF_URL}/api/health`);
-  setInterval(
+  selfPingTimer = setInterval(
     () => {
       fetch(`${SELF_URL}/api/health`)
         .then(() => logger.info(`🔁 Self-ping OK (${SELF_URL})`))
