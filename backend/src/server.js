@@ -447,6 +447,20 @@ app.get("/api/health", (_, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Do not execute application routes against a process that is still starting
+// or has received SIGTERM. Render can briefly probe an old instance during a
+// replacement; fail fast so mobile retries against the ready instance.
+app.use("/api", (req, res, next) => {
+  if (isShuttingDown || !databaseReady) {
+    res.set("Retry-After", "2");
+    return res.status(503).json({
+      error: "Service is changing instances. Please retry shortly.",
+      retryable: true,
+    });
+  }
+  return next();
+});
 // Diagnostic endpoint to verify OpenAI API key and connectivity
 app.get("/api/debug/openai", async (_req, res) => {
   try {

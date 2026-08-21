@@ -93,6 +93,7 @@ export default function App() {
   const recoveryPromiseRef = useRef(null);
   const recoveryAttemptRef = useRef(0);
   const refreshTimersRef = useRef([]);
+  const activeRouteRef = useRef(null);
 
   const clearRecoveryTimer = useCallback(() => {
     if (recoveryTimerRef.current) {
@@ -109,6 +110,15 @@ export default function App() {
     refreshTimersRef.current = [
       setTimeout(refreshAppData, 1500),
     ];
+  }, []);
+
+  const handleNavigationStateChange = useCallback(() => {
+    const route = navigationRef.current?.getCurrentRoute?.();
+    if (!route || route.name === activeRouteRef.current) return;
+    activeRouteRef.current = route.name;
+    // Screens load on mount, while this signal makes already-mounted screens
+    // refresh immediately when the user returns to a tab.
+    refreshAppData();
   }, []);
 
   // A saved token alone does not mean the existing mobile connection is ready.
@@ -266,7 +276,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer theme={AppTheme} ref={navigationRef}>
+      <NavigationContainer
+        theme={AppTheme}
+        ref={navigationRef}
+        onStateChange={handleNavigationStateChange}
+      >
         <Stack.Navigator
           initialRouteName={initialRoute}
           screenOptions={{

@@ -5,6 +5,7 @@ export const BASE_URL = 'https://mneva-backend-v2.onrender.com';
 // Listeners notified when session expires (401) so screens can redirect to login
 const _sessionExpiredListeners = new Set();
 const CACHE_PREFIX = 'mneva_api_cache:';
+const _inFlightGets = new Map();
 
 export function onSessionExpired(cb) {
   _sessionExpiredListeners.add(cb);
@@ -30,6 +31,18 @@ function canUseCachedResponse(path, error) {
     && (!error?.status || error.status >= 500);
 }
 
+async function readCachedResponse(path, token) {
+  if (path === '/api/auth/me') return null;
+  const cached = await AsyncStorage.getItem(cacheKey(path, token)).catch(() => null);
+  if (!cached) return null;
+  try {
+    return JSON.parse(cached);
+  } catch {
+    await AsyncStorage.removeItem(cacheKey(path, token)).catch(() => {});
+    return null;
+  }
+}
+
 // Wake Render free-tier backend immediately on app launch (fire-and-forget)
 export function pingBackend() {
   fetch(`${BASE_URL}/api/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
@@ -42,69 +55,75 @@ export async function apiFetch(path, options = {}) {
   const token = await getToken();
   const cacheable = (fetchOptions.method || 'GET').toUpperCase() === 'GET';
   const responseCacheKey = cacheKey(path, token);
+  const requestKey = `${responseCacheKey}:${JSON.stringify(fetchOptions.headers || {})}`;
+  if (cacheable && _inFlightGets.has(requestKey)) return _inFlightGets.get(requestKey);
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...fetchOptions.headers,
   };
 
-  // Retrying reads heals short network changes and Render wake-ups without
-  // ever retrying a POST/PATCH action that could create duplicate work.
-  const retryable = retry !== false && (fetchOptions.method || 'GET').toUpperCase() === 'GET';
-  let lastError;
-  const maxAttempts = retryable ? 3 : 1;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      const res = await fetch(`${BASE_URL}${path}`, {
-        ...fetchOptions,
-        cache: 'no-store',
-        headers,
-        body: fetchOptions.body ? JSON.stringify(fetchOptions.body) : undefined,
-        signal: controller.signal,
-      });
-      if (res.status === 304) {
-        throw { status: 503, message: 'Cached response has no body' };
-      }
-      const data = await res.json().catch(() => ({}));
-
-      if (res.status === 401) {
-        _notifySessionExpired();
-        throw { status: 401, message: 'Session expired. Please sign in again.' };
-      }
-      if (!res.ok) {
-        throw {
-          status: res.status,
-          message: data.error || data.message || `Server request failed (HTTP ${res.status})`,
-        };
-      }
-      if (cacheable) {
-        AsyncStorage.setItem(responseCacheKey, JSON.stringify(data)).catch(() => {});
-      }
-      return data;
-    } catch (err) {
-      lastError = err?.name === 'AbortError'
-        ? { status: 0, message: 'Request timed out. Check your connection.' }
-        : err;
-      if (cacheable && canUseCachedResponse(path, lastError)) {
-        const cached = await AsyncStorage.getItem(responseCacheKey).catch(() => null);
-        if (cached) {
-          try {
-            return JSON.parse(cached);
-          } catch {
-            await AsyncStorage.removeItem(responseCacheKey).catch(() => {});
-          }
+  const request = (async () => {
+    // Retrying reads heals short network changes and Render replacements
+    // without ever retrying a POST/PATCH action that could duplicate work.
+    const retryable = retry !== false && cacheable;
+    let lastError;
+    const maxAttempts = retryable ? 3 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(`${BASE_URL}${path}`, {
+          ...fetchOptions,
+          cache: 'no-store',
+          headers,
+          body: fetchOptions.body ? JSON.stringify(fetchOptions.body) : undefined,
+          signal: controller.signal,
+        });
+        if (res.status === 304) {
+          throw { status: 503, message: 'Cached response has no body' };
         }
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 401) {
+          _notifySessionExpired();
+          throw { status: 401, message: 'Session expired. Please sign in again.' };
+        }
+        if (!res.ok) {
+          throw {
+            status: res.status,
+            message: data.error || data.message || `Server request failed (HTTP ${res.status})`,
+          };
+        }
+        if (cacheable) {
+          AsyncStorage.setItem(responseCacheKey, JSON.stringify(data)).catch(() => {});
+        }
+        return data;
+      } catch (err) {
+        lastError = err?.name === 'AbortError'
+          ? { status: 0, message: 'Request timed out. Check your connection.' }
+          : err;
+        // An authenticated or client-side response cannot be healed by retrying.
+        if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500)) break;
+        if (attempt < maxAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** attempt)));
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
-      // An authenticated or client-side response cannot be healed by retrying.
-      if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500)) throw lastError;
-      if (attempt < maxAttempts - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** attempt)));
-      }
-    } finally {
-      clearTimeout(timeoutId);
     }
-  }
-  throw lastError;
+
+    // Do not blank a page while Render is replacing an instance. Only use the
+    // last known response after fresh attempts have actually failed.
+    if (cacheable && canUseCachedResponse(path, lastError)) {
+      const cached = await readCachedResponse(path, token);
+      if (cached !== null) return cached;
+    }
+    throw lastError;
+  })();
+
+  if (!cacheable) return request;
+  _inFlightGets.set(requestKey, request);
+  request.finally(() => _inFlightGets.delete(requestKey)).catch(() => {});
+  return request;
 }
