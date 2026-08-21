@@ -578,6 +578,22 @@ const shutdown = async (signal) => {
 
 const listenPort = Number(process.env.PORT) || 3001;
 
+async function connectDatabaseWithRetry() {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await connectDatabase();
+    } catch (error) {
+      attempt += 1;
+      const delay = Math.min(5000 * attempt, 30000);
+      logger.warn(
+        `⚠️ Database unavailable (attempt ${attempt}): ${error.message}. Retrying in ${delay / 1000}s`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 // ── FIX: open the port immediately, don't block on Redis/Qdrant/DB ──────────
 // Previously this awaited connectRedis() -> connectQdrant() -> connectDatabase()
 // in sequence BEFORE calling server.listen(). If any of those three (especially
@@ -601,7 +617,7 @@ server.on("listening", () => {
     const [redisResult, qdrantResult, dbResult] = await Promise.allSettled([
       connectRedis(),
       connectQdrant(),
-      connectDatabase(),
+      connectDatabaseWithRetry(),
     ]);
 
     const redisClient =

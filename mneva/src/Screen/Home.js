@@ -3752,6 +3752,7 @@ export default function Home({ navigation }) {
   // to a connectivity failure. Now we track it explicitly and show a
   // retryable banner instead of silently pretending there's no data.
   const [loadFailed, setLoadFailed] = useState(false);
+  const hasLoadedDataRef = useRef(false);
 
   const loadWeather = async (cityOverride = null, countryOverride = null) => {
     if (!cityOverride) {
@@ -3912,7 +3913,9 @@ export default function Home({ navigation }) {
       const allCriticalFailed = criticalResults.every(
         (r) => r.status === "rejected",
       );
-      setLoadFailed(allCriticalFailed);
+      // Keep rendering the last usable screen during a later outage. A failed
+      // refresh must not turn a previously loaded account into an empty one.
+      setLoadFailed(allCriticalFailed && !hasLoadedDataRef.current);
 
       if (me) setUser(me);
       if (notifs) {
@@ -3948,6 +3951,7 @@ export default function Home({ navigation }) {
 
       // Seed localPriorities from DB tasks — source of truth
       if (tasksData) {
+        hasLoadedDataRef.current = true;
         const allTasks = Array.isArray(tasksData) ? tasksData : [];
         setAllTasks(allTasks);
         const STRIPE_COLORS = [
@@ -4348,7 +4352,6 @@ export default function Home({ navigation }) {
   const onRefresh = () => {
     setRefreshing(true);
     setActedIds({});
-    setLocalPriorities([]);
     loadData(true);
   };
 
