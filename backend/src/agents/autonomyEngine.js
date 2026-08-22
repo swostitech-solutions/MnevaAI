@@ -24,7 +24,7 @@ function timeZoneOffsetAt(date, timeZone) {
 
 // Tool calls often contain a local ISO value without an offset. Node parses
 // that in the server timezone (UTC on Render), which shifts the user's alarm.
-function normalizeScheduledTime(value, timeZone) {
+export function normalizeScheduledTime(value, timeZone) {
   const raw = String(value || '').trim()
   if (!raw) return null
 
@@ -34,14 +34,103 @@ function normalizeScheduledTime(value, timeZone) {
     return Number.isNaN(instant.getTime()) ? null : instant
   }
 
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?$/)
-  if (!match) return null
-  const [, year, month, day, hour, minute, second = '0'] = match
-  const utcGuess = new Date(Date.UTC(+year, +month - 1, +day, +hour, +minute, +second))
-  let instant = new Date(utcGuess.getTime() - timeZoneOffsetAt(utcGuess, timeZone))
-  // Recalculate once to handle daylight-saving transitions in non-Indian zones.
-  instant = new Date(utcGuess.getTime() - timeZoneOffsetAt(instant, timeZone))
-  return Number.isNaN(instant.getTime()) ? null : instant
+  // Some tool calls or UI inputs pass ISO-ish values without timezone offsets.
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?$/)
+  if (isoMatch) {
+    const [, year, month, day, hour, minute, second = '0'] = isoMatch
+    const utcGuess = new Date(Date.UTC(+year, +month - 1, +day, +hour, +minute, +second))
+    let instant = new Date(utcGuess.getTime() - timeZoneOffsetAt(utcGuess, timeZone))
+    // Recalculate once to handle daylight-saving transitions in non-Indian zones.
+    instant = new Date(utcGuess.getTime() - timeZoneOffsetAt(instant, timeZone))
+    return Number.isNaN(instant.getTime()) ? null : instant
+  }
+
+  // Handle natural-language phrases like 'today 6:30 pm', 'tomorrow 9am',
+  // 'next Monday 2:15 pm', 'in 2 hours', etc.
+  const lower = raw.toLowerCase()
+  const now = new Date()
+  const baseDate = new Date(now)
+
+  const relativeHourMatch = lower.match(/in\s+(\d+)\s*hours?/) || lower.match(/\+(\d+)\s*hours?/) || lower.match(/after\s+(\d+)\s*hours?/)
+  if (relativeHourMatch) {
+    const hours = Number(relativeHourMatch[1])
+    const instant = new Date(now.getTime() + hours * 60 * 60 * 1000)
+    return Number.isNaN(instant.getTime()) ? null : instant
+  }
+
+  const relativeMinuteMatch = lower.match(/in\s+(\d+)\s*minutes?/) || lower.match(/\+(\d+)\s*minutes?/) || lower.match(/after\s+(\d+)\s*minutes?/)
+  if (relativeMinuteMatch) {
+    const minutes = Number(relativeMinuteMatch[1])
+    const instant = new Date(now.getTime() + minutes * 60 * 1000)
+    return Number.isNaN(instant.getTime()) ? null : instant
+  }
+
+  const timeMatch = raw.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
+  let hour = 9
+  let minute = 0
+  if (timeMatch) {
+    hour = Number(timeMatch[1])
+    minute = Number(timeMatch[2] || '0')
+    const meridiem = (timeMatch[3] || '').toLowerCase()
+    if (meridiem === 'pm' && hour < 12) hour += 12
+    if (meridiem === 'am' && hour === 12) hour = 0
+  }
+
+  const weekdays = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+  const dayKeywordMap = {
+    today: 0,
+    tomorrow: 1,
+  }
+
+  let targetDate = new Date(baseDate)
+  let matchedDay = false
+
+  for (const [keyword, offsetDays] of Object.entries(dayKeywordMap)) {
+    if (lower.includes(keyword)) {
+      targetDate.setDate(baseDate.getDate() + offsetDays)
+      matchedDay = true
+      break
+    }
+  }
+
+  if (!matchedDay && /(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(lower)) {
+    const currentDay = new Date(baseDate).getDay()
+    const targetIndex = weekdays.findIndex((day) => lower.includes(day))
+    if (targetIndex >= 0) {
+      let diff = (targetIndex - currentDay + 7) % 7
+      if (diff === 0 && now.getHours() >= hour) diff = 7
+      targetDate.setDate(new Date(baseDate).getDate() + diff)
+      matchedDay = true
+    }
+  }
+
+  if (matchedDay) {
+    targetDate.setHours(hour, minute, 0, 0)
+    if (targetDate.getTime() <= now.getTime()) {
+      targetDate = new Date(targetDate)
+      targetDate.setDate(targetDate.getDate() + 1)
+      targetDate.setHours(hour, minute, 0, 0)
+    }
+    return Number.isNaN(targetDate.getTime()) ? null : targetDate
+  }
+
+  if (lower.includes('today')) {
+    targetDate = new Date(baseDate)
+    targetDate.setHours(hour, minute, 0, 0)
+    if (targetDate.getTime() <= now.getTime()) {
+      targetDate.setDate(targetDate.getDate() + 1)
+    }
+    return targetDate
+  }
+
+  if (lower.includes('tomorrow')) {
+    targetDate = new Date(baseDate)
+    targetDate.setDate(targetDate.getDate() + 1)
+    targetDate.setHours(hour, minute, 0, 0)
+    return targetDate
+  }
+
+  return null
 }
 
 async function getUserTimeZone(userId) {
