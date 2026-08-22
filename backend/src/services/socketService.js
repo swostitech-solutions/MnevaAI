@@ -1,87 +1,291 @@
-import jwt from 'jsonwebtoken'
-import { logger } from '../config/logger.js'
-import { runLangGraphOrchestrator } from '../agents/langGraphOrchestrator.js'
-import { userStore } from '../models/userStore.js'
-import { ledger } from './ledgerService.js'
-import { prisma } from '../config/prisma.js'
-import { startGmailPoller, stopGmailPoller, sendGmailReply } from './gmailPoller.js'
-import { startCalendarPoller, stopCalendarPoller } from './calendarPoller.js'
-import { startContactsPoller, stopContactsPoller } from './contactsPoller.js'
-import { setSocketServer } from './realtime.js'
+// import jwt from 'jsonwebtoken'
+// import { logger } from '../config/logger.js'
+// import { runLangGraphOrchestrator } from '../agents/langGraphOrchestrator.js'
+// import { userStore } from '../models/userStore.js'
+// import { ledger } from './ledgerService.js'
+// import { prisma } from '../config/prisma.js'
+// import { startGmailPoller, stopGmailPoller, sendGmailReply } from './gmailPoller.js'
+// import { startCalendarPoller, stopCalendarPoller } from './calendarPoller.js'
+// import { startContactsPoller, stopContactsPoller } from './contactsPoller.js'
+// import { setSocketServer } from './realtime.js'
+
+// export function setupSocket(io) {
+//   setSocketServer(io)
+//   io.use((socket, next) => {
+//     const token = socket.handshake.auth?.token
+//     if (!token) return next(new Error('Auth required'))
+//     try {
+//       const secret = process.env.JWT_SECRET
+//       if (!secret) throw new Error('JWT_SECRET environment variable is not set')
+//       socket.user = jwt.verify(token, secret)
+//       next()
+//     } catch { next(new Error('Invalid token')) }
+//   })
+
+//   io.on('connection', (socket) => {
+//     logger.info(`🔌 Connected: ${socket.user.name} (${socket.id})`)
+//     socket.join(`u:${socket.user.id}`)
+
+//     // Real-time agent message
+//     socket.on('agent:query', async ({ messages, conversationId }) => {
+//       try {
+//         socket.emit('agent:thinking', { conversationId })
+//         const user = await userStore.getById(socket.user.id) || socket.user
+//         const result = await runLangGraphOrchestrator({ messages, user })
+//         socket.emit('agent:reply', { conversationId, ...result, ts: new Date().toISOString() })
+//       } catch (err) {
+//         logger.error(`Socket agent error: ${err.message}`)
+//         socket.emit('agent:error', { conversationId, error: err.message })
+//       }
+//     })
+
+//     // Action approval
+//     socket.on('action:approve', ({ actionId }) => {
+//       logger.info(`✅ Action approved: ${actionId} by ${socket.user.name}`)
+//       io.to(`u:${socket.user.id}`).emit('action:confirmed', { actionId, ts: new Date().toISOString() })
+//     })
+//     socket.on('action:deny', ({ actionId }) => {
+//       logger.info(`✕ Action denied: ${actionId}`)
+//       socket.emit('action:denied', { actionId })
+//     })
+
+//     // Ledger sync
+//     socket.on('ledger:fetch', async () => {
+//       const entries = await ledger.getByUser(socket.user.id)
+//       socket.emit('ledger:data', { entries })
+//     })
+
+//     // Send reply directly from notification card
+//     socket.on('gmail:send_reply', async ({ emailId, recipient, subject, draft, notifId }) => {
+//       try {
+//         await sendGmailReply(socket.user.id, emailId, recipient, subject, draft)
+//         if (notifId) {
+//           try {
+//             await prisma.notification.update({ where: { id: notifId }, data: { read: true } })
+//           } catch (err) {
+//             logger.warn(`Failed to mark notification ${notifId} read after reply: ${err.message}`)
+//           }
+//         }
+//         socket.emit('gmail:reply_sent', { emailId, notifId, ts: new Date().toISOString() })
+//         logger.info(`Gmail reply sent by ${socket.user.name} to ${recipient}`)
+//       } catch (err) {
+//         socket.emit('gmail:reply_error', { emailId, notifId, error: err.message })
+//       }
+//     })
+
+//     startGmailPoller(socket.user.id, io)
+//     startCalendarPoller(socket.user.id, io)
+//     startContactsPoller(socket.user.id, io)
+
+//     socket.on('disconnect', () => {
+//       logger.info(`🔌 Disconnected: ${socket.user.name}`)
+//       stopGmailPoller(socket.user.id)
+//       stopCalendarPoller(socket.user.id)
+//       stopContactsPoller(socket.user.id)
+//     })
+//   })
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///////////////////////////////////// new //////////////////////////
+
+
+import jwt from "jsonwebtoken";
+import { logger } from "../config/logger.js";
+import { runLangGraphOrchestrator } from "../agents/langGraphOrchestrator.js";
+import { userStore } from "../models/userStore.js";
+import { ledger } from "./ledgerService.js";
+import { prisma } from "../config/prisma.js";
+import {
+  startGmailPoller,
+  stopGmailPoller,
+  sendGmailReply,
+} from "./gmailPoller.js";
+import { startCalendarPoller, stopCalendarPoller } from "./calendarPoller.js";
+import { startContactsPoller, stopContactsPoller } from "./contactsPoller.js";
+import { setSocketServer } from "./realtime.js";
+
+const userSocketCounts = new Map();
+const pollerStopTimers = new Map();
+const POLLER_GRACE_MS = 5 * 60 * 1000;
 
 export function setupSocket(io) {
-  setSocketServer(io)
+  setSocketServer(io);
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token
-    if (!token) return next(new Error('Auth required'))
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error("Auth required"));
     try {
-      const secret = process.env.JWT_SECRET
-      if (!secret) throw new Error('JWT_SECRET environment variable is not set')
-      socket.user = jwt.verify(token, secret)
-      next()
-    } catch { next(new Error('Invalid token')) }
-  })
+      const secret = process.env.JWT_SECRET;
+      if (!secret)
+        throw new Error("JWT_SECRET environment variable is not set");
+      socket.user = jwt.verify(token, secret);
+      next();
+    } catch {
+      next(new Error("Invalid token"));
+    }
+  });
 
-  io.on('connection', (socket) => {
-    logger.info(`🔌 Connected: ${socket.user.name} (${socket.id})`)
-    socket.join(`u:${socket.user.id}`)
+  io.on("connection", (socket) => {
+    logger.info(`🔌 Connected: ${socket.user.name} (${socket.id})`);
+    socket.join(`u:${socket.user.id}`);
+
+    const userId = socket.user.id;
+    const pendingStop = pollerStopTimers.get(userId);
+    if (pendingStop) {
+      clearTimeout(pendingStop);
+      pollerStopTimers.delete(userId);
+    }
+    userSocketCounts.set(userId, (userSocketCounts.get(userId) || 0) + 1);
 
     // Real-time agent message
-    socket.on('agent:query', async ({ messages, conversationId }) => {
+    socket.on("agent:query", async ({ messages, conversationId }) => {
       try {
-        socket.emit('agent:thinking', { conversationId })
-        const user = await userStore.getById(socket.user.id) || socket.user
-        const result = await runLangGraphOrchestrator({ messages, user })
-        socket.emit('agent:reply', { conversationId, ...result, ts: new Date().toISOString() })
+        socket.emit("agent:thinking", { conversationId });
+        const user = (await userStore.getById(socket.user.id)) || socket.user;
+        const result = await runLangGraphOrchestrator({ messages, user });
+        socket.emit("agent:reply", {
+          conversationId,
+          ...result,
+          ts: new Date().toISOString(),
+        });
       } catch (err) {
-        logger.error(`Socket agent error: ${err.message}`)
-        socket.emit('agent:error', { conversationId, error: err.message })
+        logger.error(`Socket agent error: ${err.message}`);
+        socket.emit("agent:error", { conversationId, error: err.message });
       }
-    })
+    });
 
     // Action approval
-    socket.on('action:approve', ({ actionId }) => {
-      logger.info(`✅ Action approved: ${actionId} by ${socket.user.name}`)
-      io.to(`u:${socket.user.id}`).emit('action:confirmed', { actionId, ts: new Date().toISOString() })
-    })
-    socket.on('action:deny', ({ actionId }) => {
-      logger.info(`✕ Action denied: ${actionId}`)
-      socket.emit('action:denied', { actionId })
-    })
+    socket.on("action:approve", ({ actionId }) => {
+      logger.info(`✅ Action approved: ${actionId} by ${socket.user.name}`);
+      io.to(`u:${socket.user.id}`).emit("action:confirmed", {
+        actionId,
+        ts: new Date().toISOString(),
+      });
+    });
+    socket.on("action:deny", ({ actionId }) => {
+      logger.info(`✕ Action denied: ${actionId}`);
+      socket.emit("action:denied", { actionId });
+    });
 
     // Ledger sync
-    socket.on('ledger:fetch', async () => {
-      const entries = await ledger.getByUser(socket.user.id)
-      socket.emit('ledger:data', { entries })
-    })
+    socket.on("ledger:fetch", async () => {
+      const entries = await ledger.getByUser(socket.user.id);
+      socket.emit("ledger:data", { entries });
+    });
 
     // Send reply directly from notification card
-    socket.on('gmail:send_reply', async ({ emailId, recipient, subject, draft, notifId }) => {
-      try {
-        await sendGmailReply(socket.user.id, emailId, recipient, subject, draft)
-        if (notifId) {
-          try {
-            await prisma.notification.update({ where: { id: notifId }, data: { read: true } })
-          } catch (err) {
-            logger.warn(`Failed to mark notification ${notifId} read after reply: ${err.message}`)
+    socket.on(
+      "gmail:send_reply",
+      async ({ emailId, recipient, subject, draft, notifId }) => {
+        try {
+          await sendGmailReply(
+            socket.user.id,
+            emailId,
+            recipient,
+            subject,
+            draft,
+          );
+          if (notifId) {
+            try {
+              await prisma.notification.update({
+                where: { id: notifId },
+                data: { read: true },
+              });
+            } catch (err) {
+              logger.warn(
+                `Failed to mark notification ${notifId} read after reply: ${err.message}`,
+              );
+            }
           }
+          socket.emit("gmail:reply_sent", {
+            emailId,
+            notifId,
+            ts: new Date().toISOString(),
+          });
+          logger.info(
+            `Gmail reply sent by ${socket.user.name} to ${recipient}`,
+          );
+        } catch (err) {
+          socket.emit("gmail:reply_error", {
+            emailId,
+            notifId,
+            error: err.message,
+          });
         }
-        socket.emit('gmail:reply_sent', { emailId, notifId, ts: new Date().toISOString() })
-        logger.info(`Gmail reply sent by ${socket.user.name} to ${recipient}`)
-      } catch (err) {
-        socket.emit('gmail:reply_error', { emailId, notifId, error: err.message })
+      },
+    );
+
+    startGmailPoller(socket.user.id, io);
+    startCalendarPoller(socket.user.id, io);
+    startContactsPoller(socket.user.id, io);
+
+    socket.on("disconnect", (reason) => {
+      const remaining = Math.max(0, (userSocketCounts.get(userId) || 1) - 1);
+      if (remaining === 0) userSocketCounts.delete(userId);
+      else userSocketCounts.set(userId, remaining);
+
+      logger.info(
+        `🔌 Disconnected: ${socket.user.name} (${reason}); remaining sockets: ${remaining}`,
+      );
+
+      // A mobile network/background transition can briefly drop Socket.IO.
+      // Do not stop user pollers immediately; give the client time to reconnect.
+      if (remaining === 0) {
+        const timer = setTimeout(() => {
+          pollerStopTimers.delete(userId);
+          if (!userSocketCounts.has(userId)) {
+            stopGmailPoller(userId);
+            stopCalendarPoller(userId);
+            stopContactsPoller(userId);
+            logger.info(
+              `⏹️ Pollers stopped after socket grace period for user ${userId}`,
+            );
+          }
+        }, POLLER_GRACE_MS);
+        pollerStopTimers.set(userId, timer);
       }
-    })
-
-    startGmailPoller(socket.user.id, io)
-    startCalendarPoller(socket.user.id, io)
-    startContactsPoller(socket.user.id, io)
-
-    socket.on('disconnect', () => {
-      logger.info(`🔌 Disconnected: ${socket.user.name}`)
-      stopGmailPoller(socket.user.id)
-      stopCalendarPoller(socket.user.id)
-      stopContactsPoller(socket.user.id)
-    })
-  })
+    });
+  });
 }
