@@ -477,14 +477,22 @@ app.get("/api/health", (_, res) => {
   });
 });
 
-// Do not execute application routes against a process that is still starting
-// or has received SIGTERM. Render can briefly probe an old instance during a
-// replacement; fail fast so mobile retries against the ready instance.
+// Do not execute non-auth application routes against a process that is still
+// starting or has received SIGTERM. Auth endpoints are exempt so a fresh
+// Render cold start can still accept sign-in attempts while the DB connects.
 app.use("/api", (req, res, next) => {
-  if (isShuttingDown || !databaseReady) {
+  const isAuthRoute = req.path.startsWith("/auth/") || req.path === "/auth";
+  if (isShuttingDown) {
     res.set("Retry-After", "2");
     return res.status(503).json({
       error: "Service is changing instances. Please retry shortly.",
+      retryable: true,
+    });
+  }
+  if (!databaseReady && !isAuthRoute) {
+    res.set("Retry-After", "2");
+    return res.status(503).json({
+      error: "Service is warming up. Please retry shortly.",
       retryable: true,
     });
   }
