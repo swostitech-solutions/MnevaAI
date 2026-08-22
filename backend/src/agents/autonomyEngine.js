@@ -147,12 +147,14 @@ function actionIdentity(name, input = {}) {
 // The model's prose is not a record of an action.  Explicitly require the
 // corresponding tool on direct create requests, otherwise a fluent text-only
 // reply can incorrectly say "reminder set" without creating a Task.
-function requestedSchedulingTool(messages = []) {
-  const userMessages = messages
-    .filter(message => message?.role === 'user')
-    .slice(-4)
-    .map(message => String(message.content || ''))
-  const text = userMessages.join('\n').toLowerCase()
+export function requestedSchedulingTool(messages = []) {
+  const userMessages = messages.filter(message => message?.role === 'user')
+  const latestText = String(userMessages[userMessages.length - 1]?.content || '').trim()
+  const text = latestText.toLowerCase()
+
+  if (!text || /^(hi|hello|hey|hii|hey there|good morning|good evening|good afternoon|namaste|hi there)$/i.test(text)) {
+    return null
+  }
 
   if (/\b(remind me|set (?:a )?reminder|create (?:a )?reminder|add (?:a )?reminder|alert me|set (?:an )?alert)\b/.test(text)) {
     return 'set_reminder'

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 process.env.OPENAI_API_KEY = ''
 process.env.DEEPSEEK_API_KEY = ''
 
-const { runAutonomyEngine, normalizeScheduledTime } = await import('../src/agents/autonomyEngine.js')
+const { runAutonomyEngine, normalizeScheduledTime, requestedSchedulingTool } = await import('../src/agents/autonomyEngine.js')
 
 test('runAutonomyEngine returns a helpful fallback when AI is not configured', async () => {
   process.env.OPENAI_API_KEY = ''
@@ -75,4 +75,13 @@ test('normalizeScheduledTime accepts common natural-language future dates', () =
   assert.ok(today.getTime() > now)
   assert.ok(tomorrow.getTime() > now)
   assert.ok(nextWeek.getTime() > now)
+})
+
+test('requestedSchedulingTool ignores greetings even after a previous scheduling request', () => {
+  const result = requestedSchedulingTool([
+    { role: 'user', content: 'Schedule a meeting tomorrow at 3pm' },
+    { role: 'user', content: 'hi' },
+  ])
+
+  assert.equal(result, null)
 })
