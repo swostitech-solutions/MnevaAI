@@ -383,15 +383,44 @@ let selfPingTimer = null;
 
 // ── Security ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5174")
+const configuredOrigins = (process.env.FRONTEND_URL || "")
   .split(",")
   .map((origin) => origin.trim())
+  .concat(
+    process.env.FRONTEND_URL_WEB || "",
+    process.env.PUBLIC_URL || "",
+    process.env.RENDER_EXTERNAL_URL || "",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+  )
   .filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  const lowered = origin.toLowerCase();
+  if (lowered === "null") return true;
+  if (lowered.startsWith("exp://") || lowered.startsWith("exps://") || lowered.startsWith("rn://") || lowered.startsWith("expo://") || lowered.startsWith("capacitor://") || lowered.startsWith("file://")) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(lowered)) return true;
+  if (/(^|\.)onrender\.com$/.test(lowered) || /(^|\.)render\.com$/.test(lowered)) return true;
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return true;
+    if (host.endsWith(".onrender.com") || host.endsWith(".render.com")) return true;
+    return configuredOrigins.includes(origin) || configuredOrigins.includes(parsed.origin);
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin))
-        return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
       callback(new Error(`CORS origin denied: ${origin}`));
     },
     credentials: true,

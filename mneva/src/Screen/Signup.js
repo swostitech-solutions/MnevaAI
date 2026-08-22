@@ -54,6 +54,7 @@ export default function Signup({ navigation }) {
     try {
       const data = await apiFetch('/api/auth/register', {
         method: 'POST',
+        retry: true,
         body: {
           name: fullName.trim(),
           email: email.trim().toLowerCase(),

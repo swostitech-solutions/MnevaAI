@@ -44,6 +44,7 @@ export default function Signin({ navigation }) {
     try {
       const data = await apiFetch('/api/auth/login', {
         method: 'POST',
+        retry: true,
         body: { email: email.trim().toLowerCase(), password },
       });
       // Persist the new session *before* mounting Home. Previously Home could

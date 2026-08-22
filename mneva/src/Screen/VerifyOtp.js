@@ -61,6 +61,7 @@ export default function VerifyOtp({ route, navigation }) {
     try {
       const data = await apiFetch('/api/auth/verify-email', {
         method: 'POST',
+        retry: true,
         body: { email, otp: code },
       });
       await saveAuth(data.token, data.user);

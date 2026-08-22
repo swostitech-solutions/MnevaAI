@@ -54,6 +54,7 @@ export async function apiFetch(path, options = {}) {
   const { retry, ...fetchOptions } = options;
   const token = await getToken();
   const cacheable = (fetchOptions.method || 'GET').toUpperCase() === 'GET';
+  const retryableAuthPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/verify-email', '/api/auth/resend-otp'];
   const responseCacheKey = cacheKey(path, token);
   const requestKey = `${responseCacheKey}:${JSON.stringify(fetchOptions.headers || {})}`;
   if (cacheable && _inFlightGets.has(requestKey)) return _inFlightGets.get(requestKey);
@@ -64,9 +65,9 @@ export async function apiFetch(path, options = {}) {
   };
 
   const request = (async () => {
-    // Retrying reads heals short network changes and Render replacements
-    // without ever retrying a POST/PATCH action that could duplicate work.
-    const retryable = retry !== false && cacheable;
+    // Reads can safely retry on flaky mobile / Render connections, and auth
+    // endpoints need the same protection during backend cold starts.
+    const retryable = retry === true || (retry !== false && (cacheable || retryableAuthPaths.includes(path)));
     let lastError;
     const maxAttempts = retryable ? 3 : 1;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
