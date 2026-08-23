@@ -1,6 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-export const BASE_URL = 'https://mneva-backend-v2.onrender.com';
+const LOCAL_BACKEND = __DEV__
+  ? (Platform.OS === 'android'
+      ? 'http://10.0.2.2:3001'
+      : 'http://localhost:3001')
+  : 'https://mneva-backend-v2.onrender.com';
+
+export const BASE_URL = LOCAL_BACKEND;
 
 // Listeners notified when session expires (401) so screens can redirect to login
 const _sessionExpiredListeners = new Set();
@@ -43,9 +50,25 @@ async function readCachedResponse(path, token) {
   }
 }
 
-// Wake Render free-tier backend immediately on app launch (fire-and-forget)
-export function pingBackend() {
-  fetch(`${BASE_URL}/api/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
+// Wake Render free-tier backend immediately on app launch or before the next
+// user action. This is a warm-up trigger, not a forced server restart.
+export async function pingBackend(timeoutMs = 8000) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${BASE_URL}/api/health`, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      return res.ok;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch {
+    return false;
+  }
 }
 
 export async function apiFetch(path, options = {}) {
@@ -63,6 +86,14 @@ export async function apiFetch(path, options = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...fetchOptions.headers,
   };
+
+  // If the backend has been sleeping, a quick /api/health probe before the user
+  // action wakes it without forcing logout or a hard restart. This is the
+  // practical equivalent of "restart on next click" while staying inside the
+  // app lifecycle.
+  if (path !== '/api/health' && !fetchOptions.headers?.['x-no-wake-check']) {
+    await pingBackend().catch(() => {});
+  }
 
   const request = (async () => {
     // Reads can safely retry on flaky mobile / Render connections, and auth

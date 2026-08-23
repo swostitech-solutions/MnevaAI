@@ -1235,19 +1235,40 @@ server.on("listening", () => {
   // FIX: self-ping must NEVER fall back to localhost. A loopback ping never
   // leaves the container, so it's never seen as external traffic and does
   // NOT reset Render's inactivity timer — this was silently broken before.
-  const SELF_URL =
-    process.env.RENDER_EXTERNAL_URL ||
-    process.env.PUBLIC_URL ||
-    "https://mneva-backend-v2.onrender.com";
-  logger.info(`🔁 Self-ping target: ${SELF_URL}/api/health`);
-  selfPingTimer = setInterval(
-    () => {
-      fetch(`${SELF_URL}/api/health`)
-        .then(() => logger.info(`🔁 Self-ping OK (${SELF_URL})`))
-        .catch((err) => logger.warn(`🔁 Self-ping failed: ${err.message}`));
-    },
-    10 * 60 * 1000,
-  ); // every 10 minutes
+  const SELF_URLS = Array.from(
+    new Set(
+      [
+        process.env.RENDER_EXTERNAL_URL,
+        process.env.PUBLIC_URL,
+        "https://mneva-backend-v2.onrender.com",
+        "https://mneva-backend.onrender.com",
+      ].filter(Boolean),
+    ),
+  );
+  const pingSelf = () => {
+    const requests = SELF_URLS.map((url) =>
+      fetch(`${url}/api/health`)
+        .then(() => `${url}/api/health`)
+        .catch(() => null),
+    );
+
+    return Promise.allSettled(requests).then((results) => {
+      const ok = results
+        .filter((result) => result.status === "fulfilled" && result.value)
+        .map((result) => result.value);
+      if (ok.length) {
+        logger.info(`🔁 Self-ping OK (${ok[0]})`);
+      } else {
+        logger.warn("🔁 Self-ping failed: no external health URL responded");
+      }
+    });
+  };
+
+  logger.info(`🔁 Self-ping targets: ${SELF_URLS.join(", ")}/api/health`);
+  pingSelf().catch(() => {});
+  selfPingTimer = setInterval(() => {
+    pingSelf().catch(() => {});
+  }, 5 * 60 * 1000);
 });
 
 server.on("error", (err) => {
