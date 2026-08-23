@@ -6,6 +6,16 @@ if (!process.env.DATABASE_URL) {
 
 export const prisma = new PrismaClient({
   log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
+});
+
+// Reconnect automatically on connection loss
+prisma.$on('error', async () => {
+  try { await prisma.$connect(); } catch {}
 });
 
 export async function connectDatabase() {

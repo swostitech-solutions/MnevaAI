@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "dev": "npx kill-port 3001 && nodemon src/server.js",
+    "dev": "nodemon src/server.js",
     "build": "bash render-build.sh",
     "start": "node src/server.js",
     "postinstall": "npx prisma generate && (npx prisma migrate resolve --rolled-back 20260823082440_add_missing_pet_family_models || true)",
