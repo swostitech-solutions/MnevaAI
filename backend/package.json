@@ -5,8 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "npx kill-port 3001 && nodemon src/server.js",
-    "build": "npx prisma generate",
-    "start": "npx prisma migrate deploy && node src/server.js",
+    "build": "bash render-build.sh",
+    "start": "node src/server.js",
     "db:test": "node -r dotenv/config test-db.js",
     "db:clean-demo": "node scripts/cleanDemoData.js"
   },

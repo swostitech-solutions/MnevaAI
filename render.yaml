@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: mneva-backend-v2
+    runtime: node
+    rootDir: backend
+    buildCommand: bash render-build.sh
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: RENDER_EXTERNAL_URL
+        value: https://mneva-backend-v2.onrender.com
+      - key: FRONTEND_URL
+        sync: false   # set in Render dashboard
+      - key: DATABASE_URL
+        sync: false   # set in Render dashboard
+      - key: JWT_SECRET
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
