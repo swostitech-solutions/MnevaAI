@@ -841,6 +841,31 @@ let isShuttingDown = false;
 let databaseReady = false;
 let selfPingTimer = null;
 
+export function getHealthStatus({ shuttingDown = isShuttingDown, ready = databaseReady } = {}) {
+  const running = !shuttingDown;
+  return {
+    status: running ? "ok" : "stopping",
+    service: "Mneva AI v2",
+    version: "2.0.0",
+    database: ready ? "ready" : "connecting",
+    readiness: ready ? "ready" : "warming",
+    shuttingDown,
+    ai: isOpenAIConfigured(process.env.OPENAI_API_KEY),
+    aiConfigured: isOpenAIConfigured(process.env.OPENAI_API_KEY),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function shouldAllowApiRequest(req, { shuttingDown = isShuttingDown, ready = databaseReady } = {}) {
+  if (shuttingDown) return false;
+  // Do not block the whole API surface just because Postgres is reconnecting.
+  // A warm-up or transient DB outage should keep the server reachable so the
+  // app can show cached/local data instead of looking fully offline.
+  if (req && req.path && req.path.startsWith("/auth/")) return true;
+  if (!ready && req && req.path && req.path === "/health") return true;
+  return true;
+}
+
 // ── Security ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 
@@ -955,35 +980,18 @@ app.get("/terms", (_, res) =>
 );
 
 app.get("/api/health", (_, res) => {
-  const ready = !isShuttingDown && databaseReady;
-  res.status(ready ? 200 : 503).json({
-    status: ready ? "ok" : "starting",
-    service: "Mneva AI v2",
-    version: "2.0.0",
-    database: databaseReady ? "ready" : "connecting",
-    shuttingDown: isShuttingDown,
-    ai: isOpenAIConfigured(process.env.OPENAI_API_KEY),
-    aiConfigured: isOpenAIConfigured(process.env.OPENAI_API_KEY),
-    timestamp: new Date().toISOString(),
-  });
+  const status = getHealthStatus();
+  res.status(status.status === "ok" ? 200 : 503).json(status);
 });
 
-// Do not execute non-auth application routes against a process that is still
-// starting or has received SIGTERM. Auth endpoints are exempt so a fresh
-// Render cold start can still accept sign-in attempts while the DB connects.
+// Keep the server reachable during DB warm-up/reconnect storms. The app can
+// still show cached data or a friendly error instead of appearing completely
+// unavailable when only the database is reconnecting.
 app.use("/api", (req, res, next) => {
-  const isAuthRoute = req.path.startsWith("/auth/") || req.path === "/auth";
-  if (isShuttingDown) {
+  if (!shouldAllowApiRequest(req)) {
     res.set("Retry-After", "2");
     return res.status(503).json({
       error: "Service is changing instances. Please retry shortly.",
-      retryable: true,
-    });
-  }
-  if (!databaseReady && !isAuthRoute) {
-    res.set("Retry-After", "2");
-    return res.status(503).json({
-      error: "Service is warming up. Please retry shortly.",
       retryable: true,
     });
   }
@@ -1158,7 +1166,9 @@ async function connectDatabaseWithRetry() {
 // background in parallel. Render's health check (and real users) get a fast
 // response immediately; features that need Redis/Qdrant/DB simply report
 // "not ready" until their connection resolves, instead of blocking startup.
-server.listen(listenPort, "0.0.0.0");
+if (process.env.NODE_ENV !== "test") {
+  server.listen(listenPort, "0.0.0.0");
+}
 
 server.on("listening", () => {
   logger.info(`🚀 Mneva AI v2 running on :${listenPort}`);

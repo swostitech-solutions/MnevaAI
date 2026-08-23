@@ -69,7 +69,9 @@ export async function apiFetch(path, options = {}) {
     // endpoints need the same protection during backend cold starts.
     const retryable = retry === true || (retry !== false && (cacheable || retryableAuthPaths.includes(path)));
     let lastError;
-    const maxAttempts = retryable ? 3 : 1;
+    const maxAttempts = retryable ? 5 : 1;
+    const retryDelays = [250, 500, 1000, 2000, 3000];
+
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -91,10 +93,13 @@ export async function apiFetch(path, options = {}) {
           throw { status: 401, message: 'Session expired. Please sign in again.' };
         }
         if (!res.ok) {
-          throw {
-            status: res.status,
-            message: data.error || data.message || `Server request failed (HTTP ${res.status})`,
-          };
+          const message = data.error || data.message || `Server request failed (HTTP ${res.status})`;
+          const transientServerError = [408, 429, 500, 502, 503, 504].includes(res.status);
+          if (retryable && transientServerError && attempt < maxAttempts - 1) {
+            await new Promise(resolve => setTimeout(resolve, retryDelays[attempt] || 2000));
+            continue;
+          }
+          throw { status: res.status, message };
         }
         if (cacheable) {
           AsyncStorage.setItem(responseCacheKey, JSON.stringify(data)).catch(() => {});
@@ -104,11 +109,14 @@ export async function apiFetch(path, options = {}) {
         lastError = err?.name === 'AbortError'
           ? { status: 0, message: 'Request timed out. Check your connection.' }
           : err;
-        // An authenticated or client-side response cannot be healed by retrying.
-        if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500)) break;
-        if (attempt < maxAttempts - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** attempt)));
+        const transientNetworkError = !lastError?.status || lastError?.status === 0 || [408, 429, 500, 502, 503, 504].includes(lastError?.status);
+        // An authenticated or explicitly rejected client-side response cannot be healed by retrying.
+        if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500 && lastError?.status !== 408 && lastError?.status !== 429)) break;
+        if (transientNetworkError && attempt < maxAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, retryDelays[attempt] || 2000));
+          continue;
         }
+        break;
       } finally {
         clearTimeout(timeoutId);
       }
@@ -119,6 +127,9 @@ export async function apiFetch(path, options = {}) {
     if (cacheable && canUseCachedResponse(path, lastError)) {
       const cached = await readCachedResponse(path, token);
       if (cached !== null) return cached;
+    }
+    if (lastError?.status === 0 || lastError?.status === 503 || lastError?.status === 504 || lastError?.status === 500) {
+      pingBackend();
     }
     throw lastError;
   })();
