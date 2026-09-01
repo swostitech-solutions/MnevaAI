@@ -361,7 +361,9 @@ export default function Communications({ navigation }) {
         <View style={[styles.errorBanner, { marginHorizontal: hPad }]}>
           <Feather name="alert-circle" size={14} color="#D97706" />
           <Text style={styles.errorText}>
-            {gmailError.includes('not connected') ? 'Connect Gmail in Settings → Integrations' : gmailError}
+            {gmailError.includes('not connected') || gmailError.includes('token expired') || gmailError.includes('reconnect')
+              ? 'Connect Gmail in Settings → Integrations'
+              : gmailError}
           </Text>
         </View>
       )}

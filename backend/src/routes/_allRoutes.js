@@ -2011,7 +2011,7 @@ function gmailErrorResponse(err, res) {
       });
   if (msg.includes("invalid_grant") || msg.includes("Token has been expired"))
     return res
-      .status(401)
+      .status(409)
       .json({
         error: "gmail_token_expired",
         message:
