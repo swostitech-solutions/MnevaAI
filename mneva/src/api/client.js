@@ -120,15 +120,8 @@ export async function apiFetch(path, options = {}) {
         const data = await res.json().catch(() => ({}));
 
         if (res.status === 401) {
-          // Only fire session-expired if this is NOT a background recovery
-          // probe. A cold Render restart can briefly return 401 on the first
-          // request before the JWT middleware is fully warm — firing logout
-          // immediately would kick the user out for a transient backend blip.
-          // The caller (recoverSession in App.js) passes retry:false for probes
-          // and handles 401 itself without re-notifying.
-          if (!fetchOptions.headers?.['x-recovery-probe']) {
-            _notifySessionExpired();
-          }
+          // Never auto-logout. Surface the 401 as an error so the caller can
+          // retry or show a message, but never force the user to sign in again.
           throw { status: 401, message: 'Session expired. Please sign in again.' };
         }
         if (!res.ok) {

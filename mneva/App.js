@@ -445,8 +445,8 @@ import CelebrationGifting from "./src/Screen/CelebrationGifting";
 import FamilyCalendar from "./src/Screen/FamilyCalendar";
 import PhoneAlerts from "./src/Screen/PhoneAlerts";
 import PhoneAlertDetail from "./src/Screen/PhoneAlertDetail";
-import { clearAuth, getStoredAuth } from "./src/storage/auth";
-import { apiFetch, onSessionExpired, pingBackend } from "./src/api/client";
+import { getStoredAuth } from "./src/storage/auth";
+import { apiFetch, pingBackend } from "./src/api/client";
 // Wake Render backend immediately on JS bundle load — before any screen mounts
 pingBackend();
 import {
@@ -540,38 +540,25 @@ export default function App() {
       try {
         // Recovery owns retries, so make one request here rather than stacking
         // apiFetch retries on top of this loop and amplifying backend outages.
-        // Tag this as a recovery probe so a transient 401 (cold backend) does
-        // not immediately fire the global session-expired logout handler.
-        await apiFetch("/api/auth/me", {
-          retry: false,
-          headers: { 'x-recovery-probe': '1' },
-        });
+        await apiFetch("/api/auth/me", { retry: false });
         clearRecoveryTimer();
         recoveryAttemptRef.current = 0;
-        // getSocket reuses a healthy socket and starts/restarts one only when
-        // needed. It intentionally runs after auth validation.
         getSocket().catch(() => {});
         refreshMountedData();
         return true;
       } catch (error) {
-        // A genuine 401 (token truly expired) must still log the user out.
-        // But only after we confirm it's not a cold-start race: retry once
-        // after a short delay before treating it as a real expiry.
+        // Never auto-logout on 401 — just retry with backoff.
+        // The user can only be logged out by pressing the logout button.
         if (error?.status === 401) {
-          if (recoveryAttemptRef.current === 0) {
-            // First attempt — wait 3s and retry once before logging out
-            recoveryAttemptRef.current += 1;
-            clearRecoveryTimer();
-            recoveryTimerRef.current = setTimeout(() => {
-              recoveryTimerRef.current = null;
+          const attempt = recoveryAttemptRef.current;
+          recoveryAttemptRef.current += 1;
+          const delay = Math.min(1000 * 2 ** Math.min(attempt, 5), 30000);
+          clearRecoveryTimer();
+          recoveryTimerRef.current = setTimeout(() => {
+            recoveryTimerRef.current = null;
+            if (!/inactive|background/.test(appStateRef.current || ""))
               recoverSession().catch(() => {});
-            }, 3000);
-            return false;
-          }
-          // Second attempt still 401 — genuinely expired, log out
-          await clearAuth().catch(() => {});
-          resetSocket();
-          navigationRef.current?.reset({ index: 0, routes: [{ name: 'Signin' }] });
+          }, delay);
           return false;
         }
 
@@ -682,18 +669,6 @@ export default function App() {
     }, 60000);
     return () => clearInterval(interval);
   }, [recoverSession]);
-
-  // This belongs at app level, not only Home: an expired session from any
-  // screen must recover to sign-in instead of leaving that screen inert.
-  useEffect(() => {
-    const unsub = onSessionExpired(async () => {
-      await clearAuth().catch(() => {});
-      resetSocket();
-      setInitialRoute("Signin");
-      navigationRef.current?.reset({ index: 0, routes: [{ name: "Signin" }] });
-    });
-    return () => unsub();
-  }, []);
 
   useEffect(() => {
     const splashTimer = setTimeout(() => setShowSplash(false), 2500);
