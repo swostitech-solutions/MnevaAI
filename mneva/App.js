@@ -540,7 +540,12 @@ export default function App() {
       try {
         // Recovery owns retries, so make one request here rather than stacking
         // apiFetch retries on top of this loop and amplifying backend outages.
-        await apiFetch("/api/auth/me", { retry: false });
+        // Tag this as a recovery probe so a transient 401 (cold backend) does
+        // not immediately fire the global session-expired logout handler.
+        await apiFetch("/api/auth/me", {
+          retry: false,
+          headers: { 'x-recovery-probe': '1' },
+        });
         clearRecoveryTimer();
         recoveryAttemptRef.current = 0;
         // getSocket reuses a healthy socket and starts/restarts one only when
@@ -549,9 +554,26 @@ export default function App() {
         refreshMountedData();
         return true;
       } catch (error) {
-        // apiFetch notifies the global expiry handler for 401 responses. Do
-        // not keep retrying a session that has genuinely expired.
-        if (error?.status === 401) return false;
+        // A genuine 401 (token truly expired) must still log the user out.
+        // But only after we confirm it's not a cold-start race: retry once
+        // after a short delay before treating it as a real expiry.
+        if (error?.status === 401) {
+          if (recoveryAttemptRef.current === 0) {
+            // First attempt — wait 3s and retry once before logging out
+            recoveryAttemptRef.current += 1;
+            clearRecoveryTimer();
+            recoveryTimerRef.current = setTimeout(() => {
+              recoveryTimerRef.current = null;
+              recoverSession().catch(() => {});
+            }, 3000);
+            return false;
+          }
+          // Second attempt still 401 — genuinely expired, log out
+          await clearAuth().catch(() => {});
+          resetSocket();
+          navigationRef.current?.reset({ index: 0, routes: [{ name: 'Signin' }] });
+          return false;
+        }
 
         const attempt = recoveryAttemptRef.current;
         recoveryAttemptRef.current += 1;
