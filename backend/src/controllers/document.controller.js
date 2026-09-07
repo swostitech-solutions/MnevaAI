@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { prisma } from '../config/prisma.js'
 import { memoryService } from '../services/memory.service.js'
 import { qdrantService } from '../services/qdrant.service.js'
@@ -17,9 +18,16 @@ async function getS3() {
   return s3Client
 }
 
+function safeExtension(originalname) {
+  const ext = path.extname(originalname || '').toLowerCase()
+  return /^\.[a-z0-9]{1,10}$/.test(ext) ? ext : ''
+}
+
 async function persistFile(file) {
   const s3 = await getS3()
-  const filename = `${Date.now()}-${file.originalname}`
+  // Filename is fully generated server-side (UUID + validated extension only) —
+  // file.originalname is attacker-controlled and must never reach the filesystem path.
+  const filename = `${Date.now()}-${crypto.randomUUID()}${safeExtension(file.originalname)}`
 
   if (s3) {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3')

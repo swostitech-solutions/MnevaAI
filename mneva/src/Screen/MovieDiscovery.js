@@ -18,9 +18,10 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch } from "../api/client";
 
-const TMDB_API_KEY = "7d26a11b38639ed34d93fbd2cc667124";
-const TMDB_BASE    = "https://api.themoviedb.org/3";
-const TMDB_IMG     = "https://image.tmdb.org/t/p/w342";
+// Movie data is fetched through the backend's /api/tmdb proxy (see
+// backend/src/routes/tmdb.js) so the TMDB API key stays server-side —
+// it must never be embedded in the client bundle.
+const TMDB_IMG = "https://image.tmdb.org/t/p/w342";
 
 // Section → language override
 const SECTION_LANG = {
@@ -90,24 +91,22 @@ async function fetchTMDB(section, chip) {
 
   const { type, window: win, ...rest } = p;
 
-  let url;
+  let path;
   if (type === "trending") {
     // For bollywood trending, use discover instead so language filter applies
     if (rest.with_original_language) {
-      const qs = new URLSearchParams({ api_key: TMDB_API_KEY, language: "en-US", sort_by: "popularity.desc", ...rest }).toString();
-      url = `${TMDB_BASE}/discover/movie?${qs}`;
+      const qs = new URLSearchParams({ sort_by: "popularity.desc", ...rest }).toString();
+      path = `/api/tmdb/discover?${qs}`;
     } else {
-      const qs = new URLSearchParams({ api_key: TMDB_API_KEY, language: "en-US", ...rest }).toString();
-      url = `${TMDB_BASE}/trending/movie/${win || "week"}?${qs}`;
+      const qs = new URLSearchParams(rest).toString();
+      path = `/api/tmdb/trending?window=${win || "week"}${qs ? `&${qs}` : ""}`;
     }
   } else {
-    const qs = new URLSearchParams({ api_key: TMDB_API_KEY, language: "en-US", sort_by: "popularity.desc", ...rest }).toString();
-    url = `${TMDB_BASE}/discover/movie?${qs}`;
+    const qs = new URLSearchParams({ sort_by: "popularity.desc", ...rest }).toString();
+    path = `/api/tmdb/discover?${qs}`;
   }
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`TMDB ${res.status}`);
-  const data = await res.json();
+  const data = await apiFetch(path);
   return (data.results || []).slice(0, 10).map(m => ({
     title: m.title || m.name || "Unknown",
     director: m.release_date?.slice(0, 4) || "",

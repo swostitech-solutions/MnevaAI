@@ -1,5 +1,5 @@
 import { Queue, Worker } from 'bullmq'
-import { getRedisClient } from '../config/redis.js'
+import { getBullRedisClient } from '../config/redis.js'
 import { logger } from '../config/logger.js'
 
 let queue
@@ -7,7 +7,7 @@ let queue
 export function getEmailQueue() {
   if (!queue) {
     queue = new Queue('email', {
-      connection: getRedisClient(),
+      connection: getBullRedisClient(),
     })
   }
   return queue
@@ -41,7 +41,7 @@ export function startEmailWorker() {
 
       return { ok: false, reason: 'email_provider_not_connected', jobId: job.id }
     },
-    { connection: getRedisClient() }
+    { connection: getBullRedisClient() }
   )
 
   worker.on('failed', (job, err) => {

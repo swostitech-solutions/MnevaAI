@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { BASE_URL, apiFetch } from '../api/client';
 
 const TOKEN_KEY = 'mneva_phone_notification_token';
@@ -26,12 +26,12 @@ export async function enableNotificationCapture() {
     throw new Error('This feature requires the Mneva Android build. It is not available in Expo Go.');
   }
 
-  let deviceToken = await AsyncStorage.getItem(TOKEN_KEY);
+  let deviceToken = await SecureStore.getItemAsync(TOKEN_KEY);
   if (!deviceToken) {
     const result = await apiFetch('/api/notifications/device-token', { method: 'POST' });
     deviceToken = result.deviceToken;
     if (!deviceToken) throw new Error('Could not create a secure device connection.');
-    await AsyncStorage.setItem(TOKEN_KEY, deviceToken);
+    await SecureStore.setItemAsync(TOKEN_KEY, deviceToken);
   }
 
   await nativeModule.configure(`${BASE_URL}/api/device-notifications/ingest`, deviceToken);
@@ -39,13 +39,13 @@ export async function enableNotificationCapture() {
 }
 
 export async function disableNotificationCapture() {
-  const deviceToken = await AsyncStorage.getItem(TOKEN_KEY);
+  const deviceToken = await SecureStore.getItemAsync(TOKEN_KEY);
   if (deviceToken) {
     await apiFetch('/api/notifications/device-token', {
       method: 'DELETE', body: { deviceToken },
     }).catch(() => {});
   }
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
   if (nativeModule) await nativeModule.clear();
 }
 

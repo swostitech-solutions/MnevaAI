@@ -1,11 +1,18 @@
 import { PrismaClient } from "@prisma/client";
+import { logger } from "./logger.js";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required. Set it to your real PostgreSQL connection string.");
 }
 
+// `$on('error', ...)` only fires for log levels configured with
+// `emit: 'event'` — passing plain strings (the previous config) routes them
+// to stdout instead, so the "reconnect on error" listener below was never
+// actually invoked. `warn` still goes to stdout for visibility.
 export const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  log: process.env.NODE_ENV === "development"
+    ? [{ level: "warn", emit: "stdout" }, { level: "error", emit: "event" }]
+    : [{ level: "error", emit: "event" }],
   datasources: {
     db: {
       url: process.env.DATABASE_URL,
@@ -14,7 +21,8 @@ export const prisma = new PrismaClient({
 });
 
 // Reconnect automatically on connection loss
-prisma.$on('error', async () => {
+prisma.$on('error', async (e) => {
+  logger.error(`Prisma error: ${e?.message || e}`);
   try { await prisma.$connect(); } catch {}
 });
 

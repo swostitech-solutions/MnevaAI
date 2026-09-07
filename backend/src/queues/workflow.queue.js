@@ -1,5 +1,5 @@
 import { Queue, Worker } from 'bullmq'
-import { getRedisClient } from '../config/redis.js'
+import { getBullRedisClient } from '../config/redis.js'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
 
@@ -8,7 +8,7 @@ let queue
 export function getWorkflowQueue() {
   if (!queue) {
     queue = new Queue('workflow', {
-      connection: getRedisClient(),
+      connection: getBullRedisClient(),
     })
   }
   return queue
@@ -51,7 +51,7 @@ export function startWorkflowWorker() {
         data: { status: 'COMPLETED', completedAt: new Date() },
       })
     },
-    { connection: getRedisClient() }
+    { connection: getBullRedisClient() }
   )
 
   worker.on('failed', (job, err) => {

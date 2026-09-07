@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
 const LOCAL_BACKEND = __DEV__
@@ -23,7 +24,8 @@ function _notifySessionExpired() {
 }
 
 async function getToken() {
-  return AsyncStorage.getItem('mneva_token');
+  // Kept in the Keychain/Keystore via expo-secure-store — see src/storage/auth.js.
+  return SecureStore.getItemAsync('mneva_token');
 }
 
 function cacheKey(path, token) {

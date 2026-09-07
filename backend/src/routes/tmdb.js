@@ -20,12 +20,19 @@ router.get('/trending', async (req, res) => {
 })
 
 // GET /api/tmdb/discover?genre_id=28&lang=hi
+// Also accepts the raw TMDB discover param names directly (with_genres,
+// with_original_language, vote_count.gte, ...) so the client can pass through
+// filters without the server needing to know every chip combination.
+const DISCOVER_PASSTHROUGH = ['with_genres', 'with_original_language', 'vote_count.gte', 'vote_average.gte']
 router.get('/discover', async (req, res) => {
   try {
     const { genre_id, lang, sort_by = 'popularity.desc', page = 1 } = req.query
     const params = { sort_by, page }
     if (genre_id) params.with_genres = genre_id
     if (lang) params.with_original_language = lang
+    for (const key of DISCOVER_PASSTHROUGH) {
+      if (req.query[key] !== undefined) params[key] = req.query[key]
+    }
     const data = await tmdb('/discover/movie', params)
     res.json(data)
   } catch (e) { res.status(500).json({ error: e.message }) }
