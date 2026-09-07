@@ -54,23 +54,40 @@ async function readCachedResponse(path, token) {
 
 // Wake Render free-tier backend immediately on app launch or before the next
 // user action. This is a warm-up trigger, not a forced server restart.
+let _lastPingAt = 0;
+let _pingInFlight = null;
 export async function pingBackend(timeoutMs = 8000) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  // A screen with several apiFetch calls (loadData alone fires 7-11) used to
+  // trigger one of these before *every single one* of them. Coalesce bursts
+  // within the same short window into one real network round-trip instead of
+  // one per call — this was needlessly multiplying request volume without
+  // adding any actual freshness (the backend is either awake or it isn't on
+  // a 20s timescale).
+  if (_pingInFlight) return _pingInFlight;
+  if (Date.now() - _lastPingAt < 20000) return true;
+
+  _pingInFlight = (async () => {
     try {
-      const res = await fetch(`${BASE_URL}/api/health`, {
-        method: 'GET',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      return res.ok;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${BASE_URL}/api/health`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        _lastPingAt = Date.now();
+        return res.ok;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } catch {
+      return false;
     } finally {
-      clearTimeout(timeoutId);
+      _pingInFlight = null;
     }
-  } catch {
-    return false;
-  }
+  })();
+  return _pingInFlight;
 }
 
 export async function apiFetch(path, options = {}) {

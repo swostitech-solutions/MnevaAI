@@ -65,9 +65,27 @@ app.disable("etag");
 let isShuttingDown = false;
 let databaseReady = false;
 let selfPingTimer = null;
+let eventLoopLagMs = 0;
+let lastLoopCheckAt = Date.now();
+
+// The app going "fully offline for a while, then fine again" with a paid
+// (non-sleeping) instance and a non-sleeping DB cannot be diagnosed from the
+// client side — every request, including /api/health, is served by this same
+// single JS thread. If something blocks it (a heavy synchronous parse, a
+// runaway loop), the whole API looks dead until it clears, with no error to
+// log because nothing ever got to run. This 1s heartbeat measures how late it
+// fires; a growing lag right before an outage is direct proof of a blocked
+// event loop instead of a guess.
+const LOOP_CHECK_INTERVAL_MS = 1000;
+setInterval(() => {
+  const now = Date.now();
+  eventLoopLagMs = Math.max(0, now - lastLoopCheckAt - LOOP_CHECK_INTERVAL_MS);
+  lastLoopCheckAt = now;
+}, LOOP_CHECK_INTERVAL_MS).unref();
 
 export function getHealthStatus({ shuttingDown = isShuttingDown, ready = databaseReady } = {}) {
   const running = !shuttingDown;
+  const mem = process.memoryUsage();
   return {
     status: running ? "ok" : "stopping",
     service: "Mneva AI v2",
@@ -77,6 +95,12 @@ export function getHealthStatus({ shuttingDown = isShuttingDown, ready = databas
     shuttingDown,
     ai: isOpenAIConfigured(process.env.OPENAI_API_KEY),
     aiConfigured: isOpenAIConfigured(process.env.OPENAI_API_KEY),
+    uptimeSeconds: Math.round(process.uptime()),
+    memory: {
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+    },
+    eventLoopLagMs,
     timestamp: new Date().toISOString(),
   };
 }
@@ -171,11 +195,23 @@ app.use(compression());
 app.use(
   rateLimit({
     windowMs: +process.env.RATE_LIMIT_WINDOW_MS || 900000,
-    max: +process.env.RATE_LIMIT_MAX || 2000,
+    // A single active session is chattier than this looks at first glance:
+    // Home's own screen fires 7-11 endpoint calls per load, refreshed on
+    // every navigation/focus/app-resume, plus several other screens poll
+    // their own status endpoints (gmail/calendar/drive/contacts/etc). The
+    // previous 2000/15min-per-token cap was tight enough that sustained
+    // real usage could plausibly hit it, making every endpoint 429 at once
+    // for that user until the window reset — indistinguishable from "the
+    // server went offline" from the app's side. Widened with real headroom.
+    max: +process.env.RATE_LIMIT_MAX || 6000,
     keyGenerator: (req) => req.headers["authorization"]?.slice(-16) || req.ip,
     skip: (req) => req.path === "/api/health",
     standardHeaders: true,
     legacyHeaders: false,
+    handler: (req, res) => {
+      logger.warn(`Rate limit exceeded — ${req.method} ${req.originalUrl} — key: ${req.headers["authorization"]?.slice(-16) || req.ip}`);
+      res.status(429).json({ error: "Too many requests — please wait a moment" });
+    },
   }),
 );
 const agentLimiter = rateLimit({
@@ -492,6 +528,14 @@ server.on("listening", () => {
   pingSelf().catch(() => {});
   selfPingTimer = setInterval(() => {
     pingSelf().catch(() => {});
+    // Leaves a trail in Render's log history so a past "everything was
+    // unreachable" window can be diagnosed after the fact: a reset uptime
+    // means the process restarted (crash/OOM), a lag spike means the event
+    // loop was blocked, rising rssMB across samples means a leak.
+    const status = getHealthStatus();
+    logger.info(
+      `📈 uptime=${status.uptimeSeconds}s rss=${status.memory.rssMB}MB heap=${status.memory.heapUsedMB}MB loopLag=${status.eventLoopLagMs}ms`,
+    );
   }, 5 * 60 * 1000);
 });
 

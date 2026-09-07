@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { AppState, Linking } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -61,6 +62,7 @@ import { refreshAppData } from "./src/services/dataRefresh";
 import ReminderAlert from "./src/components/ReminderAlert";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import SessionExpiredBanner from "./src/components/SessionExpiredBanner";
+import ServerBusyBanner from "./src/components/ServerBusyBanner";
 
 const Stack = createNativeStackNavigator();
 
@@ -98,6 +100,11 @@ function AppInner() {
   // cold-start/backend-wake race can look like a 401 too — see bb84eab).
   // The user still signs out only via the explicit logout button.
   const [sessionExpiredBanner, setSessionExpiredBanner] = useState(false);
+  // Shown only once transient recovery has actually failed a couple of times
+  // in a row (not on the first retry) — see recoverSession below. Tells the
+  // user *why* the screen looks stuck instead of leaving them staring at a
+  // silent blank/stale screen, which previously read as "the app is fully broken."
+  const [serverBusyBanner, setServerBusyBanner] = useState(false);
   const navigationRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
   const recoveryTimerRef = useRef(null);
@@ -145,6 +152,7 @@ function AppInner() {
         clearRecoveryTimer();
         recoveryAttemptRef.current = 0;
         setSessionExpiredBanner(false);
+        setServerBusyBanner(false);
         return false;
       }
 
@@ -155,6 +163,7 @@ function AppInner() {
         clearRecoveryTimer();
         recoveryAttemptRef.current = 0;
         setSessionExpiredBanner(false);
+        setServerBusyBanner(false);
         getSocket().catch(() => {});
         refreshMountedData();
         return true;
@@ -180,6 +189,9 @@ function AppInner() {
 
         const attempt = recoveryAttemptRef.current;
         recoveryAttemptRef.current += 1;
+        // A single miss can be one slow request, not an outage — only tell
+        // the user something's wrong once it's failed a couple of times in a row.
+        if (attempt >= 2) setServerBusyBanner(true);
         // Rate limiting needs a slower cadence than transient network errors.
         // Other recoverable errors use a capped exponential backoff.
         const delay =
@@ -286,6 +298,27 @@ function AppInner() {
     return () => clearInterval(interval);
   }, [recoverSession]);
 
+  // A request that never reaches the server (dead Wi-Fi, weak cellular
+  // signal, carrier handoff) leaves no trace to react to — the only signal
+  // is the device's own radio state. Previously the app only found out the
+  // network was back on the next scheduled poll (up to 60s away, or up to
+  // 8s per screen's own retry loop). NetInfo reports the transition
+  // immediately, so recovery — and every screen listening on
+  // onAppDataRefresh — can fire the moment connectivity actually returns.
+  useEffect(() => {
+    let wasConnected = true;
+    const unsub = NetInfo.addEventListener((state) => {
+      const isConnected = !!(state.isConnected && state.isInternetReachable !== false);
+      if (isConnected && !wasConnected) {
+        pingBackend().catch(() => {});
+        recoverSession().catch(() => {});
+        refreshMountedData();
+      }
+      wasConnected = isConnected;
+    });
+    return () => unsub();
+  }, [recoverSession, refreshMountedData]);
+
   useEffect(() => {
     const splashTimer = setTimeout(() => setShowSplash(false), 2500);
     (async () => {
@@ -388,7 +421,7 @@ function AppInner() {
           <Stack.Screen name="FamilyCalendar" component={FamilyCalendar} />
         </Stack.Navigator>
         <ReminderAlert />
-        {sessionExpiredBanner && (
+        {sessionExpiredBanner ? (
           <SessionExpiredBanner
             onSignIn={() => {
               setSessionExpiredBanner(false);
@@ -396,7 +429,9 @@ function AppInner() {
             }}
             onDismiss={() => setSessionExpiredBanner(false)}
           />
-        )}
+        ) : serverBusyBanner ? (
+          <ServerBusyBanner />
+        ) : null}
       </NavigationContainer>
     </SafeAreaProvider>
   );
