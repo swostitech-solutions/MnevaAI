@@ -22,6 +22,20 @@ const _sessionExpiredListeners = new Set();
 const CACHE_PREFIX = 'mneva_api_cache:';
 const _inFlightGets = new Map();
 
+// Several independent loops call apiFetch on their own schedule: Home's 8s
+// self-heal retry, the 60s app heartbeat, focus/AppState listeners, socket
+// reconnect refreshes. None of them know about each other. Previously, if the
+// server ever answered 429, every one of those loops kept firing on its own
+// cadence right through the rate-limit window — each attempt itself another
+// hit against the same exhausted bucket — so the window never got a quiet
+// moment to reset and the "whole app is offline" state could persist far
+// longer than the server's actual 15-minute limit. This is a single shared
+// gate: after any 429, every apiFetch call (regardless of which loop it came
+// from) short-circuits locally — no network request at all — until the
+// cooldown passes, then resumes normally.
+const RATE_LIMIT_COOLDOWN_MS = 45000;
+let _rateLimitedUntil = 0;
+
 export function onSessionExpired(cb) {
   _sessionExpiredListeners.add(cb);
   return () => _sessionExpiredListeners.delete(cb);
@@ -42,9 +56,11 @@ function cacheKey(path, token) {
 
 function canUseCachedResponse(path, error) {
   // Never let a cached identity hide an expired or revoked session.
+  // 429 included: this is a rate-limit cooldown, not the account's data
+  // actually disappearing — the last known-good screen is better than blank.
   return path !== '/api/auth/me'
     && error?.status !== 401
-    && (!error?.status || error.status >= 500);
+    && (!error?.status || error.status >= 500 || error.status === 429);
 }
 
 async function readCachedResponse(path, token) {
@@ -103,6 +119,20 @@ export async function apiFetch(path, options = {}) {
   const { retry, ...fetchOptions } = options;
   const token = await getToken();
   const cacheable = (fetchOptions.method || 'GET').toUpperCase() === 'GET';
+
+  // `/api/health` is exempt from the server's rate limit too (see server.js
+  // `skip`), and staying reachable during cooldown is what lets recovery
+  // loops even notice the server is back. For everything else, skip the
+  // network entirely during cooldown — the last known-good cached response
+  // (if any) is a better result than yet another doomed request.
+  if (path !== '/api/health' && Date.now() < _rateLimitedUntil) {
+    const cooldownError = { status: 429, message: 'Too many requests — please wait a moment', retryable: false };
+    if (cacheable && canUseCachedResponse(path, cooldownError)) {
+      const cached = await readCachedResponse(path, token);
+      if (cached !== null) return cached;
+    }
+    throw cooldownError;
+  }
   const retryableAuthPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/verify-email', '/api/auth/resend-otp'];
   const responseCacheKey = cacheKey(path, token);
   const requestKey = `${responseCacheKey}:${JSON.stringify(fetchOptions.headers || {})}`;
@@ -149,6 +179,11 @@ export async function apiFetch(path, options = {}) {
           // Never auto-logout. Surface the 401 as an error so the caller can
           // retry or show a message, but never force the user to sign in again.
           throw { status: 401, message: 'Session expired. Please sign in again.' };
+        }
+        if (res.status === 429) {
+          // Open the shared cooldown gate so every other retry loop in the
+          // app (not just this call) stops hitting the network until it passes.
+          _rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
         }
         if (!res.ok) {
           const message = data.error || data.message || `Server request failed (HTTP ${res.status})`;
