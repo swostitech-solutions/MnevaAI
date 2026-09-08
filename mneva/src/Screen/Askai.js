@@ -26,7 +26,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as FileSystem from "expo-file-system/legacy";
-import { apiFetch } from "../api/client";
+import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket } from "../services/socket";
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -72,6 +72,19 @@ function DateSeparator({ ts }) {
       <View style={styles.dateSepLine} />
     </View>
   );
+}
+
+// Shared by the real history fetch and the cache-hydration pass so both
+// produce identical message shapes without duplicating the mapping logic.
+function normalizeSavedMessages(savedMessages) {
+  return Array.isArray(savedMessages)
+    ? savedMessages.map(m => ({
+        id: m.id,
+        sender: m.role === "user" ? "user" : "ai",
+        text: m.content,
+        ts: m.createdAt || m.ts || new Date().toISOString(),
+      }))
+    : [];
 }
 
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
@@ -313,6 +326,7 @@ export default function AskAI({ navigation }) {
   const conversationIdRef = useRef(null);
   const aiLoadingRef = useRef(false);
   const initialHistoryPositioningRef = useRef(false);
+  const hasRealHistoryRef = useRef(false);
   const { on, emit } = useSocket();
 
   // History arrives asynchronously. Waiting for both React's layout pass and
@@ -349,14 +363,8 @@ export default function AskAI({ navigation }) {
       conversationIdRef.current = convId;
 
       const savedMessages = await apiFetch(`/api/messages/${convId}`);
-      const normalized = Array.isArray(savedMessages)
-        ? savedMessages.map(m => ({
-            id: m.id,
-            sender: m.role === "user" ? "user" : "ai",
-            text: m.content,
-            ts: m.createdAt || m.ts || new Date().toISOString(),
-          }))
-        : [];
+      const normalized = normalizeSavedMessages(savedMessages);
+      hasRealHistoryRef.current = true;
 
       if (normalized.length) {
         initialHistoryPositioningRef.current = true;
@@ -366,6 +374,35 @@ export default function AskAI({ navigation }) {
     } catch {
       // Keep the current chat on screen; the shared recovery flow will retry.
     }
+  }, [scrollToLatest]);
+
+  // Paint the last known conversation immediately from cache — otherwise this
+  // screen always shows the generic welcome message for however long the
+  // conversation-list → messages round-trip takes, even for a returning user
+  // who was mid-conversation. This never touches the network and never
+  // creates a conversation — it only walks the cached list/messages that a
+  // previous real fetch already wrote. loadConversation() above still runs
+  // right after and silently replaces this with fresh data; the ref guard
+  // stops a slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cachedList = await peekCachedResponse("/api/conversations").catch(() => null);
+      if (cancelled || hasRealHistoryRef.current || !cachedList) return;
+      const conversations = Array.isArray(cachedList) ? cachedList : cachedList.conversations || [];
+      const convId = conversations[0]?.id;
+      if (!convId) return;
+      const cachedMessages = await peekCachedResponse(`/api/messages/${convId}`).catch(() => null);
+      if (cancelled || hasRealHistoryRef.current || !cachedMessages) return;
+      const normalized = normalizeSavedMessages(cachedMessages);
+      if (normalized.length) {
+        conversationIdRef.current = convId;
+        initialHistoryPositioningRef.current = true;
+        setMessages(normalized);
+        scrollToLatest(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [scrollToLatest]);
 
   useEffect(() => { loadConversation(); }, [loadConversation]);

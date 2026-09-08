@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, ActivityIndicator, useWindowDimensions, Alert, TextInput, Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { clearAuth } from '../storage/auth';
 import { AppState, Platform } from 'react-native';
 import {
@@ -221,11 +221,13 @@ export default function Settings({ navigation, route }) {
   const [phoneCaptureEnabled, setPhoneCaptureEnabled] = useState(false);
   const [phoneCaptureBusy, setPhoneCaptureBusy] = useState(false);
 
-  useEffect(() => {
-    Promise.all([
-      apiFetch('/api/trust/settings'),
-      apiFetch('/api/auth/me'),
-    ]).then(([data, me]) => {
+  // Shared by the real fetch below and by the cache-hydration pass before
+  // it, so a returning user sees their last known settings immediately
+  // instead of a loading spinner for however long the network round-trip
+  // takes.
+  const hasRealDataRef = useRef(false);
+  const applySettingsData = (data, me) => {
+    if (data) {
       setCurrentLevel(data.currentLevel || 1);
       setTrustScore(data.trustScore || 0);
       setApprovedActions(data.approvedActions || 0);
@@ -233,7 +235,37 @@ export default function Settings({ navigation, route }) {
       if (prefs.autonomy)      setAutonomy(prefs.autonomy);
       if (prefs.privacy)       setPrivacy(p => ({ ...p, ...prefs.privacy }));
       if (prefs.notifications) setNotifications(n => ({ ...n, ...prefs.notifications }));
-      setUser(me);
+    }
+    if (me) setUser(me);
+  };
+
+  // Paint the last known settings immediately from cache — otherwise this
+  // screen shows a full-screen spinner on every single open even though
+  // nothing has actually changed since last time. The real fetch below
+  // still runs right after and silently replaces this with fresh data; the
+  // ref guard stops a slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [data, me] = await Promise.all([
+        peekCachedResponse('/api/trust/settings'),
+        peekCachedResponse('/api/auth/me'),
+      ]);
+      if (!cancelled && !hasRealDataRef.current && (data || me)) {
+        applySettingsData(data, me);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch('/api/trust/settings'),
+      apiFetch('/api/auth/me'),
+    ]).then(([data, me]) => {
+      hasRealDataRef.current = true;
+      applySettingsData(data, me);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 

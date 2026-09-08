@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, useWindowDimensions, Linking, AppState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { apiFetch, BASE_URL } from '../api/client';
+import { apiFetch, BASE_URL, peekCachedResponse } from '../api/client';
 import { getStoredAuth } from '../storage/auth';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -203,6 +203,7 @@ export default function ConnectedAccounts({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
+  const hasRealDataRef = useRef(false);
 
   const loadStatuses = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -217,9 +218,34 @@ export default function ConnectedAccounts({ navigation }) {
         }
       })
     );
+    hasRealDataRef.current = true;
     setStatuses(results);
     setLoading(false);
     setRefreshing(false);
+  }, []);
+
+  // Paint the last known statuses immediately from cache — otherwise this
+  // screen shows a blank loading state on every single open even though
+  // nothing has actually changed since last time. loadStatuses() below still
+  // runs right after and silently replaces this with fresh data; the ref
+  // guard stops this from clobbering real data in the rare case the cache
+  // read (AsyncStorage) somehow resolves after the network fetch does.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cached = {};
+      await Promise.all(
+        INTEGRATIONS.filter(i => i.statusEndpoint).map(async (intg) => {
+          const data = await peekCachedResponse(intg.statusEndpoint).catch(() => null);
+          if (data) cached[intg.id] = { connected: data.connected, email: data.email || null };
+        })
+      );
+      if (!cancelled && !hasRealDataRef.current && Object.keys(cached).length) {
+        setStatuses(prev => ({ ...cached, ...prev }));
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => { loadStatuses(); }, []);

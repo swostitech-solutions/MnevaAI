@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, useWindowDimensions, Modal, TextInput,
@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -212,6 +212,18 @@ export default function Health({ navigation }) {
   const [syncVisible, setLogVisible] = useState(false);
   const [fitConnected, setFitConnected] = useState(false);
 
+  const hasRealDataRef = useRef(false);
+
+  // Shared by the real fetch below and by the cache-hydration pass before it,
+  // so a returning user sees their last known vitals immediately instead of
+  // skeleton cards for however long the network round-trip takes.
+  const applyHealthData = ({ m, a, meds, fitStatus }) => {
+    if (m) setMetrics(m);
+    if (fitStatus) setFitConnected(fitStatus?.connected || false);
+    if (a) setAppointments(a.appointments || []);
+    if (meds) setMedications(meds.medications || []);
+  };
+
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
@@ -221,13 +233,34 @@ export default function Health({ navigation }) {
         apiFetch('/api/health-data/medications'),
         apiFetch('/api/googlefit/status').catch(() => ({ connected: false })),
       ]);
-      setMetrics(m);
-      setFitConnected(fitStatus?.connected || false);
-      setAppointments(a.appointments || []);
-      setMedications(meds.medications || []);
+      hasRealDataRef.current = true;
+      applyHealthData({ m, a, meds, fitStatus });
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
+
+  // Paint the last known vitals/appointments/medications immediately from
+  // cache — otherwise this screen shows skeleton cards on every single open
+  // even though nothing changed since last time. loadData() below still runs
+  // right after and silently replaces this with fresh data; the ref guard
+  // stops a slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [m, a, meds, fitStatus] = await Promise.all([
+        peekCachedResponse('/api/health-data/metrics').catch(() => null),
+        peekCachedResponse('/api/health-data/appointments').catch(() => null),
+        peekCachedResponse('/api/health-data/medications').catch(() => null),
+        peekCachedResponse('/api/googlefit/status').catch(() => null),
+      ]);
+      const gotSomething = m || a || meds || fitStatus;
+      if (!cancelled && !hasRealDataRef.current && gotSomething) {
+        applyHealthData({ m, a, meds, fitStatus });
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => onAppDataRefresh(() => loadData(true)), []);

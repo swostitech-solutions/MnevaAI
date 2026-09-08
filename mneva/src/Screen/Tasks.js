@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Linking, AppState,
@@ -6,7 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const ACCENT = '#1A73E8';
@@ -21,6 +21,8 @@ export default function TasksScreen({ navigation }) {
   const [connected, setConnected]   = useState(null);
   const [filter, setFilter]         = useState('all');
 
+  const hasRealDataRef = useRef(false);
+
   const checkStatus = useCallback(async () => {
     try {
       const res = await apiFetch('/api/gtasks/status');
@@ -33,9 +35,33 @@ export default function TasksScreen({ navigation }) {
     setLoading(true);
     try {
       const res = await apiFetch('/api/gtasks/list');
+      hasRealDataRef.current = true;
       setTasks(res.tasks || []);
     } catch { setTasks([]); }
     finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  // Paint the last known connection status + task list immediately from
+  // cache — otherwise this screen shows a spinner on every single open even
+  // though nothing has actually changed since last time. checkStatus/
+  // loadTasks below still run right after and silently replace this with
+  // fresh data; the ref guard stops a slow cache read from ever clobbering
+  // real data that already arrived.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [statusRes, tasksRes] = await Promise.all([
+        peekCachedResponse('/api/gtasks/status'),
+        peekCachedResponse('/api/gtasks/list'),
+      ]);
+      if (cancelled || hasRealDataRef.current) return;
+      if (statusRes) setConnected(statusRes.connected);
+      if (statusRes?.connected && tasksRes) {
+        setTasks(tasksRes.tasks || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

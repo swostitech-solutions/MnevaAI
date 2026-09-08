@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, TextInput, Modal, TouchableWithoutFeedback,
@@ -7,7 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -96,6 +96,8 @@ export default function LifeOps({ navigation }) {
   const [tracking, setTracking] = useState(false);
   const [trackResult, setTrackResult] = useState(null);
 
+  const hasRealDataRef = useRef(false);
+
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
@@ -103,11 +105,33 @@ export default function LifeOps({ navigation }) {
         apiFetch('/api/lifeops/rides'),
         apiFetch('/api/lifeops/orders'),
       ]);
+      hasRealDataRef.current = true;
       setRides(r.rides || []);
       setFoodOrders(f.orders || []);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
+
+  // Paint the last known rides/orders immediately from cache — otherwise
+  // this screen shows a blank state on every single open even though nothing
+  // changed since last time. loadData() below still runs right after and
+  // silently replaces this with fresh data; the ref guard stops a slow cache
+  // read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [r, f] = await Promise.all([
+        peekCachedResponse('/api/lifeops/rides').catch(() => null),
+        peekCachedResponse('/api/lifeops/orders').catch(() => null),
+      ]);
+      if (!cancelled && !hasRealDataRef.current && (r || f)) {
+        if (r) setRides(r.rides || []);
+        if (f) setFoodOrders(f.orders || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => onAppDataRefresh(() => loadData(true)), []);

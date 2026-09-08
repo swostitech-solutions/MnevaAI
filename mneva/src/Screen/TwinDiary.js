@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -112,14 +112,34 @@ export default function TwinDiary({ navigation }) {
   const [expanded, setExpanded] = useState(null);
   const isMountedRef = useRef(false);
 
+  const hasRealDataRef = useRef(false);
+
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
       const data = await apiFetch('/api/twin/diary');
+      hasRealDataRef.current = true;
       setEntries(uniqueEntries(data.entries));
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
+
+  // Paint last known diary entries immediately from cache — otherwise this
+  // screen shows a blank/loading state on every open even for data that
+  // hasn't changed. loadData() below still runs right after and silently
+  // replaces this with fresh data; the ref guard stops a slow cache read
+  // from ever clobbering real data that already arrived.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const data = await peekCachedResponse('/api/twin/diary').catch(() => null);
+      if (!cancelled && !hasRealDataRef.current && data) {
+        setEntries(uniqueEntries(data.entries));
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => onAppDataRefresh(() => loadData(true)), []);

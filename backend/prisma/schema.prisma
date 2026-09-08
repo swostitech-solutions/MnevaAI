@@ -55,6 +55,10 @@ model User {
   pets                      Pet[]
   petReminders              PetReminder[]
   familyItems               FamilyItem[]
+  loans                     Loan[]
+  emis                      Emi[]
+  subscriptions             Subscription[]
+  bills                     Bill[]
 
   conversations Conversation[]
   agents        Agent[]
@@ -417,6 +421,153 @@ model FamilyItem {
   @@index([userId])
   @@index([domain])
   @@index([remindAt])
+}
+
+model Loan {
+  id                  String    @id @default(uuid())
+  userId              String
+  name                String
+  loanType            String // Personal/Home/Car/Education/Business/Gold/Other
+  lenderName          String
+  accountNumber       String?
+  purpose             String?
+  status              String    @default("Active") // Active/Closed/Pending
+  originalAmount      Float
+  outstandingAmount   Float
+  amountPaid          Float     @default(0)
+  processingFee       Float?
+  otherCharges        Float?
+  interestRate        Float
+  interestType        String // Fixed/Floating
+  interestCalculation String // Reducing Balance/Flat Rate
+  emiAmount           Float
+  emiFrequency        String    @default("Monthly")
+  emiStartDate        DateTime
+  nextEmiDate         DateTime?
+  emiEndDate          DateTime?
+  numberOfEmis        Int
+  emisPaid            Int       @default(0)
+  emisRemaining       Int?
+  loanStartDate       DateTime
+  loanMaturityDate    DateTime?
+  autoDebit           Boolean   @default(false)
+  paymentAccount      String?
+  paymentDay          Int?
+  prepaymentAllowed   Boolean?
+  prepaymentCharges   Float?
+  notes               String?
+  attachmentDocId     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Emi {
+  id                    String    @id @default(uuid())
+  userId                String
+  name                  String
+  emiType               String // Loan EMI/Credit Card EMI/Product EMI/Other
+  provider              String
+  description           String?
+  totalAmount           Float
+  downPayment           Float?
+  financedAmount        Float
+  emiAmount             Float
+  interestRate          Float?
+  processingFee         Float?
+  totalPayable          Float?
+  numberOfInstallments  Int
+  installmentsPaid      Int       @default(0)
+  installmentsRemaining Int?
+  startDate             DateTime
+  nextPaymentDate       DateTime?
+  endDate               DateTime?
+  frequency             String    @default("Monthly")
+  paymentMethod         String?
+  autoDebit             Boolean   @default(false)
+  paymentAccount        String?
+  paymentDay            Int?
+  status                String    @default("Active") // Active/Completed/Overdue/Cancelled
+  productName           String?
+  orderReference        String?
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Subscription {
+  id                    String    @id @default(uuid())
+  userId                String
+  name                  String
+  category              String // Streaming/Software/Cloud/Gaming/News/Fitness/Education/Other
+  provider              String?
+  description           String?
+  amount                Float
+  currency              String    @default("INR")
+  billingCycle          String    @default("Monthly") // Weekly/Monthly/Quarterly/Half-Yearly/Yearly
+  tax                   Float?
+  totalCharged          Float?
+  startDate             DateTime
+  nextBillingDate       DateTime?
+  renewalDate           DateTime?
+  cancellationDate      DateTime?
+  paymentMethod         String? // Card/Bank/UPI/Wallet/Other
+  paymentAccount        String?
+  autoRenewal           Boolean   @default(true)
+  status                String    @default("Active") // Active/Paused/Cancelled/Expired
+  trialPeriod           Boolean   @default(false)
+  trialEndDate          DateTime?
+  reminderBeforeRenewal Int? // days before renewal
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Bill {
+  id              String    @id @default(uuid())
+  userId          String
+  name            String
+  category        String // Electricity/Water/Internet/Mobile/Gas/Rent/Maintenance/Insurance/Other
+  provider        String?
+  accountNumber   String?
+  description     String?
+  expectedAmount  Float?
+  lastBillAmount  Float?
+  minAmount       Float?
+  maxAmount       Float?
+  currency        String    @default("INR")
+  billingCycle    String    @default("Monthly") // Weekly/Monthly/Quarterly/Yearly/Custom
+  billDate        DateTime?
+  dueDate         DateTime
+  nextDueDate     DateTime?
+  gracePeriod     Int? // days
+  paymentMethod   String?
+  paymentAccount  String?
+  autoPay         Boolean   @default(false)
+  autoPayDate     DateTime?
+  status          String    @default("Upcoming") // Upcoming/Due/Paid/Overdue
+  lateFee         Float?
+  tax             Float?
+  reminderDays    Int?
+  notes           String?
+  attachmentDocId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model ParentMedication {

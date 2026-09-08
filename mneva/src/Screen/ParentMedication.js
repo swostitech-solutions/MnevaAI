@@ -7,7 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 
@@ -35,12 +35,32 @@ export default function ParentMedication({ navigation }) {
   const [form, setForm]               = useState(EMPTY_FORM);
   const mountedRef = useRef(true);
 
+  const hasRealDataRef = useRef(false);
+
   const load = useCallback(async () => {
     try {
       const res = await apiFetch('/api/family/parent-medications');
+      hasRealDataRef.current = true;
       if (mountedRef.current) setMedications(res.medications || []);
     } catch { /* silent */ }
     finally { if (mountedRef.current) setLoading(false); }
+  }, []);
+
+  // Paint last known medications immediately from cache — otherwise this
+  // screen shows a blank/loading spinner on every open even for data that
+  // hasn't changed. load() below still runs right after and silently
+  // replaces this with fresh data; the ref guard stops a slow cache read
+  // from ever clobbering real data that already arrived.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await peekCachedResponse('/api/family/parent-medications').catch(() => null);
+      if (!cancelled && !hasRealDataRef.current && res) {
+        setMedications(res.medications || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

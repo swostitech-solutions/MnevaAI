@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, useWindowDimensions, Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '@react-navigation/native';
@@ -106,14 +106,35 @@ export default function Notifications({ navigation }) {
   const [activeReply, setActiveReply] = useState(null);   // email notif for inline reply
   const [replyCards, setReplyCards] = useState([]);        // auto-popup cards
 
+  const hasRealDataRef = useRef(false);
+
   const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
       const data = await apiFetch('/api/notifications');
+      hasRealDataRef.current = true;
       setNotifications(data.notifications || []);
       setUnreadCount(data.unreadCount || 0);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  // Paint last known notifications immediately from cache — otherwise this
+  // screen shows a blank/loading state on every open even for data that
+  // hasn't changed. loadData() below still runs right after and silently
+  // replaces this with fresh data; the ref guard stops a slow cache read
+  // from ever clobbering real data that already arrived.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const data = await peekCachedResponse('/api/notifications').catch(() => null);
+      if (!cancelled && !hasRealDataRef.current && data) {
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => { loadData(); }, []);

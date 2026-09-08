@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Linking, AppState,
@@ -6,7 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const ACCENT = '#1A73E8';
@@ -32,22 +32,51 @@ export default function GoogleDriveScreen({ navigation }) {
   const [connected, setConnected]   = useState(null);
   const [filter, setFilter]         = useState('drive');
 
+  const hasRealStatusRef = useRef(false);
+  const hasRealFilesRef = useRef(false);
+
   const checkStatus = useCallback(async () => {
     try {
       const res = await apiFetch('/api/gdrive/status');
+      hasRealStatusRef.current = true;
       setConnected(res.connected);
       return res.connected;
-    } catch { setConnected(false); return false; }
+    } catch { hasRealStatusRef.current = true; setConnected(false); return false; }
   }, []);
 
   const loadFiles = useCallback(async (type = filter) => {
     setLoading(true);
     try {
       const res = await apiFetch(`/api/gdrive/files?type=${type}`);
+      hasRealFilesRef.current = true;
       setFiles(res.files || []);
     } catch { setFiles([]); }
     finally { setLoading(false); setRefreshing(false); }
   }, [filter]);
+
+  // Paint the last known status + files immediately from cache — otherwise
+  // this screen shows a spinner on every single open even though nothing
+  // changed since last time. checkStatus()/loadFiles() below still run right
+  // after and silently replace this with fresh data; the ref guards stop a
+  // slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [cachedStatus, cachedFiles] = await Promise.all([
+        peekCachedResponse('/api/gdrive/status').catch(() => null),
+        peekCachedResponse('/api/gdrive/files?type=drive').catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (!hasRealStatusRef.current && cachedStatus) {
+        setConnected(cachedStatus.connected);
+      }
+      if (!hasRealFilesRef.current && cachedFiles && cachedStatus?.connected !== false) {
+        setFiles(cachedFiles.files || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     checkStatus().then(ok => { if (ok) loadFiles(); else setLoading(false); });

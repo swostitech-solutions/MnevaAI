@@ -6752,7 +6752,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle } from "react-native-svg";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { clearAuth, getStoredAuth } from "../storage/auth";
-import { apiFetch, BASE_URL } from "../api/client";
+import { apiFetch, BASE_URL, peekCachedResponse } from "../api/client";
 import { useSocket, resetSocket } from "../services/socket";
 import { onAppDataRefresh } from "../services/dataRefresh";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -7668,6 +7668,99 @@ export default function Home({ navigation }) {
   const isLoadingRef = useRef(false);
   const queuedRefreshRef = useRef(false);
 
+  // Shared by the real fetch below and by the cache-hydration pass before it,
+  // so a returning user sees last known-good content immediately instead of
+  // blank/zero placeholders for however long the network round-trip takes.
+  const applyPhase1Data = ({ me, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData }) => {
+    if (me) setUser(me);
+    if (notifs) {
+      setUnreadCount(notifs.unreadCount || 0);
+      const unreadNotifications = (notifs.notifications || []).filter(
+        (n) => !n.read,
+      );
+      setRecentNotifs(
+        unreadNotifications
+          .filter((n) => n.type === "email" || n.type === "sms")
+          .slice(0, 4),
+      );
+      setPhoneAlerts(
+        unreadNotifications.filter((n) => n.source === "android").slice(0, 3),
+      );
+    }
+    if (briefData) setBrief(briefData);
+    if (calendarData)
+      setCalendarItems(
+        Array.isArray(calendarData)
+          ? calendarData
+          : calendarData.meetings || [],
+      );
+    if (doneMeetingsData)
+      setDoneMeetingIds(new Set(doneMeetingsData.ids || []));
+    if (profileRes2) {
+      const city = profileRes2?.profile?.city || null;
+      const country = profileRes2?.profile?.country || null;
+      setProfilePct(profileRes2?.profile?.completionPct ?? 0);
+      setProfileCity(city);
+      loadWeather(city, country);
+    }
+
+    // Seed localPriorities from DB tasks — source of truth
+    if (tasksData) {
+      const allTasks = Array.isArray(tasksData) ? tasksData : [];
+      setAllTasks(allTasks);
+      const STRIPE_COLORS = [
+        "#44BA82",
+        "#615FF8",
+        "#4FA6E8",
+        "#E0546E",
+        "#F5A623",
+      ];
+      const seeded = allTasks
+        .filter(
+          (t) =>
+            t.status === "PENDING" &&
+            t.title &&
+            !t.title.startsWith("meeting_done:"),
+        )
+        .map((t, i) => ({
+          id: t.id,
+          color: STRIPE_COLORS[i % STRIPE_COLORS.length],
+          title: t.title,
+          subtitle: t.description || "Pending · AI tracked",
+          isLocal: false,
+        }));
+      setLocalPriorities(seeded);
+    }
+  };
+
+  // Paint the dashboard from the last cached responses immediately on mount
+  // — otherwise every single open shows zeros/blank for however long the
+  // real fetch below takes (previously 2-3s even on a fast network, since
+  // Phase 1 alone is 6 endpoints via Promise.allSettled). loadData() below
+  // still runs immediately after and silently replaces this with fresh data;
+  // the ref guard stops a slow cache read from ever clobbering real data.
+  const hasRealPhase1Ref = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData] =
+        await Promise.all([
+          peekCachedResponse("/api/notifications"),
+          peekCachedResponse("/api/dashboard/brief"),
+          peekCachedResponse("/api/onboarding/profile"),
+          peekCachedResponse("/api/tasks"),
+          peekCachedResponse("/api/calendar/meetings"),
+          peekCachedResponse("/api/tasks/meeting-done"),
+        ]);
+      const gotSomething = notifs || briefData || profileRes2 || tasksData || calendarData || doneMeetingsData;
+      if (!cancelled && !hasRealPhase1Ref.current && gotSomething) {
+        applyPhase1Data({ me: null, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData });
+        setBriefLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const loadData = async (isRefresh = false) => {
     // Prevent concurrent loads
     if (isLoadingRef.current) {
@@ -7727,66 +7820,9 @@ export default function Home({ navigation }) {
       setLoadFailed(allCriticalFailed);
       if (!allCriticalFailed) hasLoadedDataRef.current = true;
 
-      if (me) setUser(me);
-      if (notifs) {
-        setUnreadCount(notifs.unreadCount || 0);
-        const unreadNotifications = (notifs.notifications || []).filter(
-          (n) => !n.read,
-        );
-        setRecentNotifs(
-          unreadNotifications
-            .filter((n) => n.type === "email" || n.type === "sms")
-            .slice(0, 4),
-        );
-        setPhoneAlerts(
-          unreadNotifications.filter((n) => n.source === "android").slice(0, 3),
-        );
-      }
-      if (briefData) setBrief(briefData);
-      if (calendarData)
-        setCalendarItems(
-          Array.isArray(calendarData)
-            ? calendarData
-            : calendarData.meetings || [],
-        );
-      if (doneMeetingsData)
-        setDoneMeetingIds(new Set(doneMeetingsData.ids || []));
-      if (profileRes2) {
-        const city = profileRes2?.profile?.city || null;
-        const country = profileRes2?.profile?.country || null;
-        setProfilePct(profileRes2?.profile?.completionPct ?? 0);
-        setProfileCity(city);
-        loadWeather(city, country);
-      }
-
-      // Seed localPriorities from DB tasks — source of truth
-      if (tasksData) {
-        hasLoadedDataRef.current = true;
-        const allTasks = Array.isArray(tasksData) ? tasksData : [];
-        setAllTasks(allTasks);
-        const STRIPE_COLORS = [
-          "#44BA82",
-          "#615FF8",
-          "#4FA6E8",
-          "#E0546E",
-          "#F5A623",
-        ];
-        const seeded = allTasks
-          .filter(
-            (t) =>
-              t.status === "PENDING" &&
-              t.title &&
-              !t.title.startsWith("meeting_done:"),
-          )
-          .map((t, i) => ({
-            id: t.id,
-            color: STRIPE_COLORS[i % STRIPE_COLORS.length],
-            title: t.title,
-            subtitle: t.description || "Pending · AI tracked",
-            isLocal: false,
-          }));
-        setLocalPriorities(seeded);
-      }
+      hasRealPhase1Ref.current = true;
+      applyPhase1Data({ me, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData });
+      if (tasksData) hasLoadedDataRef.current = true;
 
       setBriefLoading(false);
 

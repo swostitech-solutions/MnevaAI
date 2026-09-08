@@ -1951,41 +1951,7 @@ dashboardRouter.get("/stats", async (req, res) => {
   });
 });
 
-// finance.js
-export const financeRouter = express.Router();
-financeRouter.get("/bills", (_req, res) => res.json([]));
-financeRouter.get("/portfolio", (_req, res) =>
-  res.json({
-    totalInvested: 0,
-    totalCurrent: 0,
-    returnPct: 0,
-    cibilScore: null,
-    cibilGrade: null,
-    netWorth: 0,
-    holdings: [],
-    accounts: [],
-  }),
-);
-financeRouter.get("/spending", (req, res) =>
-  res.json({
-    period: req.query.period || "month",
-    total: 0,
-    budget: 0,
-    savingsRate: 0,
-    categories: [],
-    insights: [],
-  }),
-);
-financeRouter.post("/pay", async (req, res) => {
-  const entry = await ledger.add({
-    userId: req.user.id,
-    tool: "initiate_payment",
-    input: req.body,
-    result: { status: "pending_approval" },
-    status: "pending_approval",
-  });
-  res.json({ actionId: entry.id, status: "pending_approval", ...req.body });
-});
+// finance.js — now a standalone file, see routes/finance.js
 
 // comms.js
 function gmailErrorResponse(err, res) {

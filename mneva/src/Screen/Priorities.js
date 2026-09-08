@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
-import { apiFetch } from "../api/client";
+import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -124,6 +124,52 @@ export default function Priorities({ navigation }) {
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const horizontalPad = width < 360 ? 16 : 20;
 
+  // Shared by the real fetch below and by the cache-hydration pass before
+  // it, so a returning user sees last known-good tasks/meetings immediately
+  // instead of a blank/loading screen for however long the network
+  // round-trip takes.
+  const hasRealDataRef = useRef(false);
+  const hasRealBriefRef = useRef(false);
+
+  const applyTasksData = ({ taskRes, meetRes, doneRes }) => {
+    const allTasks = Array.isArray(taskRes) ? taskRes : [];
+    setTasks(allTasks.filter(t => !t.title?.startsWith("meeting_done:")));
+    setAllCalendarItems(Array.isArray(meetRes) ? meetRes : meetRes?.meetings || []);
+    setDoneMeetingIds(new Set(doneRes?.ids || []));
+  };
+
+  const applyBriefData = (brief) => {
+    setUrgentEmails(brief?.urgentEmails || []);
+    setSuggestedMeetings(brief?.suggestedMeetings || []);
+  };
+
+  // Paint the last known tasks/meetings/brief immediately from cache —
+  // otherwise this screen shows a blank/loading state on every single open
+  // even though nothing has actually changed since last time. loadData()
+  // below still runs right after and silently replaces this with fresh
+  // data; the ref guards stop a slow cache read from ever clobbering real
+  // data that already arrived.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [taskRes, meetRes, doneRes, brief] = await Promise.all([
+        peekCachedResponse("/api/tasks"),
+        peekCachedResponse("/api/calendar/meetings"),
+        peekCachedResponse("/api/tasks/meeting-done"),
+        peekCachedResponse("/api/dashboard/brief"),
+      ]);
+      if (cancelled) return;
+      if (!hasRealDataRef.current && (taskRes || meetRes || doneRes)) {
+        applyTasksData({ taskRes: taskRes || [], meetRes: meetRes || [], doneRes: doneRes || { ids: [] } });
+        setLoading(false);
+      }
+      if (!hasRealBriefRef.current && brief) {
+        applyBriefData(brief);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     // Started alongside the batch below instead of after it — it doesn't
@@ -142,10 +188,8 @@ export default function Priorities({ navigation }) {
       const taskRes = taskResult.status === 'fulfilled' ? taskResult.value : [];
       const meetRes = meetingResult.status === 'fulfilled' ? meetingResult.value : [];
       const doneRes = doneResult.status === 'fulfilled' ? doneResult.value : { ids: [] };
-      const allTasks = Array.isArray(taskRes) ? taskRes : [];
-      setTasks(allTasks.filter(t => !t.title?.startsWith("meeting_done:")));
-      setAllCalendarItems(Array.isArray(meetRes) ? meetRes : meetRes.meetings || []);
-      setDoneMeetingIds(new Set(doneRes.ids || []));
+      hasRealDataRef.current = true;
+      applyTasksData({ taskRes, meetRes, doneRes });
     } catch {}
     finally {
       setLoading(false);
@@ -153,8 +197,8 @@ export default function Priorities({ navigation }) {
     }
     const brief = await briefPromise;
     if (brief) {
-      setUrgentEmails(brief?.urgentEmails || []);
-      setSuggestedMeetings(brief?.suggestedMeetings || []);
+      hasRealBriefRef.current = true;
+      applyBriefData(brief);
     }
   }, []);
 

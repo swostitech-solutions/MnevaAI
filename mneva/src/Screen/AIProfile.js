@@ -7,7 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -290,22 +290,47 @@ export default function AIProfile({ navigation }) {
   const [toast, setToast] = useState(null); // { title, subtitle, isError }
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef(null);
+  const hasRealDataRef = useRef(false);
+
+  // Shared by the real fetch below and by the cache-hydration pass before it,
+  // so a returning user sees their last known profile immediately instead of
+  // blank fields/skeletons for however long the network round-trip takes.
+  const applyProfileData = (profile = {}) => {
+    setFormData(buildDefaults(profile));
+    setCompletionPct(profile.completionPct || 0);
+    const sections = Array.isArray(profile.completedSections) ? profile.completedSections : [];
+    setCompletedSections(sections);
+    const done = {};
+    sections.forEach(k => { done[k] = true; });
+    setSaved(done);
+  };
 
   const loadProfile = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
       const res = await apiFetch('/api/onboarding/profile');
-      const profile = res?.profile || {};
-      setFormData(buildDefaults(profile));
-      setCompletionPct(profile.completionPct || 0);
-      const sections = Array.isArray(profile.completedSections) ? profile.completedSections : [];
-      setCompletedSections(sections);
-      const done = {};
-      sections.forEach(k => { done[k] = true; });
-      setSaved(done);
+      hasRealDataRef.current = true;
+      applyProfileData(res?.profile || {});
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
+
+  // Paint the last known profile immediately from cache — otherwise this
+  // screen shows blank fields/skeletons on every single open even though
+  // nothing has changed since last time. loadProfile() below still runs
+  // right after and silently replaces this with fresh data; the ref guard
+  // stops a slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cached = await peekCachedResponse('/api/onboarding/profile').catch(() => null);
+      if (!cancelled && !hasRealDataRef.current && cached?.profile) {
+        applyProfileData(cached.profile);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => { loadProfile(); }, []);
   useEffect(() => onAppDataRefresh(() => loadProfile(true)), []);

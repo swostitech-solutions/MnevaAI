@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Linking, AppState,
@@ -6,7 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const ACCENT = '#0F9D58';
@@ -20,6 +20,8 @@ export default function SheetsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [connected, setConnected]   = useState(null);
 
+  const hasRealDataRef = useRef(false);
+
   const checkStatus = useCallback(async () => {
     try {
       const res = await apiFetch('/api/gdrive/status');
@@ -32,9 +34,33 @@ export default function SheetsScreen({ navigation }) {
     setLoading(true);
     try {
       const res = await apiFetch('/api/gdrive/files?type=sheets');
+      hasRealDataRef.current = true;
       setFiles(res.files || []);
     } catch { setFiles([]); }
     finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  // Paint the last known connection status + file list immediately from
+  // cache — otherwise this screen shows a spinner on every single open even
+  // though nothing has actually changed since last time. checkStatus/
+  // loadFiles below still run right after and silently replace this with
+  // fresh data; the ref guard stops a slow cache read from ever clobbering
+  // real data that already arrived.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [statusRes, filesRes] = await Promise.all([
+        peekCachedResponse('/api/gdrive/status'),
+        peekCachedResponse('/api/gdrive/files?type=sheets'),
+      ]);
+      if (cancelled || hasRealDataRef.current) return;
+      if (statusRes) setConnected(statusRes.connected);
+      if (statusRes?.connected && filesRes) {
+        setFiles(filesRes.files || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, useWindowDimensions, ActivityIndicator,
@@ -6,7 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 
@@ -103,15 +103,35 @@ export default function MorningBriefing({ navigation, route }) {
   const [brief, setBrief] = useState(route?.params?.brief || null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const hasRealBriefRef = useRef(!!route?.params?.brief);
 
   const loadBrief = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
       const data = await apiFetch('/api/dashboard/brief');
+      hasRealBriefRef.current = true;
       setBrief(data);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
+
+  // Paint the last known briefing immediately from cache when this screen is
+  // opened without route params (e.g. via the tab bar) — otherwise it shows
+  // a loading spinner on every single open even though nothing changed since
+  // last time. loadBrief() below still runs right after and silently
+  // replaces this with fresh data; the ref guard stops a slow cache read
+  // from ever clobbering real data (including the brief passed via params).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cached = await peekCachedResponse('/api/dashboard/brief').catch(() => null);
+      if (!cancelled && !hasRealBriefRef.current && cached) {
+        setBrief(cached);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Always fetch fresh data on mount — route.params may be stale
   useEffect(() => { loadBrief(); }, []);

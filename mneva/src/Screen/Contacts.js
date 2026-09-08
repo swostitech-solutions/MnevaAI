@@ -7,7 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -152,13 +152,16 @@ export default function Contacts({ navigation }) {
   const searchTimer = useRef(null);
 
   const { on } = useSocket();
+  const hasRealStatusRef = useRef(false);
+  const hasRealContactsRef = useRef(false);
 
   const checkStatus = useCallback(async () => {
     try {
       const res = await apiFetch('/api/contacts/status');
+      hasRealStatusRef.current = true;
       setConnected(res.connected);
       return res.connected;
-    } catch { setConnected(false); return false; }
+    } catch { hasRealStatusRef.current = true; setConnected(false); return false; }
   }, []);
 
   const loadContacts = useCallback(async (reset = true, searchQuery = '') => {
@@ -168,6 +171,7 @@ export default function Contacts({ navigation }) {
       if (searchQuery) params.set('query', searchQuery);
       const res = await apiFetch(`/api/contacts?${params}`);
       if (reset) {
+        hasRealContactsRef.current = true;
         setContacts(res.contacts || []);
       } else {
         setContacts(prev => [...prev, ...(res.contacts || [])]);
@@ -181,6 +185,33 @@ export default function Contacts({ navigation }) {
       setRefreshing(false);
       setSearching(false);
     }
+  }, []);
+
+  // Paint the last known status + contacts immediately from cache —
+  // otherwise this screen shows a "Syncing contacts…" spinner on every single
+  // open even though nothing changed since last time. checkStatus()/
+  // loadContacts() below still run right after and silently replace this
+  // with fresh data; the ref guards stop a slow cache read from ever
+  // clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [cachedStatus, cachedContacts] = await Promise.all([
+        peekCachedResponse('/api/contacts/status').catch(() => null),
+        peekCachedResponse('/api/contacts?pageSize=50').catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (!hasRealStatusRef.current && cachedStatus) {
+        setConnected(cachedStatus.connected);
+      }
+      if (!hasRealContactsRef.current && cachedContacts && cachedStatus?.connected !== false) {
+        setContacts(cachedContacts.contacts || []);
+        setNextPageToken(cachedContacts.nextPageToken || null);
+        setTotal(cachedContacts.total || 0);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

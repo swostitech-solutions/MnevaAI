@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_H = 50;
 const INBOX_TABS = ['All', 'Unread', 'Flagged'];
@@ -91,11 +91,14 @@ export default function Communications({ navigation }) {
   const [editing, setEditing] = useState(false);
   const [sending, setSending] = useState(false);
 
+  const hasRealEmailsRef = useRef(false);
+
   const loadEmails = async (f = filter, isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     setGmailError(null);
     try {
       const data = await apiFetch(`/api/comms/emails?filter=${f}&limit=40`);
+      hasRealEmailsRef.current = true;
       setEmails(data.emails || []);
     } catch (err) {
       setGmailError(err.message || 'Could not load emails');
@@ -105,6 +108,23 @@ export default function Communications({ navigation }) {
       setRefreshing(false);
     }
   };
+
+  // Paint the last known inbox immediately from cache — otherwise this screen
+  // shows skeleton rows on every single open even though the inbox hasn't
+  // actually changed since last time. loadEmails() below still runs right
+  // after and silently replaces this with fresh data; the ref guard stops a
+  // slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cached = await peekCachedResponse('/api/comms/emails?filter=all&limit=40').catch(() => null);
+      if (!cancelled && !hasRealEmailsRef.current && cached) {
+        setEmails(cached.emails || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => { loadEmails(); }, []);
   useEffect(() => onAppDataRefresh(() => loadEmails(filter, true)), [filter]);

@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import PetProfileTab from './PetCare/PetProfileTab';
 import PetHealthTab from './PetCare/PetHealthTab';
 import PetRoutineTab from './PetCare/PetRoutineTab';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { PetContext } from './PetCare/PetContext';
@@ -55,18 +55,43 @@ export default function PetCare({ navigation }) {
     Animated.timing(alertAnim, { toValue: -120, useNativeDriver: true, duration: 250 }).start(() => setAlert(null));
   }, [alertAnim]);
 
+  const hasRealDataRef = useRef(false);
+
+  // Shared by the real fetch and the cache-hydration pass below so the
+  // active-pet reconciliation logic isn't duplicated.
+  const applyPetsData = (list) => {
+    setPets(list);
+    setActivePet(prev => {
+      if (!prev) return list[0] || null;
+      return list.find(p => p.id === prev.id) || list[0] || null;
+    });
+  };
+
   const load = useCallback(async () => {
     try {
       const res = await apiFetch('/api/pet');
       if (!mountedRef.current) return;
-      const list = res.pets || [];
-      setPets(list);
-      setActivePet(prev => {
-        if (!prev) return list[0] || null;
-        return list.find(p => p.id === prev.id) || list[0] || null;
-      });
+      hasRealDataRef.current = true;
+      applyPetsData(res.pets || []);
     } catch { /* silent */ }
     finally { if (mountedRef.current) setLoading(false); }
+  }, []);
+
+  // Paint last known pets immediately from cache — otherwise this screen
+  // shows a blank/loading state on every open even for data that hasn't
+  // changed. load() below still runs right after and silently replaces
+  // this with fresh data; the ref guard stops a slow cache read from ever
+  // clobbering real data that already arrived.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await peekCachedResponse('/api/pet').catch(() => null);
+      if (!cancelled && !hasRealDataRef.current && res) {
+        applyPetsData(res.pets || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

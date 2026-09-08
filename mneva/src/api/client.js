@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { getStoredAuth } from '../storage/auth';
 
 const PRODUCTION_BACKEND = 'https://mneva-backend-v2.onrender.com';
 
@@ -44,14 +44,21 @@ function _notifySessionExpired() {
   _sessionExpiredListeners.forEach(cb => cb());
 }
 
-async function getToken() {
-  // Kept in the Keychain/Keystore via expo-secure-store — see src/storage/auth.js.
-  return SecureStore.getItemAsync('mneva_token');
+// Cache namespace: the account's own DB id, NOT the JWT. A token is re-issued
+// fresh on every single login, so keying the cache by token meant a returning
+// user re-logging in on the same device could never find their own cache
+// from five minutes earlier — every fresh login looked exactly like a
+// brand-new user with nothing cached, even though the whole point of caching
+// was to make a familiar account's screens paint instantly. The account id
+// is stable across logins, so cached data now survives logout/login normally.
+async function getAuthContext() {
+  const { token, user } = await getStoredAuth();
+  return { token, cacheNamespace: user?.id || user?.email || null };
 }
 
-function cacheKey(path, token) {
-  // Keep cached responses isolated between accounts without persisting a token.
-  return `${CACHE_PREFIX}${token?.slice(-16) || 'anonymous'}:${path}`;
+function cacheKey(path, namespace) {
+  // Keep cached responses isolated between accounts.
+  return `${CACHE_PREFIX}${namespace || 'anonymous'}:${path}`;
 }
 
 function canUseCachedResponse(path, error) {
@@ -63,16 +70,28 @@ function canUseCachedResponse(path, error) {
     && (!error?.status || error.status >= 500 || error.status === 429);
 }
 
-async function readCachedResponse(path, token) {
+async function readCachedResponse(path, namespace) {
   if (path === '/api/auth/me') return null;
-  const cached = await AsyncStorage.getItem(cacheKey(path, token)).catch(() => null);
+  const cached = await AsyncStorage.getItem(cacheKey(path, namespace)).catch(() => null);
   if (!cached) return null;
   try {
     return JSON.parse(cached);
   } catch {
-    await AsyncStorage.removeItem(cacheKey(path, token)).catch(() => {});
+    await AsyncStorage.removeItem(cacheKey(path, namespace)).catch(() => {});
     return null;
   }
+}
+
+// Every successful GET through apiFetch is already written to this cache;
+// previously it was only ever read back as a fallback after a fresh attempt
+// had failed. That means every screen showed a blank/loading state on every
+// single open, even for data that hadn't actually changed since last time.
+// Screens can call this on mount to paint the last known-good result
+// immediately, then let their normal apiFetch call silently replace it with
+// fresh data — "stale, then instant" instead of "blank, then eventually".
+export async function peekCachedResponse(path) {
+  const { cacheNamespace } = await getAuthContext();
+  return readCachedResponse(path, cacheNamespace);
 }
 
 // Wake Render free-tier backend immediately on app launch or before the next
@@ -117,7 +136,7 @@ export async function apiFetch(path, options = {}) {
   // `retry: false` is used by higher-level recovery loops which already own
   // their retry/backoff policy. Do not pass this app-only option to fetch.
   const { retry, ...fetchOptions } = options;
-  const token = await getToken();
+  const { token, cacheNamespace } = await getAuthContext();
   const cacheable = (fetchOptions.method || 'GET').toUpperCase() === 'GET';
 
   // `/api/health` is exempt from the server's rate limit too (see server.js
@@ -128,13 +147,13 @@ export async function apiFetch(path, options = {}) {
   if (path !== '/api/health' && Date.now() < _rateLimitedUntil) {
     const cooldownError = { status: 429, message: 'Too many requests — please wait a moment', retryable: false };
     if (cacheable && canUseCachedResponse(path, cooldownError)) {
-      const cached = await readCachedResponse(path, token);
+      const cached = await readCachedResponse(path, cacheNamespace);
       if (cached !== null) return cached;
     }
     throw cooldownError;
   }
   const retryableAuthPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/verify-email', '/api/auth/resend-otp'];
-  const responseCacheKey = cacheKey(path, token);
+  const responseCacheKey = cacheKey(path, cacheNamespace);
   const requestKey = `${responseCacheKey}:${JSON.stringify(fetchOptions.headers || {})}`;
   if (cacheable && _inFlightGets.has(requestKey)) return _inFlightGets.get(requestKey);
   const headers = {
@@ -228,7 +247,7 @@ export async function apiFetch(path, options = {}) {
     // Do not blank a page while Render is replacing an instance. Only use the
     // last known response after fresh attempts have actually failed.
     if (cacheable && canUseCachedResponse(path, lastError)) {
-      const cached = await readCachedResponse(path, token);
+      const cached = await readCachedResponse(path, cacheNamespace);
       if (cached !== null) return cached;
     }
     if (lastError?.status === 0 || lastError?.status === 503 || lastError?.status === 504 || lastError?.status === 500) {

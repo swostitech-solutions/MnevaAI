@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { apiFetch } from '../api/client';
+import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 
@@ -9,13 +9,34 @@ export function useFamilyItems(domain) {
   const [saving, setSaving]   = useState(false);
   const { on }                = useSocket();
   const mountedRef            = useRef(true);
+  const hasRealDataRef        = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const res = await apiFetch(`/api/family-items/${domain}`);
+      hasRealDataRef.current = true;
       if (mountedRef.current) setItems(res.items || []);
     } catch { /* silent */ }
     finally { if (mountedRef.current) setLoading(false); }
+  }, [domain]);
+
+  // Paint the last known items immediately from cache — every screen built on
+  // this hook (CelebrationGifting, ChildrenActivities, FamilyCalendar,
+  // HomeMaintenance) otherwise shows a blank loading spinner on every single
+  // open even though nothing changed since last time. load() above still runs
+  // right after and silently replaces this with fresh data; the ref guard
+  // stops a slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    hasRealDataRef.current = false;
+    (async () => {
+      const cached = await peekCachedResponse(`/api/family-items/${domain}`).catch(() => null);
+      if (!cancelled && !hasRealDataRef.current && cached) {
+        setItems(cached.items || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [domain]);
 
   useEffect(() => {

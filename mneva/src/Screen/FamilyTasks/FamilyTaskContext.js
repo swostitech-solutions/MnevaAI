@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { apiFetch } from '../../api/client';
+import { apiFetch, peekCachedResponse } from '../../api/client';
 import { getSocket } from '../../services/socket';
 
 const FamilyTaskContext = createContext(null);
@@ -30,6 +30,7 @@ export function FamilyTaskProvider({ children }) {
   const [tasks, setTasks]             = useState([]);
   const [loading, setLoading]         = useState(false);
   const socketRef = useRef(null);
+  const hasRealDataRef = useRef(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -38,6 +39,7 @@ export function FamilyTaskProvider({ children }) {
         apiFetch('/api/family/connections'),
         apiFetch('/api/family/tasks'),
       ]);
+      hasRealDataRef.current = true;
       setConnections(connData.connections || []);
       setTasks(taskData.tasks || []);
     } catch {}
@@ -45,6 +47,25 @@ export function FamilyTaskProvider({ children }) {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Paint the last known connections/tasks immediately from cache — otherwise
+  // the Family Tasks screen shows an empty stats row/list on every open even
+  // though nothing changed since last time. fetchAll() above still runs right
+  // after and silently replaces this with fresh data; the ref guard stops a
+  // slow cache read from ever clobbering real data.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [cachedConn, cachedTasks] = await Promise.all([
+        peekCachedResponse('/api/family/connections').catch(() => null),
+        peekCachedResponse('/api/family/tasks').catch(() => null),
+      ]);
+      if (cancelled || hasRealDataRef.current) return;
+      if (cachedConn) setConnections(cachedConn.connections || []);
+      if (cachedTasks) setTasks(cachedTasks.tasks || []);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Real-time socket listeners ──
   useEffect(() => {
