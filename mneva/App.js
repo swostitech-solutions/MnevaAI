@@ -190,8 +190,12 @@ function AppInner() {
         const attempt = recoveryAttemptRef.current;
         recoveryAttemptRef.current += 1;
         // A single miss can be one slow request, not an outage — only tell
-        // the user something's wrong once it's failed a couple of times in a row.
-        if (attempt >= 2) setServerBusyBanner(true);
+        // the user something's wrong once it's failed a couple of times in a
+        // row. Exclude 429: that's this client's own rate-limit cooldown
+        // (see api/client.js) quietly skipping the network call, not the
+        // server being unreachable — showing "Reconnecting..." for it is
+        // misleading when the rest of the screen already has real data.
+        if (attempt >= 2 && error?.status !== 429) setServerBusyBanner(true);
         // Rate limiting needs a slower cadence than transient network errors.
         // Other recoverable errors use a capped exponential backoff.
         const delay =
