@@ -1,5 +1,6 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
+import { sendPushToUser } from '../services/pushService.js'
 
 export const familyItemsRouter = express.Router()
 
@@ -138,11 +139,13 @@ export function startFamilyReminderPoller(io) {
       })
       for (const item of due) {
         const d = item.data || {}
+        const title = d.title || d.name || d.item || d.person || 'Reminder'
         io.to(`u:${item.userId}`).emit('family:alert', {
           id: item.id, domain: item.domain, type: item.type,
-          title: d.title || d.name || d.item || d.person || 'Reminder',
+          title,
           remindAt: item.remindAt,
         })
+        sendPushToUser(item.userId, { title: 'Family reminder', body: title, data: { type: 'family_item', domain: item.domain, id: item.id } })
       }
     } catch { /* silent */ }
   }, 60 * 1000)

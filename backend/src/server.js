@@ -48,6 +48,7 @@ import {
   startFamilyReminderPoller,
 } from "./routes/familyItems.js";
 import deviceNotificationRoutes from "./routes/deviceNotifications.js";
+import pushRoutes from "./routes/push.js";
 import tasksRoutes from "./routes/tasks.js";
 import { connectDatabase, disconnectDatabase } from "./config/prisma.js";
 import { connectQdrant } from "./config/qdrant.js";
@@ -355,6 +356,7 @@ app.use("/api/trust", authMiddleware, trustRoutes);
 app.use("/api/search", authMiddleware, searchRoutes);
 
 app.use("/api/tasks", authMiddleware, tasksRoutes);
+app.use("/api/push", authMiddleware, pushRoutes);
 app.use("/api/meetings", authMiddleware, meetingsRouter);
 app.use("/api/tmdb", authMiddleware, tmdbRoutes);
 app.use("/api/sms", smsRouter);

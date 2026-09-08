@@ -1,6 +1,7 @@
 import express from 'express'
 import { createHash, randomUUID } from 'crypto'
 import { prisma } from '../config/prisma.js'
+import { sendPushToUser } from '../services/pushService.js'
 
 const router = express.Router()
 const hashToken = token => createHash('sha256').update(String(token || '')).digest('hex')
@@ -75,6 +76,7 @@ router.post('/ingest', async (req, res) => {
     if (io) {
       io.to(`u:${device.userId}`).emit('notification:created', payload)
     }
+    sendPushToUser(device.userId, { title: payload.title, body: payload.body, data: { type: payload.type } })
     // Phone alerts are intentionally kept in the notification feed. They are
     // not converted to Tasks, so they never appear under Today's Priorities.
     res.status(201).json({ accepted: true, priority: analysis.priority, notification: payload })

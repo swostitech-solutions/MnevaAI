@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq'
 import { getBullRedisClient } from '../config/redis.js'
 import { logger } from '../config/logger.js'
+import { sendPushToUser } from '../services/pushService.js'
 
 let queue
 
@@ -52,6 +53,10 @@ export function startReminderWorker(io) {
         })
         logger.info(`✅ Reminder socket alert sent to user=${userId}`)
       }
+
+      // This is the whole point of a reminder — it must reach the user even
+      // when the app isn't open, which the socket emit above cannot do.
+      sendPushToUser(userId, { title: 'Reminder', body: message, data: { type: 'reminder', domain, jobId: job.id } })
 
       return { ok: true, userId, message }
     },

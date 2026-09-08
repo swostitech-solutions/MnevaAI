@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, BASE_URL } from '../api/client';
 import { saveAuth } from '../storage/auth';
 import { resetSocket, getSocket } from '../services/socket';
+import { registerForPushNotifications } from '../services/pushNotifications';
 
 export default function Signin({ navigation }) {
   const [email, setEmail] = useState('');
@@ -53,6 +54,7 @@ export default function Signin({ navigation }) {
       await saveAuth(data.token, data.user);
       resetSocket();
       await getSocket();
+      registerForPushNotifications().catch(() => {});
       navigation.replace('Home');
     } catch (err) {
       if (err.status === 403) {

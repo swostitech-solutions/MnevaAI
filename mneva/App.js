@@ -59,6 +59,7 @@ import {
   onSocketReconnect,
 } from "./src/services/socket";
 import { refreshAppData } from "./src/services/dataRefresh";
+import { registerForPushNotifications } from "./src/services/pushNotifications";
 import ReminderAlert from "./src/components/ReminderAlert";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import SessionExpiredBanner from "./src/components/SessionExpiredBanner";
@@ -332,7 +333,14 @@ function AppInner() {
         // logging in manually happened to perform this recovery sequence.
         const { token } = await getStoredAuth();
         setInitialRoute(token ? "Home" : "Onboarding");
-        if (token) recoverSession().catch(() => {});
+        if (token) {
+          recoverSession().catch(() => {});
+          // Registers this device's push token on every cold start (not
+          // just login) so a user who stays signed in across app updates —
+          // and never sees the Signin screen again — still gets registered
+          // after this feature ships.
+          registerForPushNotifications().catch(() => {});
+        }
       } catch {
         setInitialRoute("Onboarding");
       }

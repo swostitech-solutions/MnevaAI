@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { NativeModules } from 'react-native';
+import { unregisterPushNotifications } from '../services/pushNotifications';
 
 const TOKEN_KEY = 'mneva_token';
 const USER_KEY = 'mneva_user';
@@ -35,6 +36,9 @@ export async function clearAuth() {
   // this private native copy immediately stops capture on this device.
   const clearNativeCapture = NativeModules.MnevaNotificationAccess?.clear;
   if (clearNativeCapture) await clearNativeCapture().catch(() => {});
+  // Must happen before the token below is deleted — it needs the still-valid
+  // session to tell the server to stop pushing to this device.
+  await unregisterPushNotifications().catch(() => {});
   await Promise.all([
     SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(PHONE_NOTIFICATION_TOKEN_KEY).catch(() => {}),

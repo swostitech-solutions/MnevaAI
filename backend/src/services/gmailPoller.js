@@ -3,6 +3,7 @@ import { userStore } from '../models/userStore.js'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
 import { sendEmail } from './gmail.service.js'
+import { sendPushToUser } from './pushService.js'
 
 const activePollers = new Map()
 const POLL_INTERVAL_MS = 60_000
@@ -121,6 +122,7 @@ async function pollOnce(userId, io) {
         suggestedReply: draft,
         ts: notif.createdAt.toISOString(),
       })
+      sendPushToUser(userId, { title: notif.title, body: `From ${email.from || 'unknown'}`, data: { type: 'gmail', emailId: email.id } })
     }
 
     logger.info(`Gmail poller: ${newEmails.length} new email(s) for user ${userId}`)

@@ -44,6 +44,7 @@ model User {
 
   notifications             Notification[]
   deviceNotificationTokens  DeviceNotificationToken[]
+  pushTokens                PushToken[]
   agentLedgers              AgentLedger[]
   trustScore                TrustScore?
   userProfile               UserProfile?
@@ -281,6 +282,24 @@ model DeviceNotificationToken {
   tokenHash  String    @unique
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// A real Expo push address for this device — distinct from
+// DeviceNotificationToken above, which is an opaque secret the phone uses to
+// hand its OWN captured notifications to this backend (the reverse
+// direction). This is what the backend uses to push a real OS notification
+// TO the device.
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String // 'android' | 'ios'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

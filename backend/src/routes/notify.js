@@ -1,6 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
+import { sendPushToUser } from '../services/pushService.js'
 
 const router = express.Router()
 
@@ -104,6 +105,7 @@ router.post('/push', async (req, res) => {
       io.to(`u:${user.id}`).emit('notification:created', payload)
       io.to(`u:${user.id}`).emit('app:notification', payload)
     }
+    sendPushToUser(user.id, { title: displayTitle, body: preview, data: { type: 'notify', source } })
 
     logger.info(`Notification ingested: ${source} → ${user.email} — "${title.slice(0, 60)}"`)
     res.json({ success: true, notification: payload })

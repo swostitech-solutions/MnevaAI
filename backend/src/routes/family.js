@@ -1,5 +1,6 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
+import { sendPushToUser } from '../services/pushService.js'
 
 export const familyRouter = express.Router()
 
@@ -151,7 +152,12 @@ familyRouter.post('/tasks', async (req, res) => {
     const formatted = fmtTask(task)
     const io = req.app.get('io')
     emit(io, myId,       'family:task:new', formatted)
-    if (assigneeId !== myId) emit(io, assigneeId, 'family:task:new', formatted)
+    if (assigneeId !== myId) {
+      emit(io, assigneeId, 'family:task:new', formatted)
+      // Only the assignee needs a push — the creator is already looking at
+      // the screen that just created this.
+      sendPushToUser(assigneeId, { title: 'New family task', body: title, data: { type: 'family_task', taskId: task.id } })
+    }
     res.status(201).json({ task: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

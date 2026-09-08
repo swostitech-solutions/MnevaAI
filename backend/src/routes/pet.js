@@ -1,5 +1,6 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
+import { sendPushToUser } from '../services/pushService.js'
 
 export const petRouter = express.Router()
 
@@ -207,6 +208,7 @@ export function startPetReminderPoller(io) {
           type: r.type, title: r.title,
           remindAt: r.remindAt, notes: r.notes,
         })
+        sendPushToUser(r.userId, { title: `${r.pet.name}: ${r.title}`, body: r.notes || r.type, data: { type: 'pet', petId: r.petId } })
       }
     } catch { /* silent */ }
   }, 60 * 1000)

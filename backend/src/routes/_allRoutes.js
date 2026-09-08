@@ -1280,6 +1280,7 @@ import {
 import { createEventIfConnected } from "../services/calendar.service.js";
 import multer from "multer";
 import { createDeviceToken, hashToken } from "./deviceNotifications.js";
+import { sendPushToUser } from "../services/pushService.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2697,6 +2698,7 @@ meetingsRouter.post("/suggest-approve", async (req, res) => {
         end: endDt.toISOString(),
       });
     }
+    sendPushToUser(req.user.id, { title: "New meeting suggested", body: meetingTitle, data: { type: "meeting" } });
 
     res.json({ success: true, meeting: { ...meeting, title: meetingTitle } });
   } catch (err) {
@@ -2964,6 +2966,7 @@ smsRouter.post("/webhook", async (req, res) => {
       io.to(`u:${userId}`).emit("sms:notification", payload);
       io.to(`u:${userId}`).emit("notification:created", payload);
     }
+    sendPushToUser(userId, { title: notification.title, body: previewText, data: { type: "sms" } });
 
     res.json({ success: true, notification: payload });
   } catch (err) {
@@ -3041,6 +3044,7 @@ smsRouter.post("/ingest", async (req, res) => {
     if (io) {
       io.to(`u:${userId}`).emit("notification:created", payload);
     }
+    sendPushToUser(userId, { title: notification.title, body: previewText, data: { type } });
 
     // If the incoming payload includes a start time and the user has calendar connected, create an event
     const start =
