@@ -143,12 +143,15 @@ export async function apiFetch(path, options = {}) {
     ...fetchOptions.headers,
   };
 
-  // If the backend has been sleeping, a quick /api/health probe before the user
-  // action wakes it without forcing logout or a hard restart. This is the
-  // practical equivalent of "restart on next click" while staying inside the
-  // app lifecycle.
+  // If the backend has been sleeping, a quick /api/health probe wakes it
+  // without forcing logout or a hard restart. This must NOT block the real
+  // request: on a paid, always-on instance (the current setup) the backend
+  // is essentially never actually asleep, so awaiting this before every call
+  // was adding a full serial network round-trip to every single page load
+  // for no benefit. Fire it in parallel instead — if the backend really is
+  // cold, the real request below will hit that the same way and retry.
   if (path !== '/api/health' && !fetchOptions.headers?.['x-no-wake-check']) {
-    await pingBackend().catch(() => {});
+    pingBackend().catch(() => {});
   }
 
   const request = (async () => {

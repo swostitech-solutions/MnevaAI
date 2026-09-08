@@ -126,6 +126,10 @@ export default function Priorities({ navigation }) {
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
+    // Started alongside the batch below instead of after it — it doesn't
+    // depend on their results, so waiting for them first only added a full
+    // extra serial round-trip to every screen load.
+    const briefPromise = apiFetch("/api/dashboard/brief").catch(() => null);
     try {
       // These feeds are supplemental to tasks.  Do not blank the whole
       // Priorities screen when Calendar or the meeting-completion feed is
@@ -147,12 +151,11 @@ export default function Priorities({ navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-    // Fetch brief data separately — fail silently
-    try {
-      const brief = await apiFetch("/api/dashboard/brief");
+    const brief = await briefPromise;
+    if (brief) {
       setUrgentEmails(brief?.urgentEmails || []);
       setSuggestedMeetings(brief?.suggestedMeetings || []);
-    } catch {}
+    }
   }, []);
 
   useEffect(() => { loadData(); }, []);

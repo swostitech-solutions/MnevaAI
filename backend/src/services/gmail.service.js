@@ -1,6 +1,17 @@
 import { google } from 'googleapis'
 import { prisma } from '../config/prisma.js'
 
+// listEmails does 1 list call + one messages.get per message + 1 label
+// count — for a 40-email inbox that's ~42 live round-trips to Gmail's API,
+// which is why /api/comms/emails alone took 600-900ms on every single call
+// (vs 2-5ms for endpoints backed by the local DB). The app re-triggers a
+// refresh on nearly every navigation, so switching to Mail and back within
+// a few seconds re-paid that full cost every time. A short cache means only
+// the first load in a window pays it; the 60s Gmail poller already pushes
+// genuinely new mail over the socket in the meantime, so freshness isn't lost.
+const EMAIL_LIST_CACHE_TTL_MS = 30000
+const _emailListCache = new Map()
+
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
@@ -156,6 +167,12 @@ function decodeEmailBody(payload) {
 }
 
 export async function listEmails(user, filter = 'all', limit = 20) {
+  const cacheKey = `${user.id}:${filter}:${limit}`
+  const cached = _emailListCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < EMAIL_LIST_CACHE_TTL_MS) {
+    return cached.data
+  }
+
   const authClient = await getAuthenticatedGmailClient(user)
   const gmail = google.gmail({ version: 'v1', auth: authClient })
 
@@ -215,7 +232,9 @@ export async function listEmails(user, filter = 'all', limit = 20) {
   const labelResponse = await gmail.users.labels.get({ userId: 'me', id: 'UNREAD' })
   const unreadCount = labelResponse.data.messagesUnread || 0
 
-  return { emails: response, total: response.length, unreadCount }
+  const result = { emails: response, total: response.length, unreadCount }
+  _emailListCache.set(cacheKey, { at: Date.now(), data: result })
+  return result
 }
 
 export async function getEmailBody(user, messageId) {
