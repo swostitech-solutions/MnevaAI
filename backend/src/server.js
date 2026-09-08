@@ -204,12 +204,24 @@ app.use(
     // for that user until the window reset — indistinguishable from "the
     // server went offline" from the app's side. Widened with real headroom.
     max: +process.env.RATE_LIMIT_MAX || 6000,
-    keyGenerator: (req) => req.headers["authorization"]?.slice(-16) || req.ip,
+    // Keyed by token alone, every device signed into the same account shared
+    // one bucket — a handful of devices on one account (family sharing, or
+    // just testing) could exhaust it within minutes from combined normal
+    // polling, 429-ing every device on that account at once until the window
+    // reset. That looked exactly like "the whole app goes offline, then
+    // recovers on its own" (see the 05:59-06:00 log storm on one account).
+    // Keying by token+IP gives each device its own budget.
+    keyGenerator: (req) => {
+      const tokenKey = req.headers["authorization"]?.slice(-16);
+      return tokenKey ? `${tokenKey}:${req.ip}` : req.ip;
+    },
     skip: (req) => req.path === "/api/health",
     standardHeaders: true,
     legacyHeaders: false,
     handler: (req, res) => {
-      logger.warn(`Rate limit exceeded — ${req.method} ${req.originalUrl} — key: ${req.headers["authorization"]?.slice(-16) || req.ip}`);
+      const tokenKey = req.headers["authorization"]?.slice(-16);
+      const key = tokenKey ? `${tokenKey}:${req.ip}` : req.ip;
+      logger.warn(`Rate limit exceeded — ${req.method} ${req.originalUrl} — key: ${key}`);
       res.status(429).json({ error: "Too many requests — please wait a moment" });
     },
   }),

@@ -2,11 +2,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const LOCAL_BACKEND = __DEV__
+const PRODUCTION_BACKEND = 'https://mneva-backend-v2.onrender.com';
+
+// TEMPORARY: force the emulator onto the production backend/DB so a
+// production account can be tested there. Flip back to `false` to resume
+// normal dev-mode behavior (local backend on Android/iOS emulators).
+const FORCE_PRODUCTION_BACKEND = true;
+
+const LOCAL_BACKEND = __DEV__ && !FORCE_PRODUCTION_BACKEND
   ? (Platform.OS === 'android'
       ? 'http://10.0.2.2:3001'
       : 'http://localhost:3001')
-  : 'https://mneva-backend-v2.onrender.com';
+  : PRODUCTION_BACKEND;
 
 export const BASE_URL = LOCAL_BACKEND;
 
@@ -145,7 +152,13 @@ export async function apiFetch(path, options = {}) {
         }
         if (!res.ok) {
           const message = data.error || data.message || `Server request failed (HTTP ${res.status})`;
-          const transientServerError = [408, 429, 500, 502, 503, 504].includes(res.status);
+          // 429 is deliberately NOT retried here: several devices signed into
+          // the same account share one rate-limit bucket server-side, so once
+          // it's exhausted, every device gets 429 at once. Retrying immediately
+          // just pours more requests into the same already-exhausted window,
+          // extending the outage instead of waiting it out — a real incident,
+          // not a hypothetical (see the 05:59-06:00 log storm on one account).
+          const transientServerError = [408, 500, 502, 503, 504].includes(res.status);
           if (retryable && transientServerError && attempt < maxAttempts - 1) {
             await new Promise(resolve => setTimeout(resolve, retryDelays[attempt] || 2000));
             continue;
@@ -160,9 +173,10 @@ export async function apiFetch(path, options = {}) {
         lastError = err?.name === 'AbortError'
           ? { status: 0, message: 'Request timed out. Check your connection.' }
           : err;
-        const transientNetworkError = !lastError?.status || lastError?.status === 0 || [408, 429, 500, 502, 503, 504].includes(lastError?.status);
+        const transientNetworkError = !lastError?.status || lastError?.status === 0 || [408, 500, 502, 503, 504].includes(lastError?.status);
         // An authenticated or explicitly rejected client-side response cannot be healed by retrying.
-        if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500 && lastError?.status !== 408 && lastError?.status !== 429)) break;
+        // 429 included: hammering an already-exhausted rate-limit window only prolongs it.
+        if (!retryable || lastError?.status === 401 || (lastError?.status >= 400 && lastError?.status < 500 && lastError?.status !== 408)) break;
         if (transientNetworkError && attempt < maxAttempts - 1) {
           await new Promise(resolve => setTimeout(resolve, retryDelays[attempt] || 2000));
           continue;
