@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 const TAB_BAR_CONTENT_HEIGHT = 50;
@@ -523,26 +524,62 @@ export default function Health({ navigation }) {
           }
         </View>
 
-        {/* Weekly Steps */}
-        {!loading && (metrics?.weeklySteps || []).length > 0 && (
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionCardTitle}>Weekly Steps</Text>
-            <View style={styles.weeklyStepsRow}>
-              {(metrics.weeklySteps || []).map((day, i) => {
-                const max = Math.max(...metrics.weeklySteps.map(d => d.steps || 0), 1);
-                const pct = ((day.steps || 0) / max) * 100;
-                return (
-                  <View key={i} style={styles.weeklyDayCol}>
-                    <View style={styles.weeklyBarWrap}>
-                      <View style={[styles.weeklyBar, { height: `${Math.max(pct, 4)}%`, backgroundColor: pct > 70 ? '#1F9A5A' : '#4FA6E8' }]} />
-                    </View>
-                    <Text style={styles.weeklyDayLabel}>{day.day || ''}</Text>
-                  </View>
-                );
-              })}
+        {/* Weekly Steps — styled after Google Fit's own weekly chart: a
+            dashed goal line and a checkmark badge on any day that reached
+            it, rather than a plain bare bar chart. */}
+        {!loading && (metrics?.weeklySteps || []).length > 0 && (() => {
+          const weekSteps = metrics.weeklySteps || [];
+          const goal = metrics?.steps?.goal || 10000;
+          const maxSteps = Math.max(...weekSteps.map(d => d.steps || 0), goal);
+          const goalPct = Math.min((goal / maxSteps) * 100, 94);
+          const todayStr = new Date().toISOString().slice(0, 10);
+          return (
+            <View style={styles.sectionCard}>
+              <View style={styles.chartHeaderRow}>
+                <Text style={styles.sectionCardTitle}>Weekly Steps</Text>
+                <View style={styles.chartGoalPill}>
+                  <Feather name="target" size={11} color="#1F9A5A" />
+                  <Text style={styles.chartGoalText}>{goal.toLocaleString('en-IN')} goal</Text>
+                </View>
+              </View>
+              <View style={styles.chartArea}>
+                <View style={[styles.goalLine, { bottom: `${goalPct}%` }]} />
+                <View style={styles.barsRow}>
+                  {weekSteps.map((day, i) => {
+                    const steps = day.steps || 0;
+                    const pct = Math.max((steps / maxSteps) * 100, steps > 0 ? 3 : 0);
+                    const hitGoal = steps >= goal && steps > 0;
+                    return (
+                      <View key={i} style={styles.barCol}>
+                        {/* Full-height track so short bars still read as "part of a
+                            scale" instead of floating in empty space. */}
+                        <View style={styles.barTrack} />
+                        {hitGoal && (
+                          <View style={[styles.goalBadge, { bottom: `${pct}%` }]}>
+                            <Feather name="check" size={10} color="#FFFFFF" />
+                          </View>
+                        )}
+                        <LinearGradient
+                          colors={hitGoal ? ['#3CB37A', '#1F9A5A'] : ['#8FDCB6', '#5FC492']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 0, y: 1 }}
+                          style={[styles.weeklyBar, { height: `${pct}%` }]}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+              <View style={styles.labelsRow}>
+                {weekSteps.map((day, i) => (
+                  <Text key={i} style={[styles.weeklyDayLabel, day.date === todayStr && styles.weeklyDayLabelActive]}>
+                    {day.day || ''}
+                  </Text>
+                ))}
+              </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
 
         {/* Weekly Tracking — only the current Sunday-to-Saturday week shows
             here; the full history (every past week) lives behind "View Full
@@ -688,21 +725,46 @@ const styles = StyleSheet.create({
   connectBannerText: { fontSize: 12, color: '#4FA6E8', fontWeight: '600', flex: 1 },
   sectionHeader: { fontSize: 12, fontWeight: '700', color: '#6B7280', letterSpacing: 0.5, marginBottom: 12 },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  metricCard: { width: '30.5%', borderRadius: 16, padding: 12 },
+  metricCard: {
+    width: '30.5%', borderRadius: 16, padding: 12,
+    shadowColor: '#0F1720', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  },
   metricSkeleton: { width: '30.5%', height: 90, backgroundColor: '#FFFFFF', borderRadius: 16 },
   metricIconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   metricLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.3, marginBottom: 4 },
   metricValueRow: { flexDirection: 'row', alignItems: 'baseline' },
   metricValue: { fontSize: 18, fontWeight: '800' },
   metricUnit: { fontSize: 10, color: '#9AA1AE', fontWeight: '600' },
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+  sectionCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4,
+    shadowColor: '#0F1720', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+  },
   sectionCardTitle: { fontSize: 13, fontWeight: '700', color: '#14171F', marginBottom: 14 },
-  weeklyStepsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 80, marginBottom: 8 },
-  weeklyDayCol: { flex: 1, alignItems: 'center' },
-  weeklyBarWrap: { flex: 1, width: '60%', justifyContent: 'flex-end', marginBottom: 4 },
-  weeklyBar: { width: '100%', borderRadius: 4, minHeight: 4 },
-  weeklyDayLabel: { fontSize: 10, color: '#9AA1AE', fontWeight: '600' },
-  weekCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, marginBottom: 12 },
+  chartHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
+  chartGoalPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EFFDF6', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  chartGoalText: { fontSize: 11, fontWeight: '700', color: '#1F9A5A' },
+  chartArea: { height: 130, position: 'relative', marginBottom: 10 },
+  goalLine: { position: 'absolute', left: 0, right: 0, borderTopWidth: 1.5, borderStyle: 'dashed', borderColor: '#4FA6E8', opacity: 0.6 },
+  barsRow: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  barCol: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end', position: 'relative', paddingHorizontal: 4 },
+  barTrack: { position: 'absolute', bottom: 0, width: '58%', height: '100%', backgroundColor: '#F1F3F5', borderRadius: 14 },
+  weeklyBar: {
+    width: '58%', borderRadius: 14, minHeight: 8,
+    shadowColor: '#1F9A5A', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  goalBadge: {
+    position: 'absolute', width: 20, height: 20, borderRadius: 10,
+    backgroundColor: '#1F9A5A', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5, borderColor: '#FFFFFF', zIndex: 3,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
+  labelsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  weeklyDayLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: '#9AA1AE', fontWeight: '600' },
+  weeklyDayLabelActive: { color: '#14171F', fontWeight: '800' },
+  weekCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, marginBottom: 12,
+    shadowColor: '#0F1720', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  },
   weekCardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   weekCardRange: { fontSize: 14, fontWeight: '700', color: '#14171F' },
   weekCardBadge: { backgroundColor: '#FCEAED', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },

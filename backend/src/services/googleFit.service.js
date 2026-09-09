@@ -663,14 +663,19 @@ export async function getHealthData(user) {
         const rawWt = weight.status === "fulfilled" ? weight.value : null;
         const rawHt = height.status === "fulfilled" ? height.value : null;
         // FIX: this used to return Fit's live reading unconditionally, even
-        // when Fit simply has no data yet (steps come back 0, the rest come
-        // back null) — which silently overrode whatever the user had just
-        // manually logged in "Today's Vitals" every time this refreshed
-        // (e.g. right after saving). Fall back to today's manually-logged
-        // value whenever Fit's own reading is empty; once Fit actually has a
-        // real reading it takes over again automatically.
+        // when Fit simply has no data yet (the rest come back null) — which
+        // silently overrode whatever the user had just manually logged in
+        // "Today's Vitals" every time this refreshed (e.g. right after
+        // saving). For everything except steps, fall back to today's
+        // manually-logged value whenever Fit's own reading is empty; once
+        // Fit actually has a real reading it takes over again automatically.
+        // Steps is different: manual + Fit are ADDED together (a manually
+        // logged walk Fit didn't see is on top of what Fit did track, not a
+        // replacement for it) — see the /sync and /metrics routes, which
+        // maintain stepsManual/stepsFit separately for exactly this so
+        // combining them here can never double-count either side.
         const todayLog = prefs.healthLog?.[today] || null;
-        const todaySteps = rawTodaySteps || todayLog?.steps || 0;
+        const todaySteps = rawTodaySteps + (todayLog?.stepsManual || 0);
         const hr = rawHr || todayLog?.heartRate || null;
         const sl = rawSl || todayLog?.sleep || null;
         const cal = rawCal || todayLog?.calories || null;
@@ -692,6 +697,10 @@ export async function getHealthData(user) {
             goal: stepGoal,
             pct: Math.min(100, Math.round((todaySteps / stepGoal) * 100)),
           },
+          // Fit's own reading before combining with the manual portion — the
+          // /metrics route persists this separately as stepsFit so it can
+          // recombine with stepsManual later without double-counting.
+          rawFitSteps: rawTodaySteps,
           sleep: sl
             ? {
                 value: sl,
@@ -717,13 +726,17 @@ export async function getHealthData(user) {
         fitErr.message,
       );
     }
-    // Fit is connected but auth client unavailable — return empty shell so UI shows connected state
+    // Fit is connected but auth client unavailable — return empty shell so UI
+    // shows connected state. No live Fit reading is available here, so fall
+    // back to today's last-known (already-combined) total instead of
+    // hardcoding 0, which would otherwise blank out real logged data.
+    const fallbackToday = prefs.healthLog?.[today] || {};
     return {
       period: "today",
       lastUpdated: new Date().toISOString(),
       source: "google_fit",
       heartRate: null,
-      steps: { value: 0, goal: 10000, pct: 0 },
+      steps: { value: fallbackToday.steps || 0, goal: 10000, pct: 0 },
       sleep: null,
       calories: null,
       weight: null,

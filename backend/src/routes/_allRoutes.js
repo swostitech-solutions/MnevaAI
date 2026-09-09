@@ -2063,7 +2063,13 @@ healthRouter.get("/metrics", async (req, res) => {
         ...existing,
         source: existing.source || "google_fit",
         lastSynced: data.lastUpdated,
-        steps: data.steps?.value || existing.steps || null,
+        // steps is additive (manual + Fit, see /sync above) — data.rawFitSteps
+        // is Fit's OWN reading before combination, so re-adding the existing
+        // manual portion here can't double-count what's already inside
+        // data.steps.value (which getHealthData already combined for display).
+        stepsFit: data.rawFitSteps ?? existing.stepsFit ?? 0,
+        stepsManual: existing.stepsManual || 0,
+        steps: (data.rawFitSteps ?? existing.stepsFit ?? 0) + (existing.stepsManual || 0),
         heartRate: data.heartRate?.value || existing.heartRate || null,
         sleep: data.sleep?.value || existing.sleep || null,
         calories: data.calories?.consumed || existing.calories || null,
@@ -2169,8 +2175,20 @@ healthRouter.post("/sync", async (req, res) => {
       lastSynced: new Date().toISOString(),
       date: today,
     };
-    // vitals
-    merge(synced, "steps", steps);
+    // Steps is additive, not overwritten: manually logging e.g. a walk
+    // Google Fit didn't see should add to today's total, not replace
+    // whatever Fit already contributed (and vice versa — see the /metrics
+    // auto-log below, which does the same combination the other direction).
+    // stepsManual/stepsFit are tracked separately so re-combining on a later
+    // update from either source never double-counts the other's share.
+    if (steps != null) {
+      const todayLogExisting = prefs.healthLog?.[today] || {};
+      const stepsManual = Number(steps);
+      const stepsFit = todayLogExisting.stepsFit || 0;
+      synced.stepsManual = stepsManual;
+      synced.stepsFit = stepsFit;
+      synced.steps = stepsManual + stepsFit;
+    }
     merge(synced, "heartRate", heartRate);
     merge(synced, "bloodPressureSystolic", bloodPressureSystolic);
     merge(synced, "bloodPressureDiastolic", bloodPressureDiastolic);
