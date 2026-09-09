@@ -10,13 +10,14 @@ import Svg, { Circle } from 'react-native-svg';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useSocket } from '../services/socket';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const SPEND_COLORS = ['#1F9A5A', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623', '#9B72FF', '#06B6D4'];
 
 // A small multi-segment donut — reused for the Spending breakdown and the
 // Portfolio holdings allocation, since both are "share of a total" data.
-function DonutChart({ data, size = 128, strokeWidth = 18, centerLabel, centerSub }) {
+function DonutChart({ data, size = 128, strokeWidth = 18, centerLabel, centerSub, theme, styles }) {
   const total = data.reduce((sum, d) => sum + (d.value || 0), 0);
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -24,7 +25,7 @@ function DonutChart({ data, size = 128, strokeWidth = 18, centerLabel, centerSub
   return (
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size}>
-        <Circle cx={size / 2} cy={size / 2} r={radius} stroke="#F0F1F4" strokeWidth={strokeWidth} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={theme.border} strokeWidth={strokeWidth} fill="none" />
         {total > 0 && data.map((d, i) => {
           if (!d.value) return null;
           const segLen = (d.value / total) * circumference;
@@ -69,6 +70,8 @@ export default function Finance({ navigation }) {
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const { on } = useSocket();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
 
   const [bills, setBills] = useState([]);
   const [portfolio, setPortfolio] = useState(null);
@@ -207,7 +210,7 @@ export default function Finance({ navigation }) {
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#1F9A5A" colors={['#1F9A5A']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.accent} colors={[theme.accent]} />}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -298,6 +301,8 @@ export default function Finance({ navigation }) {
                     data={holdingsChartData}
                     centerLabel={`₹${((portfolio.totalCurrent || 0) / 1000).toFixed(1)}k`}
                     centerSub="allocated"
+                    theme={theme}
+                    styles={styles}
                   />
                 </View>
                 {(portfolio.holdings || []).map((h, i) => (
@@ -337,6 +342,8 @@ export default function Finance({ navigation }) {
                   data={spendChartData}
                   centerLabel={`₹${((spending.total || 0) / 1000).toFixed(1)}k`}
                   centerSub="spent"
+                  theme={theme}
+                  styles={styles}
                 />
                 <View style={styles.legendCol}>
                   {(spending.categories || []).map((cat, i) => {
@@ -375,7 +382,7 @@ export default function Finance({ navigation }) {
                   <Text style={styles.chooserOptionTitle}>{opt.label}</Text>
                   <Text style={styles.chooserOptionSub}>{opt.sub}</Text>
                 </View>
-                <Feather name="chevron-right" size={18} color="#C7CBD3" />
+                <Feather name="chevron-right" size={18} color={theme.disabled} />
               </TouchableOpacity>
             ))}
           </View>
@@ -385,23 +392,23 @@ export default function Finance({ navigation }) {
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -409,69 +416,69 @@ export default function Finance({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
+  headerTitle: { fontSize: 28, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   statCard: {
-    width: '47.5%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14,
+    width: '47.5%', backgroundColor: theme.card, borderRadius: 16, padding: 14,
     shadowColor: '#0F1720', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
   },
-  statLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.3, marginBottom: 6 },
+  statLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.3, marginBottom: 6 },
   statValue: { fontSize: 22, fontWeight: '800', marginBottom: 2 },
-  statSub: { fontSize: 11, color: '#9AA1AE' },
+  statSub: { fontSize: 11, color: theme.faint },
   sectionCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4,
+    backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4,
     shadowColor: '#0F1720', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
   },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#14171F' },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: theme.text },
   emptyWrap: { alignItems: 'center', paddingVertical: 24, gap: 8 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  portfolioReturn: { fontSize: 13, fontWeight: '800', color: '#1F9A5A' },
-  portfolioSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F9FAFC', borderRadius: 12, padding: 12, marginBottom: 14 },
+  emptyText: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 19 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  portfolioReturn: { fontSize: 13, fontWeight: '800', color: theme.accent },
+  portfolioSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: theme.surfaceAlt, borderRadius: 12, padding: 12, marginBottom: 14 },
   portfolioStat: { alignItems: 'center' },
-  portfolioStatLabel: { fontSize: 10, color: '#9AA1AE', fontWeight: '600', marginBottom: 4 },
+  portfolioStatLabel: { fontSize: 10, color: theme.faint, fontWeight: '600', marginBottom: 4 },
   portfolioStatValue: { fontSize: 14, fontWeight: '800' },
   holdingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   holdingTextWrap: { flex: 1 },
-  holdingName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  holdingSub: { fontSize: 11, color: '#9AA1AE' },
+  holdingName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  holdingSub: { fontSize: 11, color: theme.faint },
   holdingRight: { alignItems: 'flex-end' },
   holdingReturn: { fontSize: 13, fontWeight: '800', marginBottom: 2 },
-  holdingCurrent: { fontSize: 12, color: '#6B7280' },
-  savingsRate: { fontSize: 12, fontWeight: '700', color: '#1F9A5A' },
+  holdingCurrent: { fontSize: 12, color: theme.muted },
+  savingsRate: { fontSize: 12, fontWeight: '700', color: theme.accent },
   spendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
 
   donutCenter: { alignItems: 'center', justifyContent: 'center' },
-  donutCenterLabel: { fontSize: 15, fontWeight: '800', color: '#14171F' },
-  donutCenterSub: { fontSize: 10, color: '#9AA1AE', marginTop: 2 },
+  donutCenterLabel: { fontSize: 15, fontWeight: '800', color: theme.text },
+  donutCenterSub: { fontSize: 10, color: theme.faint, marginTop: 2 },
   donutRow: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8 },
   donutRowCentered: { alignItems: 'center', marginBottom: 16 },
   legendCol: { flex: 1, marginLeft: 20, gap: 10 },
   legendRow: { flexDirection: 'row', alignItems: 'center' },
-  legendName: { flex: 1, fontSize: 12, color: '#374151', fontWeight: '600', marginLeft: 6 },
-  legendPct: { fontSize: 11, color: '#9AA1AE', width: 32, textAlign: 'right' },
-  legendAmount: { fontSize: 12, fontWeight: '700', color: '#14171F', width: 76, textAlign: 'right', marginLeft: 6 },
+  legendName: { flex: 1, fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginLeft: 6 },
+  legendPct: { fontSize: 11, color: theme.faint, width: 32, textAlign: 'right' },
+  legendAmount: { fontSize: 12, fontWeight: '700', color: theme.text, width: 76, textAlign: 'right', marginLeft: 6 },
 
   barChartWrap: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 108, marginTop: 6, marginBottom: 4, paddingHorizontal: 2 },
   barChartCol: { flex: 1, alignItems: 'center' },
-  barChartTrack: { width: 26, height: 84, backgroundColor: '#F3F4F6', borderRadius: 13, justifyContent: 'flex-end', overflow: 'hidden' },
+  barChartTrack: { width: 26, height: 84, backgroundColor: theme.soft, borderRadius: 13, justifyContent: 'flex-end', overflow: 'hidden' },
   barChartFill: { width: '100%', borderRadius: 13 },
-  barChartLabel: { fontSize: 10, color: '#9AA1AE', fontWeight: '700', marginTop: 8, textAlign: 'center' },
+  barChartLabel: { fontSize: 10, color: theme.faint, fontWeight: '700', marginTop: 8, textAlign: 'center' },
 
   chooserOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   chooserIconGrad: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  chooserOptionTitle: { fontSize: 15, fontWeight: '700', color: '#14171F' },
-  chooserOptionSub: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
-  overviewAmount: { fontSize: 14, fontWeight: '800', color: '#14171F' },
-  overviewAmountSub: { fontSize: 11, color: '#9AA1AE', marginTop: 1 },
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  chooserOptionTitle: { fontSize: 15, fontWeight: '700', color: theme.text },
+  chooserOptionSub: { fontSize: 12, color: theme.faint, marginTop: 1 },
+  overviewAmount: { fontSize: 14, fontWeight: '800', color: theme.text },
+  overviewAmountSub: { fontSize: 11, color: theme.faint, marginTop: 1 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

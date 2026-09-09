@@ -1889,6 +1889,18 @@ dashboardRouter.get("/brief", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// Cross-module summary — Communications, Priorities, Family, Health, Finance
+// in one response. Backs the AI's get_full_summary tool and is callable
+// directly for testing / a future scheduled daily-digest job.
+dashboardRouter.get("/full-summary", async (req, res) => {
+  try {
+    const { buildFullSummary } = await import("../services/fullSummary.js");
+    const summary = await buildFullSummary(req.user.id);
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 dashboardRouter.get("/sidebar-counts", async (req, res) => {
   try {
     const userId = req.user.id;
@@ -3164,13 +3176,24 @@ trustRouter.get("/settings", async (req, res) => {
 });
 
 trustRouter.patch("/settings", async (req, res) => {
-  const { autonomy, privacy, notifications: notifPrefs } = req.body;
+  const { autonomy, privacy, notifications: notifPrefs, notificationLeadTimes } = req.body;
   const user = await userStore.getById(req.user.id);
   const prefs = user?.preferences || {};
   if (autonomy) prefs.autonomy = { ...(prefs.autonomy || {}), ...autonomy };
   if (privacy) prefs.privacy = { ...(prefs.privacy || {}), ...privacy };
   if (notifPrefs)
     prefs.notifications = { ...(prefs.notifications || {}), ...notifPrefs };
+  if (Array.isArray(notificationLeadTimes)) {
+    // How many advance-reminder pushes fire before an important item is due,
+    // and how many minutes ahead each one fires — user-configurable, capped
+    // so a bad client payload can't schedule an unbounded reminder storm.
+    const cleaned = [...new Set(
+      notificationLeadTimes
+        .map((n) => parseInt(n, 10))
+        .filter((n) => Number.isFinite(n) && n > 0 && n <= 10080), // max 1 week ahead
+    )].sort((a, b) => b - a).slice(0, 5);
+    prefs.notificationLeadTimes = cleaned;
+  }
   await prisma.user.update({
     where: { id: req.user.id },
     data: { preferences: prefs },

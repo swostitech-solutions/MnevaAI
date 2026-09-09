@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -17,7 +18,7 @@ const AVATAR_COLORS = [
   ['#E0546E','#C8405A'], ['#F5A623','#E8943A'], ['#9B72FF','#7C5CE8'],
 ];
 
-function Avatar({ name, photoUrl, size = 46 }) {
+function Avatar({ name, photoUrl, size = 46, styles }) {
   const idx    = (name?.charCodeAt(0) || 0) % AVATAR_COLORS.length;
   const colors = AVATAR_COLORS[idx];
   const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -28,7 +29,7 @@ function Avatar({ name, photoUrl, size = 46 }) {
   );
 }
 
-function ContactDetailModal({ contact, visible, onClose }) {
+function ContactDetailModal({ contact, visible, onClose, theme, styles }) {
   if (!contact) return null;
   const rows = [
     contact.phone       && { icon: 'phone',      label: 'Phone',        value: contact.phone,       action: () => Linking.openURL(`tel:${contact.phone}`) },
@@ -48,7 +49,7 @@ function ContactDetailModal({ contact, visible, onClose }) {
           <View style={styles.sheetHandle} />
           {/* Hero */}
           <View style={styles.detailHero}>
-            <Avatar name={contact.displayName} size={72} />
+            <Avatar name={contact.displayName} size={72} styles={styles} />
             <Text style={styles.detailName}>{contact.displayName}</Text>
             {contact.jobTitle || contact.organization ? (
               <Text style={styles.detailRole}>
@@ -59,31 +60,31 @@ function ContactDetailModal({ contact, visible, onClose }) {
             <View style={styles.detailActions}>
               {contact.phone && (
                 <TouchableOpacity style={styles.detailActionBtn} onPress={() => Linking.openURL(`tel:${contact.phone}`)}>
-                  <View style={[styles.detailActionIcon, { backgroundColor: '#EFFDF6' }]}>
-                    <Feather name="phone" size={18} color="#1F9A5A" />
+                  <View style={[styles.detailActionIcon, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' }]}>
+                    <Feather name="phone" size={18} color={theme.accent} />
                   </View>
                   <Text style={styles.detailActionLabel}>Call</Text>
                 </TouchableOpacity>
               )}
               {contact.email && (
                 <TouchableOpacity style={styles.detailActionBtn} onPress={() => Linking.openURL(`mailto:${contact.email}`)}>
-                  <View style={[styles.detailActionIcon, { backgroundColor: '#EEEDFE' }]}>
-                    <Feather name="mail" size={18} color="#615FF8" />
+                  <View style={[styles.detailActionIcon, { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE' }]}>
+                    <Feather name="mail" size={18} color={theme.accentAlt} />
                   </View>
                   <Text style={styles.detailActionLabel}>Email</Text>
                 </TouchableOpacity>
               )}
               {contact.phone && (
                 <TouchableOpacity style={styles.detailActionBtn} onPress={() => Linking.openURL(`sms:${contact.phone}`)}>
-                  <View style={[styles.detailActionIcon, { backgroundColor: '#EAF3FD' }]}>
-                    <Feather name="message-circle" size={18} color="#4FA6E8" />
+                  <View style={[styles.detailActionIcon, { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD' }]}>
+                    <Feather name="message-circle" size={18} color={theme.info} />
                   </View>
                   <Text style={styles.detailActionLabel}>Message</Text>
                 </TouchableOpacity>
               )}
               {contact.phone && (
                 <TouchableOpacity style={styles.detailActionBtn} onPress={() => Linking.openURL(`whatsapp://send?phone=${contact.phone.replace(/\D/g, '')}`)}>
-                  <View style={[styles.detailActionIcon, { backgroundColor: '#E8FDF0' }]}>
+                  <View style={[styles.detailActionIcon, { backgroundColor: theme.isDark ? 'rgba(37,211,102,0.16)' : '#E8FDF0' }]}>
                     <Feather name="message-square" size={18} color="#25D366" />
                   </View>
                   <Text style={styles.detailActionLabel}>WhatsApp</Text>
@@ -103,7 +104,7 @@ function ContactDetailModal({ contact, visible, onClose }) {
                 activeOpacity={row.action ? 0.6 : 1}
               >
                 <View style={styles.detailRowIcon}>
-                  <Feather name={row.icon} size={15} color="#6B7280" />
+                  <Feather name={row.icon} size={15} color={theme.muted} />
                 </View>
                 <View style={styles.detailRowText}>
                   <Text style={styles.detailRowLabel}>{row.label}</Text>
@@ -111,7 +112,7 @@ function ContactDetailModal({ contact, visible, onClose }) {
                     {row.value}
                   </Text>
                 </View>
-                {row.action && <Feather name="chevron-right" size={14} color="#C7CBD3" />}
+                {row.action && <Feather name="chevron-right" size={14} color={theme.disabled} />}
               </TouchableOpacity>
             ))}
             {/* All phones */}
@@ -134,6 +135,8 @@ function ContactDetailModal({ contact, visible, onClose }) {
 
 export default function Contacts({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { width } = useWindowDimensions();
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight  = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
@@ -303,7 +306,7 @@ export default function Contacts({ navigation }) {
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <View style={styles.connectScreen}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <LinearGradient colors={['#4FA6E8', '#2E86C8']} style={styles.connectIcon}>
             <Feather name="users" size={32} color="#FFFFFF" />
@@ -334,7 +337,7 @@ export default function Contacts({ navigation }) {
 
   const renderContact = ({ item: c }) => (
     <TouchableOpacity style={styles.contactRow} onPress={() => openDetail(c)} activeOpacity={0.7}>
-      <Avatar name={c.displayName} size={44} />
+      <Avatar name={c.displayName} size={44} styles={styles} />
       <View style={styles.contactText}>
         <Text style={styles.contactName} numberOfLines={1}>{c.displayName}</Text>
         <Text style={styles.contactSub} numberOfLines={1}>
@@ -344,12 +347,12 @@ export default function Contacts({ navigation }) {
       <View style={styles.contactActions}>
         {c.phone && (
           <TouchableOpacity style={styles.contactActionBtn} onPress={() => Linking.openURL(`tel:${c.phone}`)}>
-            <Feather name="phone" size={14} color="#1F9A5A" />
+            <Feather name="phone" size={14} color={theme.accent} />
           </TouchableOpacity>
         )}
         {c.email && (
           <TouchableOpacity style={styles.contactActionBtn} onPress={() => Linking.openURL(`mailto:${c.email}`)}>
-            <Feather name="mail" size={14} color="#615FF8" />
+            <Feather name="mail" size={14} color={theme.accentAlt} />
           </TouchableOpacity>
         )}
       </View>
@@ -369,36 +372,36 @@ export default function Contacts({ navigation }) {
       {/* Header */}
       <View style={[styles.header, { paddingHorizontal: horizontalPad }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Contacts</Text>
           {!loading && <Text style={styles.headerSub}>{total > 0 ? `${total.toLocaleString()} contacts` : `${contacts.length} loaded`}</Text>}
         </View>
-        <View style={[styles.headerBadge, { backgroundColor: '#EAF3FD' }]}>
-          <Feather name="users" size={18} color="#4FA6E8" />
+        <View style={[styles.headerBadge, { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD' }]}>
+          <Feather name="users" size={18} color={theme.info} />
         </View>
       </View>
 
       {/* Search bar */}
       <View style={[styles.searchWrap, { marginHorizontal: horizontalPad }]}>
-        <Feather name="search" size={16} color="#9AA1AE" style={styles.searchIcon} />
+        <Feather name="search" size={16} color={theme.faint} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search by name, email or phone…"
-          placeholderTextColor="#9AA1AE"
+          placeholderTextColor={theme.placeholder}
           value={query}
           onChangeText={setQuery}
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
-        {searching && <ActivityIndicator size="small" color="#4FA6E8" style={{ marginRight: 10 }} />}
+        {searching && <ActivityIndicator size="small" color={theme.info} style={{ marginRight: 10 }} />}
       </View>
 
       {/* List */}
       {loading && !refreshing ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color="#4FA6E8" />
+          <ActivityIndicator size="large" color={theme.info} />
           <Text style={styles.loadingText}>Syncing contacts…</Text>
         </View>
       ) : (
@@ -411,7 +414,7 @@ export default function Contacts({ navigation }) {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); loadContacts(true, query); }}
-              tintColor="#4FA6E8" colors={['#4FA6E8']}
+              tintColor={theme.info} colors={[theme.info]}
             />
           }
           renderItem={({ item }) => {
@@ -420,10 +423,10 @@ export default function Contacts({ navigation }) {
           }}
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
-          ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color="#4FA6E8" style={{ marginVertical: 16 }} /> : null}
+          ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={theme.info} style={{ marginVertical: 16 }} /> : null}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
-              <Feather name="users" size={32} color="#C7CBD3" />
+              <Feather name="users" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>{query ? 'No contacts found' : 'No contacts yet'}</Text>
             </View>
           }
@@ -433,99 +436,99 @@ export default function Contacts({ navigation }) {
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
 
-      <ContactDetailModal contact={selected} visible={detailVisible} onClose={() => setDetailVisible(false)} />
+      <ContactDetailModal contact={selected} visible={detailVisible} onClose={() => setDetailVisible(false)} theme={theme} styles={styles} />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   // Header
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 16, paddingBottom: 12, gap: 12 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1 },
-  headerTitle: { fontSize: 26, fontWeight: '800', color: '#14171F' },
-  headerSub: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: theme.text },
+  headerSub: { fontSize: 12, color: theme.faint, marginTop: 1 },
   headerBadge: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   // Search
-  searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 16, paddingHorizontal: 14, height: 48 },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 16, marginBottom: 16, paddingHorizontal: 14, height: 48 },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 15, color: '#14171F' },
+  searchInput: { flex: 1, fontSize: 15, color: theme.text },
   // Contact row
-  contactRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, marginBottom: 8, gap: 12 },
+  contactRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 16, padding: 12, marginBottom: 8, gap: 12 },
   avatar: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#FFFFFF', fontWeight: '800' },
   contactText: { flex: 1 },
-  contactName: { fontSize: 15, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  contactSub: { fontSize: 12, color: '#9AA1AE' },
+  contactName: { fontSize: 15, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  contactSub: { fontSize: 12, color: theme.faint },
   contactActions: { flexDirection: 'row', gap: 6 },
-  contactActionBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F5F6F8', alignItems: 'center', justifyContent: 'center' },
+  contactActionBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: theme.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   // Section header
   sectionHeader: { paddingVertical: 6, paddingHorizontal: 4, marginTop: 4 },
-  sectionHeaderText: { fontSize: 12, fontWeight: '800', color: '#9AA1AE', letterSpacing: 0.5 },
+  sectionHeaderText: { fontSize: 12, fontWeight: '800', color: theme.faint, letterSpacing: 0.5 },
   // Loading / empty
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: '#9AA1AE', fontWeight: '600' },
+  loadingText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 10 },
-  emptyText: { fontSize: 14, color: '#9AA1AE', fontWeight: '600' },
+  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
   // Connect screen
   connectScreen: { flex: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 20 },
   connectIcon: { width: 80, height: 80, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 32, marginBottom: 20 },
-  connectTitle: { fontSize: 26, fontWeight: '800', color: '#14171F', marginBottom: 10 },
-  connectSubtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-  connectFeatures: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, marginBottom: 28, gap: 12 },
+  connectTitle: { fontSize: 26, fontWeight: '800', color: theme.text, marginBottom: 10 },
+  connectSubtitle: { fontSize: 14, color: theme.muted, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  connectFeatures: { width: '100%', backgroundColor: theme.card, borderRadius: 20, padding: 20, marginBottom: 28, gap: 12 },
   connectFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  connectFeatureDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#4FA6E8' },
-  connectFeatureText: { fontSize: 14, color: '#374151', fontWeight: '500' },
+  connectFeatureDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: theme.info },
+  connectFeatureText: { fontSize: 14, color: theme.textSecondary, fontWeight: '500' },
   connectBtn: { width: '100%', borderRadius: 18, overflow: 'hidden', marginBottom: 14 },
   connectBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 17, gap: 10 },
   connectBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  connectNote: { fontSize: 12, color: '#9AA1AE', textAlign: 'center' },
+  connectNote: { fontSize: 12, color: theme.faint, textAlign: 'center' },
   // Detail modal
-  detailOverlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.55)', justifyContent: 'flex-end' },
-  detailSheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '88%' },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginTop: 12, marginBottom: 8 },
-  detailHero: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  detailName: { fontSize: 22, fontWeight: '800', color: '#14171F', marginTop: 14, marginBottom: 4 },
-  detailRole: { fontSize: 13, color: '#6B7280', marginBottom: 16 },
+  detailOverlay: { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
+  detailSheet: { backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '88%' },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, marginTop: 12, marginBottom: 8 },
+  detailHero: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: theme.border },
+  detailName: { fontSize: 22, fontWeight: '800', color: theme.text, marginTop: 14, marginBottom: 4 },
+  detailRole: { fontSize: 13, color: theme.muted, marginBottom: 16 },
   detailActions: { flexDirection: 'row', gap: 16 },
   detailActionBtn: { alignItems: 'center', gap: 6 },
   detailActionIcon: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  detailActionLabel: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+  detailActionLabel: { fontSize: 11, fontWeight: '600', color: theme.muted },
   detailRows: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
   detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
-  detailRowDivider: { borderBottomWidth: 1, borderBottomColor: '#F5F6F8' },
-  detailRowIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F5F6F8', alignItems: 'center', justifyContent: 'center' },
+  detailRowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  detailRowIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: theme.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   detailRowText: { flex: 1 },
-  detailRowLabel: { fontSize: 11, color: '#9AA1AE', fontWeight: '600', marginBottom: 2 },
-  detailRowValue: { fontSize: 14, color: '#14171F', fontWeight: '500' },
-  detailRowValueLink: { color: '#4FA6E8' },
+  detailRowLabel: { fontSize: 11, color: theme.faint, fontWeight: '600', marginBottom: 2 },
+  detailRowValue: { fontSize: 14, color: theme.text, fontWeight: '500' },
+  detailRowValueLink: { color: theme.info },
   detailExtraRow: { paddingVertical: 12 },
-  detailExtraLabel: { fontSize: 11, color: '#9AA1AE', fontWeight: '600', marginBottom: 6 },
-  detailExtraValue: { fontSize: 14, color: '#4FA6E8', fontWeight: '500', marginBottom: 4 },
+  detailExtraLabel: { fontSize: 11, color: theme.faint, fontWeight: '600', marginBottom: 6 },
+  detailExtraValue: { fontSize: 14, color: theme.info, fontWeight: '500', marginBottom: 4 },
   // Tab bar
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

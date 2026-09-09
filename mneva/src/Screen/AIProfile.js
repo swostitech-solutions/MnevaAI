@@ -9,8 +9,22 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
+
+// Converts a "#RRGGBB" brand color into a translucent rgba() for use as a
+// dark-mode icon-wrap tint — the flat pastel hexes below (sec.bg) were tuned
+// for a white background only and look like a solid, wrong-toned block once
+// the surface behind them goes dark.
+function hexToRgba(hex, alpha) {
+  const clean = (hex || '').replace('#', '');
+  const bigint = parseInt(clean, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // ── Section definitions ──────────────────────────────────────────────────────
 const SECTIONS = [
@@ -152,7 +166,10 @@ function getSectionFill(sec, formData) {
 }
 
 // ── Field components ─────────────────────────────────────────────────────────
-function ChipsField({ options, value, single, onChange }) {
+// These are module-level helper components repeated once per section/option,
+// so they take `styles`/`theme` as props instead of calling useTheme()
+// themselves — that would recreate the whole stylesheet on every row render.
+function ChipsField({ options, value, single, onChange, styles, theme }) {
   const selected = single ? value : (Array.isArray(value) ? value : []);
   return (
     <View style={styles.chipsWrap}>
@@ -175,15 +192,17 @@ function ChipsField({ options, value, single, onChange }) {
   );
 }
 
-function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
+function SectionCard({ sec, formData, onChange, onSave, saving, saved, styles, theme }) {
   const [open, setOpen] = useState(false);
   const fillPct = getSectionFill(sec, formData);
+  const tintBg = theme.isDark ? hexToRgba(sec.color, 0.16) : sec.bg;
+  const savedBg = theme.isDark ? hexToRgba(theme.accent, 0.16) : '#EFFDF6';
 
   return (
     <View style={styles.sectionCard}>
       {/* Header — tap to expand */}
       <TouchableOpacity style={styles.sectionHeader} onPress={() => setOpen(o => !o)} activeOpacity={0.8}>
-        <View style={[styles.sectionIconWrap, { backgroundColor: sec.bg }]}>
+        <View style={[styles.sectionIconWrap, { backgroundColor: tintBg }]}>
           <Feather name={sec.icon} size={18} color={sec.color} />
         </View>
         <View style={styles.sectionHeaderText}>
@@ -192,12 +211,12 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
             {saved ? '✓ Saved' : fillPct > 0 ? `${fillPct}% filled` : 'Tap to fill'}
           </Text>
         </View>
-        <View style={[styles.sectionPctBadge, { backgroundColor: saved ? '#EFFDF6' : fillPct > 0 ? sec.bg : '#F3F4F6' }]}>
-          <Text style={[styles.sectionPctText, { color: saved ? '#1F9A5A' : fillPct > 0 ? sec.color : '#9AA1AE' }]}>
+        <View style={[styles.sectionPctBadge, { backgroundColor: saved ? savedBg : fillPct > 0 ? tintBg : theme.soft }]}>
+          <Text style={[styles.sectionPctText, { color: saved ? theme.accent : fillPct > 0 ? sec.color : theme.faint }]}>
             {saved ? '✓' : `${fillPct}%`}
           </Text>
         </View>
-        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#C7CBD3" style={{ marginLeft: 8 }} />
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color={theme.disabled} style={{ marginLeft: 8 }} />
       </TouchableOpacity>
 
       {/* Expanded fields */}
@@ -213,7 +232,7 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
                   value={formData[f.name] || ''}
                   onChangeText={v => onChange(f.name, v)}
                   placeholder={f.placeholder}
-                  placeholderTextColor="#9AA1AE"
+                  placeholderTextColor={theme.placeholder}
                 />
               )}
 
@@ -223,7 +242,7 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
                   value={formData[f.name] || ''}
                   onChangeText={v => onChange(f.name, v)}
                   placeholder={f.placeholder}
-                  placeholderTextColor="#9AA1AE"
+                  placeholderTextColor={theme.placeholder}
                   multiline
                   numberOfLines={3}
                 />
@@ -235,6 +254,8 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
                   value={formData[f.name]}
                   single={f.single}
                   onChange={v => onChange(f.name, v)}
+                  styles={styles}
+                  theme={theme}
                 />
               )}
 
@@ -243,7 +264,7 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
                   <Switch
                     value={!!formData[f.name]}
                     onValueChange={v => onChange(f.name, v)}
-                    trackColor={{ false: '#E3E5EA', true: sec.color }}
+                    trackColor={{ false: theme.borderStrong, true: sec.color }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
@@ -277,6 +298,8 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved }) {
 export default function AIProfile({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
 
@@ -374,12 +397,12 @@ export default function AIProfile({ navigation }) {
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadProfile(true); }} tintColor="#1F9A5A" colors={['#1F9A5A']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadProfile(true); }} tintColor={theme.accent} colors={[theme.accent]} />}
       >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>AI Profile</Text>
@@ -424,6 +447,8 @@ export default function AIProfile({ navigation }) {
               onSave={onSave}
               saving={saving === sec.key}
               saved={!!saved[sec.key]}
+              styles={styles}
+              theme={theme}
             />
           ))
         )}
@@ -450,23 +475,23 @@ export default function AIProfile({ navigation }) {
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -474,15 +499,15 @@ export default function AIProfile({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
 
   header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
+  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
 
   progressCard: { borderRadius: 22, padding: 20, marginBottom: 20 },
   progressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', marginBottom: 16 },
@@ -493,29 +518,29 @@ const styles = StyleSheet.create({
   progressBarFill: { height: 6, backgroundColor: '#FFFFFF', borderRadius: 3 },
   progressHint: { fontSize: 12, color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
 
-  sectionSkeleton: { height: 68, backgroundColor: '#FFFFFF', borderRadius: 18, marginBottom: 10 },
+  sectionSkeleton: { height: 68, backgroundColor: theme.card, borderRadius: 18, marginBottom: 10 },
 
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 18, marginBottom: 10, overflow: 'hidden' },
+  sectionCard: { backgroundColor: theme.card, borderRadius: 18, marginBottom: 10, overflow: 'hidden' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', padding: 16 },
   sectionIconWrap: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   sectionHeaderText: { flex: 1 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#14171F' },
-  sectionSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: theme.text },
+  sectionSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   sectionPctBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   sectionPctText: { fontSize: 11, fontWeight: '800' },
 
-  sectionBody: { paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: '#F0F1F4' },
+  sectionBody: { paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: theme.border },
 
   fieldWrap: { marginTop: 16 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#374151', marginBottom: 8 },
+  fieldLabel: { fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginBottom: 8 },
 
-  textInput: { backgroundColor: '#F5F6F8', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#14171F', borderWidth: 1, borderColor: '#E4E7EF' },
+  textInput: { backgroundColor: theme.surfaceAlt, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: theme.text, borderWidth: 1, borderColor: theme.borderStrong },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
 
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4E7EF' },
-  chipActive: { backgroundColor: '#615FF8', borderColor: '#615FF8' },
-  chipText: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.borderStrong },
+  chipActive: { backgroundColor: theme.accentAlt, borderColor: theme.accentAlt },
+  chipText: { fontSize: 12, fontWeight: '600', color: theme.muted },
   chipTextActive: { color: '#FFFFFF' },
 
   toggleRow: { alignItems: 'flex-start' },
@@ -525,9 +550,9 @@ const styles = StyleSheet.create({
   saveBtnGrad: { paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
   saveBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
 
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 
   toast: {
     position: 'absolute',

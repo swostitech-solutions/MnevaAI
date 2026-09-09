@@ -76,20 +76,30 @@ onboardingRouter.post('/section', async (req, res) => {
     if (!section || !data) return res.status(400).json({ error: 'section and data required' })
     if (!SECTIONS.includes(section)) return res.status(400).json({ error: 'invalid section' })
 
-    const existing = await prisma.userProfile.findUnique({ where: { userId: req.user.id } })
-    const completedSections = Array.isArray(existing?.completedSections) ? [...existing.completedSections] : []
-    if (!completedSections.includes(section)) completedSections.push(section)
-
     const fields = pickSectionFields(section, data)
 
-    // Merge new fields with existing profile to calculate accurate completion
-    const mergedProfile = { ...(existing || {}), ...fields }
-    const completionPct = calcCompletionPct(mergedProfile)
-
-    const profile = await prisma.userProfile.upsert({
+    // Write only this section's own fields first. Prisma's update/create
+    // touches just the listed columns, so this can never clobber fields a
+    // concurrently-saving section already wrote.
+    let profile = await prisma.userProfile.upsert({
       where:  { userId: req.user.id },
-      update: { ...fields, completedSections, completionPct },
-      create: { userId: req.user.id, ...fields, completedSections, completionPct },
+      update: fields,
+      create: { userId: req.user.id, ...fields },
+    })
+
+    // Recompute completedSections/completionPct from the row as it stands
+    // AFTER this write, not from a pre-write snapshot taken before it.
+    // Computing from a stale snapshot (the old approach) meant that saving
+    // sections back-to-back could persist a completionPct that undercounted
+    // fields another section had just finished writing — leaving the score
+    // stuck a few points short of 100% even once every field was filled.
+    const completedSections = Array.isArray(profile.completedSections) ? [...profile.completedSections] : []
+    if (!completedSections.includes(section)) completedSections.push(section)
+    const completionPct = calcCompletionPct(profile)
+
+    profile = await prisma.userProfile.update({
+      where: { userId: req.user.id },
+      data: { completedSections, completionPct },
     })
 
     // Emit real-time update so Home screen ring refreshes instantly

@@ -7,12 +7,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../api/client';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const ACCENT = '#1A73E8';
 
 export default function TasksScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
 
   const [tasks, setTasks]           = useState([]);
@@ -97,7 +100,7 @@ export default function TasksScreen({ navigation }) {
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <Text style={styles.topBarTitle}>Tasks</Text>
           <View style={{ width: 40 }} />
@@ -139,7 +142,7 @@ export default function TasksScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.topBarTitle}>Tasks</Text>
@@ -173,7 +176,7 @@ export default function TasksScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTasks(); }} tintColor={ACCENT} colors={[ACCENT]} />}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Feather name="check-square" size={32} color="#C7CBD3" />
+              <Feather name="check-square" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>No tasks found</Text>
             </View>
           }
@@ -189,7 +192,7 @@ export default function TasksScreen({ navigation }) {
                   <Text style={[styles.taskTitle, isDone && styles.taskTitleDone]} numberOfLines={2}>{item.title}</Text>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 3 }}>
                     {item.listTitle && <Text style={styles.taskMeta}>{item.listTitle}</Text>}
-                    {due && <Text style={[styles.taskMeta, { color: '#E0546E' }]}>Due {due}</Text>}
+                    {due && <Text style={[styles.taskMeta, { color: theme.danger }]}>Due {due}</Text>}
                   </View>
                 </View>
               </View>
@@ -199,47 +202,47 @@ export default function TasksScreen({ navigation }) {
       )}
 
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}><Ionicons name="home" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>HOME</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}><Feather name="calendar" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>PRIORITIES</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}><Feather name="mic" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>ASK AI</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}><Feather name="folder" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>SPACE</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}><Feather name="user" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>PROFILE</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}><Ionicons name="home" size={22} color={theme.faint} /><Text style={styles.tabLabel}>HOME</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}><Feather name="calendar" size={22} color={theme.faint} /><Text style={styles.tabLabel}>PRIORITIES</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}><Feather name="mic" size={22} color={theme.faint} /><Text style={styles.tabLabel}>ASK AI</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}><Feather name="folder" size={22} color={theme.faint} /><Text style={styles.tabLabel}>SPACE</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}><Feather name="user" size={22} color={theme.faint} /><Text style={styles.tabLabel}>PROFILE</Text></TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  topBarTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  topBarSub: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
-  disconnectBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#F3F4F6' },
-  disconnectText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
+  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  topBarTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  topBarSub: { fontSize: 12, color: theme.faint, marginTop: 1 },
+  disconnectBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: theme.soft },
+  disconnectText: { fontSize: 12, fontWeight: '700', color: theme.muted },
   filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E3E5EA' },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.borderStrong },
   chipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  chipText: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  chipText: { fontSize: 12, fontWeight: '600', color: theme.muted },
   chipTextActive: { color: '#FFFFFF' },
-  taskRow: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, marginBottom: 8, gap: 12 },
+  taskRow: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: theme.card, borderRadius: 14, padding: 14, marginBottom: 8, gap: 12 },
   taskRowDone: { opacity: 0.5 },
   taskCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: ACCENT, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   taskCheckDone: { backgroundColor: ACCENT, borderColor: ACCENT },
-  taskTitle: { fontSize: 14, fontWeight: '700', color: '#14171F' },
-  taskTitleDone: { textDecorationLine: 'line-through', color: '#9AA1AE' },
-  taskMeta: { fontSize: 11, color: '#9AA1AE', fontWeight: '500' },
+  taskTitle: { fontSize: 14, fontWeight: '700', color: theme.text },
+  taskTitleDone: { textDecorationLine: 'line-through', color: theme.faint },
+  taskMeta: { fontSize: 11, color: theme.faint, fontWeight: '500' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 10 },
-  emptyText: { fontSize: 14, color: '#9AA1AE', fontWeight: '600' },
+  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
   connectScreen: { flex: 1, alignItems: 'center', paddingHorizontal: 28 },
   connectIcon: { width: 80, height: 80, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 32, marginBottom: 20 },
-  connectTitle: { fontSize: 26, fontWeight: '800', color: '#14171F', marginBottom: 10 },
-  connectSubtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  connectTitle: { fontSize: 26, fontWeight: '800', color: theme.text, marginBottom: 10 },
+  connectSubtitle: { fontSize: 14, color: theme.muted, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
   connectBtn: { width: '100%', borderRadius: 18, overflow: 'hidden', marginBottom: 14 },
   connectBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 17, gap: 10 },
   connectBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  connectNote: { fontSize: 12, color: '#9AA1AE', textAlign: 'center' },
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  connectNote: { fontSize: 12, color: theme.faint, textAlign: 'center' },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

@@ -10,6 +10,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
+import { useTheme } from '../../context/ThemeContext';
 import DateField from './DateField';
 
 const STATUSES = ['Active', 'Matured', 'Closed', 'Withdrawn Early'];
@@ -44,6 +45,8 @@ const ACCENT = ['#06B6D4', '#0891B2'];
 export default function FDScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { on } = useSocket();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [fixedDeposits, setFixedDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -152,7 +155,7 @@ export default function FDScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>{showForm ? (isEditing ? 'Edit Fixed Deposit' : 'Add Fixed Deposit') : 'Fixed Deposits'}</Text>
@@ -160,7 +163,7 @@ export default function FDScreen({ navigation }) {
         </View>
         {showForm && isEditing ? (
           <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-            <Feather name="trash-2" size={18} color="#E0546E" />
+            <Feather name="trash-2" size={18} color={theme.danger} />
           </TouchableOpacity>
         ) : !showForm ? (
           <TouchableOpacity onPress={openAdd}>
@@ -176,13 +179,13 @@ export default function FDScreen({ navigation }) {
           <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>FD Name <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. Retirement Fund FD" placeholderTextColor="#9AA1AE" value={form.name} onChangeText={v => setField('name', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Retirement Fund FD" placeholderTextColor={theme.placeholder} value={form.name} onChangeText={v => setField('name', v)} />
 
             <Text style={styles.fieldLabel}>Bank / Institution <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC Bank" placeholderTextColor="#9AA1AE" value={form.bankName} onChangeText={v => setField('bankName', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC Bank" placeholderTextColor={theme.placeholder} value={form.bankName} onChangeText={v => setField('bankName', v)} />
 
             <Text style={styles.fieldLabel}>FD Account / Certificate Number</Text>
-            <TextInput style={styles.input} placeholder="e.g. ••••4521" placeholderTextColor="#9AA1AE" value={form.accountNumber} onChangeText={v => setField('accountNumber', v)} />
+            <TextInput style={styles.input} placeholder="e.g. ••••4521" placeholderTextColor={theme.placeholder} value={form.accountNumber} onChangeText={v => setField('accountNumber', v)} />
 
             <Text style={styles.fieldLabel}>Status</Text>
             <View style={styles.chipRow}>
@@ -197,12 +200,12 @@ export default function FDScreen({ navigation }) {
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Principal Amount (₹) <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.principalAmount} onChangeText={v => setField('principalAmount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.principalAmount} onChangeText={v => setField('principalAmount', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Interest Rate (%) <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} placeholder="e.g. 7.1" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.interestRate} onChangeText={v => setField('interestRate', v)} />
+                <TextInput style={styles.input} placeholder="e.g. 7.1" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.interestRate} onChangeText={v => setField('interestRate', v)} />
               </View>
             </View>
 
@@ -229,17 +232,17 @@ export default function FDScreen({ navigation }) {
             <DateField label="Maturity Date" required value={form.maturityDate} onChange={v => setField('maturityDate', v)} />
 
             <Text style={styles.fieldLabel}>Tenure (months)</Text>
-            <TextInput style={styles.input} placeholder="e.g. 12" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.tenureMonths} onChangeText={v => setField('tenureMonths', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 12" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.tenureMonths} onChangeText={v => setField('tenureMonths', v)} />
 
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Maturity Amount (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.maturityAmount} onChangeText={v => setField('maturityAmount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.maturityAmount} onChangeText={v => setField('maturityAmount', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Interest Earned (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.interestEarned} onChangeText={v => setField('interestEarned', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.interestEarned} onChangeText={v => setField('interestEarned', v)} />
               </View>
             </View>
 
@@ -254,10 +257,10 @@ export default function FDScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Nominee</Text>
-            <TextInput style={styles.input} placeholder="e.g. Family member name" placeholderTextColor="#9AA1AE" value={form.nominee} onChangeText={v => setField('nominee', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Family member name" placeholderTextColor={theme.placeholder} value={form.nominee} onChangeText={v => setField('nominee', v)} />
 
             <Text style={styles.fieldLabel}>Payment Account</Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor="#9AA1AE" value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor={theme.placeholder} value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
 
             <Text style={styles.sectionLabel}>OPTIONAL</Text>
             <Text style={styles.fieldLabel}>Premature Withdrawal Allowed?</Text>
@@ -270,14 +273,14 @@ export default function FDScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Premature Withdrawal Penalty (%)</Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.prematureWithdrawalPenalty} onChangeText={v => setField('prematureWithdrawalPenalty', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.prematureWithdrawalPenalty} onChangeText={v => setField('prematureWithdrawalPenalty', v)} />
 
             <Text style={styles.fieldLabel}>Notes</Text>
-            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
+            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
 
             <Text style={styles.fieldLabel}>Attach Document</Text>
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} disabled={uploading}>
-              {uploading ? <ActivityIndicator size="small" color="#0891B2" /> : <Feather name="paperclip" size={16} color="#0891B2" />}
+              {uploading ? <ActivityIndicator size="small" color={theme.info} /> : <Feather name="paperclip" size={16} color={theme.info} />}
               <Text style={styles.attachBtnText}>{form.attachmentName || 'Attach FD receipt / certificate'}</Text>
             </TouchableOpacity>
 
@@ -293,13 +296,13 @@ export default function FDScreen({ navigation }) {
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#06B6D4" colors={['#06B6D4']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.info} colors={[theme.info]} />}
         >
           {loading ? (
             [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
           ) : fixedDeposits.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="lock" size={32} color="#C7CBD3" />
+              <Feather name="lock" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>No fixed deposits added yet. Tap + to add one.</Text>
             </View>
           ) : (
@@ -307,7 +310,7 @@ export default function FDScreen({ navigation }) {
               {fixedDeposits.map((fd, i) => (
                 <TouchableOpacity key={fd.id} style={[styles.row, i !== fixedDeposits.length - 1 && styles.rowDivider]} onPress={() => openEdit(fd)} activeOpacity={0.7}>
                   <View style={styles.iconWrap}>
-                    <Feather name="lock" size={16} color="#06B6D4" />
+                    <Feather name="lock" size={16} color={theme.info} />
                   </View>
                   <View style={styles.rowTextWrap}>
                     <Text style={styles.rowName}>{fd.name}</Text>
@@ -315,11 +318,11 @@ export default function FDScreen({ navigation }) {
                   </View>
                   <View style={styles.rowRight}>
                     <Text style={styles.rowAmount}>₹{(fd.principalAmount || 0).toLocaleString('en-IN')}</Text>
-                    <View style={[styles.badge, { backgroundColor: fd.status === 'Active' ? '#ECFEFF' : '#F3F4F6' }]}>
-                      <Text style={[styles.badgeText, { color: fd.status === 'Active' ? '#0891B2' : '#6B7280' }]}>{fd.status}</Text>
+                    <View style={[styles.badge, { backgroundColor: fd.status === 'Active' ? (theme.isDark ? 'rgba(107,184,240,0.16)' : '#ECFEFF') : theme.soft }]}>
+                      <Text style={[styles.badgeText, { color: fd.status === 'Active' ? theme.info : theme.muted }]}>{fd.status}</Text>
                     </View>
                   </View>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" style={{ marginLeft: 8 }} />
+                  <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -330,47 +333,47 @@ export default function FDScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   addBtnGrad: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
   scrollContent: { paddingHorizontal: 20 },
-  skeleton: { height: 60, backgroundColor: '#F0F1F4', borderRadius: 14, marginBottom: 10 },
+  skeleton: { height: 60, backgroundColor: theme.border, borderRadius: 14, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
+  emptyText: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 19 },
 
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  sectionCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowTextWrap: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowSub: { fontSize: 12, color: '#9AA1AE' },
+  rowName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowSub: { fontSize: 12, color: theme.faint },
   rowRight: { alignItems: 'flex-end', gap: 4 },
-  rowAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  rowAmount: { fontSize: 15, fontWeight: '800', color: theme.text },
   badge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 10, fontWeight: '800' },
 
   formScroll: { paddingHorizontal: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#E0546E' },
-  input: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  required: { color: theme.danger },
+  input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  selectChipActive: { backgroundColor: '#CFFAFE', borderColor: '#06B6D4' },
-  selectChipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  selectChipTextActive: { color: '#0E7490' },
+  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  selectChipActive: { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#CFFAFE', borderColor: theme.info },
+  selectChipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  selectChipTextActive: { color: theme.info },
 
-  attachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#CFFAFE', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
-  attachBtnText: { fontSize: 13, fontWeight: '600', color: '#0891B2', flex: 1 },
+  attachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#CFFAFE', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
+  attachBtnText: { fontSize: 13, fontWeight: '600', color: theme.info, flex: 1 },
 
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },

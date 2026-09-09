@@ -7,6 +7,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch } from '../../api/client';
+import { useTheme } from '../../context/ThemeContext';
 import { usePet } from './PetContext';
 import { useSocket } from '../../services/socket';
 
@@ -16,6 +17,8 @@ const EXERCISE_TYPES = ['Walk', 'Exercise', 'Playtime'];
 const FREQ_OPTIONS   = ['Daily', 'Every 2 days', 'Weekly', 'Bi-weekly', 'Monthly'];
 
 export default function PetRoutineTab({ horizontalPad, insets }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { activePet, reload } = usePet();
   const { on } = useSocket();
   const [saving, setSaving] = useState(false);
@@ -152,22 +155,22 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
       >
         {!activePet && (
           <View style={styles.noPetBanner}>
-            <Feather name="info" size={14} color="#9AA1AE" />
+            <Feather name="info" size={14} color={theme.faint} />
             <Text style={styles.noPetText}>Add a pet profile first to set up routines</Text>
           </View>
         )}
         {saving && (
           <View style={styles.savingBar}>
-            <ActivityIndicator size="small" color="#F5A623" />
+            <ActivityIndicator size="small" color={theme.warning} />
             <Text style={styles.savingText}>Saving & updating Mneva AI memory...</Text>
           </View>
         )}
 
         {/* ── Feeding ── */}
-        <SectionHeader label="NUTRITION & FEEDING" color="#1F9A5A" bg="#EFFDF6"
-          onAdd={openEditFeed} addLabel={feeding ? 'Edit' : 'Add'} addIcon={feeding ? 'edit-2' : 'plus'} />
+        <SectionHeader label="NUTRITION & FEEDING" color={theme.accent} bg={theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'}
+          onAdd={openEditFeed} addLabel={feeding ? 'Edit' : 'Add'} addIcon={feeding ? 'edit-2' : 'plus'} styles={styles} />
         <View style={styles.card}>
-          {!feeding ? <EmptyRow icon="coffee" text="No feeding schedule added" /> : (
+          {!feeding ? <EmptyRow icon="coffee" text="No feeding schedule added" theme={theme} styles={styles} /> : (
             [
               { label: 'Food', value: feeding.foodName, icon: 'coffee' },
               { label: 'Quantity', value: feeding.qty, icon: 'bar-chart-2' },
@@ -177,7 +180,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
               { label: 'Diet Restrictions', value: feeding.dietRestrictions, icon: 'alert-circle' },
             ].filter(r => r.value).map((row, i, arr) => (
               <View key={i} style={[styles.listRow, i < arr.length - 1 && styles.divider]}>
-                <View style={[styles.rowIcon, { backgroundColor: '#EFFDF6' }]}><Feather name={row.icon} size={13} color="#1F9A5A" /></View>
+                <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' }]}><Feather name={row.icon} size={13} color={theme.accent} /></View>
                 <Text style={styles.rowLabel}>{row.label}</Text>
                 <Text style={styles.rowValue}>{row.value}</Text>
               </View>
@@ -186,55 +189,55 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         </View>
 
         {/* ── Grooming ── */}
-        <SectionHeader label="GROOMING" color="#9B72FF" bg="#F3EFFE" onAdd={() => setGroomModal(true)} />
+        <SectionHeader label="GROOMING" color={theme.accentAlt} bg={theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'} onAdd={() => setGroomModal(true)} styles={styles} />
         <View style={styles.card}>
-          {groomings.length === 0 ? <EmptyRow icon="scissors" text="No grooming schedule added" /> : groomings.map((g, i) => (
+          {groomings.length === 0 ? <EmptyRow icon="scissors" text="No grooming schedule added" theme={theme} styles={styles} /> : groomings.map((g, i) => (
             <View key={g.id} style={[styles.listRow, i < groomings.length - 1 && styles.divider]}>
-              <View style={[styles.rowIcon, { backgroundColor: '#F3EFFE' }]}><Feather name="scissors" size={14} color="#9B72FF" /></View>
+              <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE' }]}><Feather name="scissors" size={14} color={theme.accentAlt} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{g.type}</Text>
                 <Text style={styles.rowMeta}>{[g.freq, g.nextDate ? `Next: ${g.nextDate}` : null].filter(Boolean).join(' · ')}</Text>
               </View>
               <TouchableOpacity onPress={() => patch('groomings', groomings.filter(x => x.id !== g.id))} style={{ padding: 4 }}>
-                <Feather name="x" size={14} color="#9AA1AE" />
+                <Feather name="x" size={14} color={theme.faint} />
               </TouchableOpacity>
             </View>
           ))}
         </View>
 
         {/* ── Exercise ── */}
-        <SectionHeader label="ACTIVITY & EXERCISE" color="#4FA6E8" bg="#EAF3FD" onAdd={() => setExModal(true)} />
+        <SectionHeader label="ACTIVITY & EXERCISE" color={theme.info} bg={theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'} onAdd={() => setExModal(true)} styles={styles} />
         <View style={styles.card}>
-          {exercises.length === 0 ? <EmptyRow icon="zap" text="No activity schedule added" /> : exercises.map((e, i) => (
+          {exercises.length === 0 ? <EmptyRow icon="zap" text="No activity schedule added" theme={theme} styles={styles} /> : exercises.map((e, i) => (
             <View key={e.id} style={[styles.listRow, i < exercises.length - 1 && styles.divider]}>
-              <View style={[styles.rowIcon, { backgroundColor: '#EAF3FD' }]}><Feather name="zap" size={14} color="#4FA6E8" /></View>
+              <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD' }]}><Feather name="zap" size={14} color={theme.info} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{e.type}</Text>
                 <Text style={styles.rowMeta}>{[e.duration, e.freq, e.time].filter(Boolean).join(' · ')}</Text>
               </View>
               <TouchableOpacity onPress={() => patch('exercises', exercises.filter(x => x.id !== e.id))} style={{ padding: 4 }}>
-                <Feather name="x" size={14} color="#9AA1AE" />
+                <Feather name="x" size={14} color={theme.faint} />
               </TouchableOpacity>
             </View>
           ))}
         </View>
 
         {/* ── Reminders ── */}
-        <SectionHeader label="REMINDERS" color="#E0546E" bg="#FCEAED" onAdd={() => setRemModal(true)} />
+        <SectionHeader label="REMINDERS" color={theme.danger} bg={theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'} onAdd={() => setRemModal(true)} styles={styles} />
         <View style={styles.card}>
           {remLoading ? (
-            <View style={styles.emptyRow}><ActivityIndicator size="small" color="#F5A623" /></View>
-          ) : reminders.length === 0 ? <EmptyRow icon="bell" text="No reminders set" /> : reminders.map((r, i) => (
+            <View style={styles.emptyRow}><ActivityIndicator size="small" color={theme.warning} /></View>
+          ) : reminders.length === 0 ? <EmptyRow icon="bell" text="No reminders set" theme={theme} styles={styles} /> : reminders.map((r, i) => (
             <View key={r.id} style={[styles.listRow, i < reminders.length - 1 && styles.divider]}>
-              <TouchableOpacity onPress={() => toggleReminder(r)} style={[styles.rowIcon, { backgroundColor: r.done ? '#EFFDF6' : '#FCEAED' }]}>
-                <Feather name={r.done ? 'check-circle' : 'bell'} size={14} color={r.done ? '#1F9A5A' : '#E0546E'} />
+              <TouchableOpacity onPress={() => toggleReminder(r)} style={[styles.rowIcon, { backgroundColor: r.done ? (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') : (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]}>
+                <Feather name={r.done ? 'check-circle' : 'bell'} size={14} color={r.done ? theme.accent : theme.danger} />
               </TouchableOpacity>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, r.done && { textDecorationLine: 'line-through', color: '#9AA1AE' }]}>{r.title}</Text>
+                <Text style={[styles.rowTitle, r.done && { textDecorationLine: 'line-through', color: theme.faint }]}>{r.title}</Text>
                 <Text style={styles.rowMeta}>{[r.type, r.remindAt ? new Date(r.remindAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : null].filter(Boolean).join(' · ')}</Text>
               </View>
               <TouchableOpacity onPress={() => deleteReminder(r)} style={{ padding: 4 }}>
-                <Feather name="x" size={14} color="#9AA1AE" />
+                <Feather name="x" size={14} color={theme.faint} />
               </TouchableOpacity>
             </View>
           ))}
@@ -243,39 +246,39 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
 
       {/* ── Feeding Modal ── */}
       <SheetModal visible={feedModal} onClose={() => setFeedModal(false)} insets={insets}
-        title="Nutrition & Feeding" gradColors={['#1F9A5A', '#3CB37A']} icon="coffee">
+        title="Nutrition & Feeding" gradColors={['#1F9A5A', '#3CB37A']} icon="coffee" styles={styles}>
         <Text style={styles.fieldLabel}>Food Name / Brand <Text style={styles.req}>*</Text></Text>
-        <TextInput style={styles.input} placeholder="e.g. Royal Canin" placeholderTextColor="#9AA1AE"
+        <TextInput style={styles.input} placeholder="e.g. Royal Canin" placeholderTextColor={theme.placeholder}
           value={feedForm.foodName} onChangeText={v => setFeedForm(f => ({ ...f, foodName: v }))} />
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Quantity per meal</Text>
-            <TextInput style={styles.input} placeholder="e.g. 200g" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="e.g. 200g" placeholderTextColor={theme.placeholder}
               value={feedForm.qty} onChangeText={v => setFeedForm(f => ({ ...f, qty: v }))} />
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Times per day</Text>
-            <TextInput style={styles.input} placeholder="e.g. 2" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="e.g. 2" placeholderTextColor={theme.placeholder}
               value={feedForm.times} onChangeText={v => setFeedForm(f => ({ ...f, times: v }))} keyboardType="numeric" />
           </View>
         </View>
         <Text style={styles.fieldLabel}>Feeding Schedule</Text>
-        <TextInput style={styles.input} placeholder="e.g. 8 AM and 7 PM" placeholderTextColor="#9AA1AE"
+        <TextInput style={styles.input} placeholder="e.g. 8 AM and 7 PM" placeholderTextColor={theme.placeholder}
           value={feedForm.schedule} onChangeText={v => setFeedForm(f => ({ ...f, schedule: v }))} />
         <Text style={styles.fieldLabel}>Treats</Text>
-        <TextInput style={styles.input} placeholder="e.g. Milk bone, 2/day" placeholderTextColor="#9AA1AE"
+        <TextInput style={styles.input} placeholder="e.g. Milk bone, 2/day" placeholderTextColor={theme.placeholder}
           value={feedForm.treats} onChangeText={v => setFeedForm(f => ({ ...f, treats: v }))} />
         <Text style={styles.fieldLabel}>Dietary Restrictions</Text>
         <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top' }]} placeholder="e.g. No chicken, grain-free..."
-          placeholderTextColor="#9AA1AE" value={feedForm.dietRestrictions}
+          placeholderTextColor={theme.placeholder} value={feedForm.dietRestrictions}
           onChangeText={v => setFeedForm(f => ({ ...f, dietRestrictions: v }))} multiline />
-        <SaveBtn onPress={saveFeeding} disabled={!feedForm.foodName.trim()} colors={['#1F9A5A', '#3CB37A']} label="Save Feeding Schedule" />
+        <SaveBtn onPress={saveFeeding} disabled={!feedForm.foodName.trim()} colors={['#1F9A5A', '#3CB37A']} label="Save Feeding Schedule" styles={styles} />
       </SheetModal>
 
       {/* ── Grooming Modal ── */}
       <SheetModal visible={groomModal} onClose={() => setGroomModal(false)} insets={insets}
-        title="Add Grooming" gradColors={['#9B72FF', '#7C5CE8']} icon="scissors">
+        title="Add Grooming" gradColors={['#9B72FF', '#7C5CE8']} icon="scissors" styles={styles}>
         <Text style={styles.fieldLabel}>Grooming Type <Text style={styles.req}>*</Text></Text>
         <View style={styles.chipRow}>
           {GROOM_TYPES.map(g => (
@@ -295,25 +298,25 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Last Done</Text>
-            <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder}
               value={groomForm.lastDate} onChangeText={v => setGroomForm(f => ({ ...f, lastDate: v }))} keyboardType="numeric" />
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Next Due</Text>
-            <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder}
               value={groomForm.nextDate} onChangeText={v => setGroomForm(f => ({ ...f, nextDate: v }))} keyboardType="numeric" />
           </View>
         </View>
         <Text style={styles.fieldLabel}>Notes</Text>
-        <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor="#9AA1AE"
+        <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder}
           value={groomForm.notes} onChangeText={v => setGroomForm(f => ({ ...f, notes: v }))} />
-        <SaveBtn onPress={saveGroom} disabled={!groomForm.type} colors={['#9B72FF', '#7C5CE8']} label="Save Grooming" />
+        <SaveBtn onPress={saveGroom} disabled={!groomForm.type} colors={['#9B72FF', '#7C5CE8']} label="Save Grooming" styles={styles} />
       </SheetModal>
 
       {/* ── Exercise Modal ── */}
       <SheetModal visible={exModal} onClose={() => setExModal(false)} insets={insets}
-        title="Add Activity" gradColors={['#4FA6E8', '#2E86C8']} icon="zap">
+        title="Add Activity" gradColors={['#4FA6E8', '#2E86C8']} icon="zap" styles={styles}>
         <Text style={styles.fieldLabel}>Activity Type <Text style={styles.req}>*</Text></Text>
         <View style={styles.chipRow}>
           {EXERCISE_TYPES.map(e => (
@@ -325,13 +328,13 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Duration</Text>
-            <TextInput style={styles.input} placeholder="e.g. 30 mins" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="e.g. 30 mins" placeholderTextColor={theme.placeholder}
               value={exForm.duration} onChangeText={v => setExForm(f => ({ ...f, duration: v }))} />
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Time of day</Text>
-            <TextInput style={styles.input} placeholder="e.g. 7 AM" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="e.g. 7 AM" placeholderTextColor={theme.placeholder}
               value={exForm.time} onChangeText={v => setExForm(f => ({ ...f, time: v }))} />
           </View>
         </View>
@@ -343,12 +346,12 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
             </TouchableOpacity>
           ))}
         </View>
-        <SaveBtn onPress={saveExercise} disabled={!exForm.type} colors={['#4FA6E8', '#2E86C8']} label="Save Activity" />
+        <SaveBtn onPress={saveExercise} disabled={!exForm.type} colors={['#4FA6E8', '#2E86C8']} label="Save Activity" styles={styles} />
       </SheetModal>
 
       {/* ── Reminder Modal ── */}
       <SheetModal visible={remModal} onClose={() => setRemModal(false)} insets={insets}
-        title="Add Reminder" gradColors={['#E0546E', '#C8405A']} icon="bell">
+        title="Add Reminder" gradColors={['#E0546E', '#C8405A']} icon="bell" styles={styles}>
         <Text style={styles.fieldLabel}>Reminder Type <Text style={styles.req}>*</Text></Text>
         <View style={styles.chipRow}>
           {REMINDER_TYPES.map(t => (
@@ -358,31 +361,31 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
           ))}
         </View>
         <Text style={styles.fieldLabel}>Title <Text style={styles.req}>*</Text></Text>
-        <TextInput style={styles.input} placeholder="e.g. Rabies booster due" placeholderTextColor="#9AA1AE"
+        <TextInput style={styles.input} placeholder="e.g. Rabies booster due" placeholderTextColor={theme.placeholder}
           value={remForm.title} onChangeText={v => setRemForm(f => ({ ...f, title: v }))} />
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Date (YYYY-MM-DD)</Text>
-            <TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor={theme.placeholder}
               value={remForm.date} onChangeText={v => setRemForm(f => ({ ...f, date: v }))} keyboardType="numeric" />
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.fieldLabel}>Time (HH:MM)</Text>
-            <TextInput style={styles.input} placeholder="09:00" placeholderTextColor="#9AA1AE"
+            <TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder}
               value={remForm.time} onChangeText={v => setRemForm(f => ({ ...f, time: v }))} keyboardType="numeric" />
           </View>
         </View>
         <Text style={styles.fieldLabel}>Notes</Text>
-        <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor="#9AA1AE"
+        <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder}
           value={remForm.notes} onChangeText={v => setRemForm(f => ({ ...f, notes: v }))} />
-        <SaveBtn onPress={saveReminder} disabled={!remForm.title.trim() || !remForm.type} colors={['#E0546E', '#C8405A']} label="Save Reminder" />
+        <SaveBtn onPress={saveReminder} disabled={!remForm.title.trim() || !remForm.type} colors={['#E0546E', '#C8405A']} label="Save Reminder" styles={styles} />
       </SheetModal>
     </>
   );
 }
 
-function SectionHeader({ label, color, bg, onAdd, addLabel = 'Add', addIcon = 'plus' }) {
+function SectionHeader({ label, color, bg, onAdd, addLabel = 'Add', addIcon = 'plus', styles }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionLabel}>{label}</Text>
@@ -394,16 +397,16 @@ function SectionHeader({ label, color, bg, onAdd, addLabel = 'Add', addIcon = 'p
   );
 }
 
-function EmptyRow({ icon, text }) {
+function EmptyRow({ icon, text, theme, styles }) {
   return (
     <View style={styles.emptyRow}>
-      <Feather name={icon} size={18} color="#C7CBD3" />
+      <Feather name={icon} size={18} color={theme.disabled} />
       <Text style={styles.emptyRowText}>{text}</Text>
     </View>
   );
 }
 
-function SheetModal({ visible, onClose, insets, title, gradColors, icon, children }) {
+function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -425,7 +428,7 @@ function SheetModal({ visible, onClose, insets, title, gradColors, icon, childre
   );
 }
 
-function SaveBtn({ onPress, disabled, colors, label }) {
+function SaveBtn({ onPress, disabled, colors, label, styles }) {
   return (
     <TouchableOpacity style={[styles.saveBtn, disabled && styles.saveBtnDisabled]} disabled={disabled} onPress={onPress}>
       <LinearGradient colors={colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
@@ -436,40 +439,40 @@ function SaveBtn({ onPress, disabled, colors, label }) {
   );
 }
 
-const styles = StyleSheet.create({
-  noPetBanner:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F5F6F8', borderRadius: 12, padding: 12, marginBottom: 16 },
-  noPetText:      { fontSize: 13, color: '#9AA1AE', fontWeight: '600' },
-  savingBar:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F3EFFE', borderRadius: 10, padding: 10, marginBottom: 12 },
-  savingText:     { fontSize: 12, color: '#7C3AED', fontWeight: '600' },
+const createStyles = (theme) => StyleSheet.create({
+  noPetBanner:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.surfaceAlt, borderRadius: 12, padding: 12, marginBottom: 16 },
+  noPetText:      { fontSize: 13, color: theme.faint, fontWeight: '600' },
+  savingBar:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', borderRadius: 10, padding: 10, marginBottom: 12 },
+  savingText:     { fontSize: 12, color: theme.accentAlt, fontWeight: '600' },
   sectionHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  sectionLabel:   { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5 },
+  sectionLabel:   { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5 },
   sectionAddBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   sectionAddText: { fontSize: 12, fontWeight: '700' },
-  card:           { backgroundColor: '#FFFFFF', borderRadius: 18, paddingHorizontal: 14, marginBottom: 20 },
+  card:           { backgroundColor: theme.card, borderRadius: 18, paddingHorizontal: 14, marginBottom: 20 },
   listRow:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, gap: 10 },
-  divider:        { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  divider:        { borderBottomWidth: 1, borderBottomColor: theme.border },
   rowIcon:        { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  rowTitle:       { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowMeta:        { fontSize: 12, color: '#9AA1AE' },
-  rowLabel:       { flex: 1, fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  rowValue:       { fontSize: 13, fontWeight: '700', color: '#14171F', maxWidth: '55%', textAlign: 'right' },
+  rowTitle:       { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowMeta:        { fontSize: 12, color: theme.faint },
+  rowLabel:       { flex: 1, fontSize: 13, color: theme.muted, fontWeight: '600' },
+  rowValue:       { fontSize: 13, fontWeight: '700', color: theme.text, maxWidth: '55%', textAlign: 'right' },
   emptyRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 20, justifyContent: 'center' },
-  emptyRowText:   { fontSize: 13, color: '#9AA1AE', fontWeight: '600' },
-  overlay:        { flex: 1, backgroundColor: 'rgba(14,17,26,0.55)', justifyContent: 'flex-end' },
-  sheet:          { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
-  sheetHandle:    { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginBottom: 20 },
+  emptyRowText:   { fontSize: 13, color: theme.faint, fontWeight: '600' },
+  overlay:        { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
+  sheet:          { backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
+  sheetHandle:    { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, marginBottom: 20 },
   sheetHeader:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   sheetIcon:      { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  sheetTitle:     { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  fieldLabel:     { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  req:            { color: '#E0546E' },
-  input:          { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  sheetTitle:     { fontSize: 20, fontWeight: '800', color: theme.text },
+  fieldLabel:     { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  req:            { color: theme.danger },
+  input:          { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   rowFields:      { flexDirection: 'row' },
   chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  chip:           { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  chipActive:     { backgroundColor: '#FEF3C7', borderColor: '#F5A623' },
-  chipText:       { fontSize: 13, fontWeight: '600', color: '#374151' },
-  chipTextActive: { color: '#F5A623' },
+  chip:           { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  chipActive:     { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderColor: theme.warning },
+  chipText:       { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  chipTextActive: { color: theme.warning },
   saveBtn:        { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled:{ opacity: 0.45 },
   saveBtnGrad:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },

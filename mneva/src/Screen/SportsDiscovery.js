@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch } from "../api/client";
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_HEIGHT = 50;
 
@@ -162,7 +163,7 @@ const MATCHES = {
 };
 
 // ── Match Card ──────────────────────────────────────────────────────────────
-function MatchCard({ match, sportColors }) {
+function MatchCard({ match, sportColors, theme, matchStyles }) {
   const isLive     = match.status === "live";
   const isUpcoming = match.status === "upcoming";
 
@@ -216,7 +217,7 @@ function MatchCard({ match, sportColors }) {
       {/* Match info */}
       <View style={matchStyles.infoRow}>
         <Feather name={isLive ? "radio" : isUpcoming ? "clock" : "check-circle"} size={11}
-          color={isLive ? "#EF4444" : isUpcoming ? "#F97316" : "#10B981"} />
+          color={isLive ? theme.danger : isUpcoming ? theme.warning : theme.accent} />
         <Text style={matchStyles.infoText}>{match.info}</Text>
       </View>
     </View>
@@ -225,7 +226,7 @@ function MatchCard({ match, sportColors }) {
 
 // ── Main Screen ──────────────────────────────────────────────────────────────
 // ── AI Chat Panel ────────────────────────────────────────────────────────────
-function AIChatPanel({ currentContext }) {
+function AIChatPanel({ currentContext, theme, chatStyles }) {
   const [open, setOpen]         = useState(false);
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
@@ -278,11 +279,11 @@ User question: ${content}`;
             <Feather name="cpu" size={12} color="#fff" />
           </LinearGradient>
           <Text style={chatStyles.toggleTitle}>Mneva AI</Text>
-          {loading && <ActivityIndicator size="small" color="#F97316" style={{ marginLeft: 8 }} />}
+          {loading && <ActivityIndicator size="small" color={theme.warning} style={{ marginLeft: 8 }} />}
         </View>
         <View style={chatStyles.toggleRight}>
           <Text style={chatStyles.toggleHint}>{open ? "Close" : "Ask about sports"}</Text>
-          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color="#F97316" />
+          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color={theme.warning} />
         </View>
       </TouchableOpacity>
 
@@ -308,7 +309,7 @@ User question: ${content}`;
           ))}
           {loading && (
             <View style={[chatStyles.bubble, chatStyles.bubbleAi]}>
-              <ActivityIndicator size="small" color="#F97316" />
+              <ActivityIndicator size="small" color={theme.warning} />
             </View>
           )}
         </ScrollView>
@@ -317,7 +318,7 @@ User question: ${content}`;
           <TextInput
             style={chatStyles.input}
             placeholder="Ask about scores, fixtures, players…"
-            placeholderTextColor="#9AA1AE"
+            placeholderTextColor={theme.placeholder}
             value={input}
             onChangeText={setInput}
             onSubmitEditing={sendMessage}
@@ -338,6 +339,10 @@ User question: ${content}`;
 
 export default function SportsDiscovery({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
+  const matchStyles = createMatchStyles(theme);
+  const chatStyles = createChatStyles(theme);
   const [selected, setSelected]   = useState(null);
   const [activeTab, setActiveTab] = useState("Live");
   const [aiMatches, setAiMatches] = useState(null);
@@ -453,7 +458,7 @@ export default function SportsDiscovery({ navigation }) {
                     style={[styles.matchTab, activeTab === tab && { borderBottomColor: sportColors[0], borderBottomWidth: 2 }]}
                   >
                     {tab === "Live" && (
-                      <View style={[styles.tabLiveDot, { backgroundColor: activeTab === "Live" ? sportColors[0] : "#9AA1AE" }]} />
+                      <View style={[styles.tabLiveDot, { backgroundColor: activeTab === "Live" ? sportColors[0] : theme.faint }]} />
                     )}
                     <Text style={[styles.matchTabText, activeTab === tab && { color: sportColors[0] }]}>
                       {tab}
@@ -470,14 +475,14 @@ export default function SportsDiscovery({ navigation }) {
               {/* AI source label */}
               {!aiLoading && !aiError && aiMatches && (
                 <View style={styles.aiSourceRow}>
-                  <Feather name="cpu" size={10} color="#6C47FF" />
+                  <Feather name="cpu" size={10} color={theme.accentAlt} />
                   <Text style={styles.aiSourceText}>Powered by Mneva AI · DeepSeek</Text>
                 </View>
               )}
               {!aiLoading && aiError && (
                 <View style={styles.aiSourceRow}>
-                  <Feather name="alert-circle" size={10} color="#F97316" />
-                  <Text style={[styles.aiSourceText, { color: "#F97316" }]}>Showing cached data · AI unavailable</Text>
+                  <Feather name="alert-circle" size={10} color={theme.warning} />
+                  <Text style={[styles.aiSourceText, { color: theme.warning }]}>Showing cached data · AI unavailable</Text>
                 </View>
               )}
 
@@ -489,13 +494,13 @@ export default function SportsDiscovery({ navigation }) {
                 </View>
               ) : matches.length === 0 ? (
                 <View style={styles.emptyBox}>
-                  <Feather name="inbox" size={28} color="#C4C9D4" />
+                  <Feather name="inbox" size={28} color={theme.disabled} />
                   <Text style={styles.emptyText}>No {activeTab.toLowerCase()} matches found</Text>
                 </View>
               ) : (
                 <View style={styles.matchList}>
                   {matches.map((match, i) => (
-                    <MatchCard key={match.id || i} match={match} sportColors={sportColors} />
+                    <MatchCard key={match.id || i} match={match} sportColors={sportColors} theme={theme} matchStyles={matchStyles} />
                   ))}
                 </View>
               )}
@@ -507,28 +512,28 @@ export default function SportsDiscovery({ navigation }) {
       </ScrollView>
 
       {/* ── AI Chat Panel ── */}
-      <AIChatPanel currentContext={aiContext} />
+      <AIChatPanel currentContext={aiContext} theme={theme} chatStyles={chatStyles} />
 
       {/* ── Bottom tab bar ── */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Priorities")}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("AskAI")}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Space")}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -538,17 +543,17 @@ export default function SportsDiscovery({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F4F3FA" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
 
   // Header
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, backgroundColor: "#F4F3FA" },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
-  headerLabel: { fontSize: 10, fontWeight: "800", color: "#8B83C0", letterSpacing: 1.1, textTransform: "uppercase" },
-  headerTitle: { fontSize: 24, fontWeight: "800", color: "#14171F", letterSpacing: -0.4, marginTop: 2 },
-  livePill: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#FFF7ED" },
-  liveDot: { height: 6, width: 6, borderRadius: 3, backgroundColor: "#F97316" },
-  liveText: { fontSize: 9, fontWeight: "800", color: "#F97316", letterSpacing: 0.7 },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, backgroundColor: theme.bg },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.card, alignItems: "center", justifyContent: "center" },
+  headerLabel: { fontSize: 10, fontWeight: "800", color: theme.faint, letterSpacing: 1.1, textTransform: "uppercase" },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: theme.text, letterSpacing: -0.4, marginTop: 2 },
+  livePill: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : "#FFF7ED" },
+  liveDot: { height: 6, width: 6, borderRadius: 3, backgroundColor: theme.warning },
+  liveText: { fontSize: 9, fontWeight: "800", color: theme.warning, letterSpacing: 0.7 },
 
   // Agent strip
   agentStrip: { marginHorizontal: 16, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, flexDirection: "row", alignItems: "center", marginBottom: 20 },
@@ -557,87 +562,87 @@ const styles = StyleSheet.create({
   agentBold: { color: "#FFFFFF", fontWeight: "800" },
 
   content: { paddingHorizontal: 16 },
-  sectionLabel: { fontSize: 10, fontWeight: "800", color: "#8B83C0", letterSpacing: 1.1, textTransform: "uppercase", marginBottom: 14 },
+  sectionLabel: { fontSize: 10, fontWeight: "800", color: theme.faint, letterSpacing: 1.1, textTransform: "uppercase", marginBottom: 14 },
 
   // Grid
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
-  card: { width: "48%", backgroundColor: "#FFFFFF", borderRadius: 18, padding: 16, alignItems: "center", gap: 8, borderWidth: 1, borderColor: "#EBEBF5" },
-  cardActive: { borderColor: "#F97316", backgroundColor: "#FFF7ED", shadowColor: "#F97316", shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  card: { width: "48%", backgroundColor: theme.card, borderRadius: 18, padding: 16, alignItems: "center", gap: 8, borderWidth: 1, borderColor: theme.border },
+  cardActive: { borderColor: theme.warning, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : "#FFF7ED", shadowColor: "#F97316", shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   cardIcon: { width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center" },
-  selectedMark: { position: "absolute", top: 10, right: 10, backgroundColor: "#F97316", width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  cardTitle: { fontSize: 13, fontWeight: "800", color: "#14171F" },
-  cardTitleActive: { color: "#F97316" },
-  cardSub: { fontSize: 10, color: "#9AA1AE", fontWeight: "600" },
+  selectedMark: { position: "absolute", top: 10, right: 10, backgroundColor: theme.warning, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  cardTitle: { fontSize: 13, fontWeight: "800", color: theme.text },
+  cardTitleActive: { color: theme.warning },
+  cardSub: { fontSize: 10, color: theme.faint, fontWeight: "600" },
 
   // Tab bar
-  tabBar: { flexDirection: "row", backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EBEBF5", paddingTop: 10 },
+  tabBar: { flexDirection: "row", backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: "center" },
-  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 
   // Match tabs
-  tabRow: { flexDirection: "row", backgroundColor: "#FFFFFF", borderRadius: 14, marginBottom: 14, overflow: "hidden", borderWidth: 1, borderColor: "#EBEBF5" },
+  tabRow: { flexDirection: "row", backgroundColor: theme.card, borderRadius: 14, marginBottom: 14, overflow: "hidden", borderWidth: 1, borderColor: theme.border },
   matchTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 11, gap: 5, borderBottomWidth: 2, borderBottomColor: "transparent" },
-  matchTabText: { fontSize: 12, fontWeight: "800", color: "#9AA1AE" },
+  matchTabText: { fontSize: 12, fontWeight: "800", color: theme.faint },
   tabLiveDot: { width: 6, height: 6, borderRadius: 3 },
-  tabCount: { backgroundColor: "#EBEBF5", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  tabCount: { backgroundColor: theme.surfaceAlt, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   tabCountText: { fontSize: 9, fontWeight: "800", color: "#FFFFFF" },
 
   // Match list
   matchList: { gap: 12 },
   loadingBox: { alignItems: "center", paddingVertical: 40, gap: 12 },
-  loadingText: { fontSize: 12, color: "#9AA1AE", fontWeight: "600", textAlign: "center" },
+  loadingText: { fontSize: 12, color: theme.faint, fontWeight: "600", textAlign: "center" },
   emptyBox: { alignItems: "center", paddingVertical: 40, gap: 10 },
-  emptyText: { fontSize: 13, color: "#C4C9D4", fontWeight: "600" },
+  emptyText: { fontSize: 13, color: theme.disabled, fontWeight: "600" },
   aiSourceRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10 },
-  aiSourceText: { fontSize: 10, color: "#6C47FF", fontWeight: "700" },
+  aiSourceText: { fontSize: 10, color: theme.accentAlt, fontWeight: "700" },
 });
 
 // ── Match card styles ──────────────────────────────────────────────────────────────
-const matchStyles = StyleSheet.create({
-  card: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 16, shadowColor: "#6C47FF", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+const createMatchStyles = (theme) => StyleSheet.create({
+  card: { backgroundColor: theme.card, borderRadius: 18, padding: 16, shadowColor: "#6C47FF", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   topRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  venue: { fontSize: 10, color: "#9AA1AE", fontWeight: "600", flex: 1, marginRight: 8 },
-  liveBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FEF2F2", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  liveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#EF4444" },
-  liveBadgeText: { fontSize: 9, fontWeight: "800", color: "#EF4444", letterSpacing: 0.5 },
-  upcomingBadge: { backgroundColor: "#FFF7ED", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  upcomingBadgeText: { fontSize: 9, fontWeight: "800", color: "#F97316", letterSpacing: 0.5 },
-  resultBadge: { backgroundColor: "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  resultBadgeText: { fontSize: 9, fontWeight: "800", color: "#10B981", letterSpacing: 0.5 },
+  venue: { fontSize: 10, color: theme.faint, fontWeight: "600", flex: 1, marginRight: 8 },
+  liveBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : "#FEF2F2", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  liveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: theme.danger },
+  liveBadgeText: { fontSize: 9, fontWeight: "800", color: theme.danger, letterSpacing: 0.5 },
+  upcomingBadge: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : "#FFF7ED", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  upcomingBadgeText: { fontSize: 9, fontWeight: "800", color: theme.warning, letterSpacing: 0.5 },
+  resultBadge: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  resultBadgeText: { fontSize: 9, fontWeight: "800", color: theme.accent, letterSpacing: 0.5 },
   teamsRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   teamBlock: { flex: 1, alignItems: "flex-start", gap: 5 },
   teamAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   teamInitial: { fontSize: 16, fontWeight: "800", color: "#FFFFFF" },
-  teamName: { fontSize: 12, fontWeight: "800", color: "#14171F", maxWidth: 100 },
-  score: { fontSize: 15, fontWeight: "800", color: "#374151" },
-  scoreLive: { color: "#EF4444" },
+  teamName: { fontSize: 12, fontWeight: "800", color: theme.text, maxWidth: 100 },
+  score: { fontSize: 15, fontWeight: "800", color: theme.textSecondary },
+  scoreLive: { color: theme.danger },
   vsBlock: { alignItems: "center", gap: 4, paddingHorizontal: 8 },
-  vsText: { fontSize: 10, fontWeight: "800", color: "#C4C9D4", letterSpacing: 1 },
-  pulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#EF4444" },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 5, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#F3F4F6" },
-  infoText: { fontSize: 11, color: "#6B7280", fontWeight: "600" },
+  vsText: { fontSize: 10, fontWeight: "800", color: theme.disabled, letterSpacing: 1 },
+  pulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.danger },
+  infoRow: { flexDirection: "row", alignItems: "center", gap: 5, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border },
+  infoText: { fontSize: 11, color: theme.muted, fontWeight: "600" },
 });
 
 // ── Chat panel styles ────────────────────────────────────────────────────────────
-const chatStyles = StyleSheet.create({
-  wrapper:         { backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#E8E8F0" },
+const createChatStyles = (theme) => StyleSheet.create({
+  wrapper:         { backgroundColor: theme.card, borderTopWidth: 1, borderTopColor: theme.border },
   toggleBar:       { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 11 },
   toggleLeft:      { flexDirection: "row", alignItems: "center", gap: 8 },
   aiDot:           { width: 26, height: 26, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  toggleTitle:     { fontSize: 13, fontWeight: "800", color: "#14171F" },
+  toggleTitle:     { fontSize: 13, fontWeight: "800", color: theme.text },
   toggleRight:     { flexDirection: "row", alignItems: "center", gap: 5 },
-  toggleHint:      { fontSize: 11, color: "#F97316", fontWeight: "600" },
-  panel:           { backgroundColor: "#FFF7ED" },
+  toggleHint:      { fontSize: 11, color: theme.warning, fontWeight: "600" },
+  panel:           { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : "#FFF7ED" },
   quickChips:      { gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  quickChip:       { backgroundColor: "#FFFFFF", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#FED7AA" },
-  quickChipText:   { fontSize: 11, fontWeight: "700", color: "#F97316" },
+  quickChip:       { backgroundColor: theme.card, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: theme.isDark ? 'rgba(255,184,77,0.16)' : "#FED7AA" },
+  quickChipText:   { fontSize: 11, fontWeight: "700", color: theme.warning },
   msgScroll:       { flex: 1 },
   bubble:          { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8, maxWidth: "88%" },
-  bubbleAi:        { backgroundColor: "#FFFFFF", alignSelf: "flex-start", borderBottomLeftRadius: 4 },
-  bubbleUser:      { backgroundColor: "#F97316", alignSelf: "flex-end", borderBottomRightRadius: 4 },
-  bubbleTextAi:    { fontSize: 12.5, color: "#374151", lineHeight: 18 },
+  bubbleAi:        { backgroundColor: theme.card, alignSelf: "flex-start", borderBottomLeftRadius: 4 },
+  bubbleUser:      { backgroundColor: theme.warning, alignSelf: "flex-end", borderBottomRightRadius: 4 },
+  bubbleTextAi:    { fontSize: 12.5, color: theme.textSecondary, lineHeight: 18 },
   bubbleTextUser:  { fontSize: 12.5, color: "#FFFFFF", lineHeight: 18 },
-  inputRow:        { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#E8E8F0" },
-  input:           { flex: 1, backgroundColor: "#FFFFFF", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, color: "#14171F" },
-  sendBtn:         { width: 32, height: 32, borderRadius: 16, backgroundColor: "#F97316", alignItems: "center", justifyContent: "center" },
+  inputRow:        { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: theme.border },
+  input:           { flex: 1, backgroundColor: theme.card, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, color: theme.text },
+  sendBtn:         { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.warning, alignItems: "center", justifyContent: "center" },
 });

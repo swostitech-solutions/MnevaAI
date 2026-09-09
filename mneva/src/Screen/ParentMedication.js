@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 
 const FREQUENCIES = ['Once daily', 'Twice daily', 'Thrice daily', 'Every 8 hrs', 'Weekly', 'As needed'];
 const MEAL_TIMES  = ['Before meal', 'After meal', 'With meal', 'Empty stomach'];
@@ -23,6 +24,8 @@ const EMPTY_FORM = { medName: '', dosage: '', frequency: '', mealTime: '', paren
 export default function ParentMedication({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const pad = width < 360 ? 16 : 20;
   const { on } = useSocket();
 
@@ -123,7 +126,7 @@ export default function ParentMedication({ navigation }) {
       {/* Header */}
       <View style={[styles.header, { paddingHorizontal: pad }]}>
         <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>Parent Medication</Text>
@@ -138,7 +141,7 @@ export default function ParentMedication({ navigation }) {
 
       {loading ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color="#E0546E" />
+          <ActivityIndicator size="large" color={theme.danger} />
         </View>
       ) : (
         <ScrollView
@@ -163,7 +166,7 @@ export default function ParentMedication({ navigation }) {
           {/* AI Memory badge */}
           {medications.length > 0 && (
             <View style={styles.memoryBadge}>
-              <Feather name="cpu" size={12} color="#9B72FF" />
+              <Feather name="cpu" size={12} color={theme.accentAlt} />
               <Text style={styles.memoryBadgeText}>Mneva AI has memorized {medications.filter(m => m.active).length} active medication{medications.filter(m => m.active).length !== 1 ? 's' : ''} for your parents</Text>
             </View>
           )}
@@ -171,7 +174,7 @@ export default function ParentMedication({ navigation }) {
           {medications.length === 0 ? (
             <View style={styles.emptyWrap}>
               <LinearGradient colors={['#FCEAED', '#FAD4DB']} style={styles.emptyIcon}>
-                <Feather name="activity" size={32} color="#E0546E" />
+                <Feather name="activity" size={32} color={theme.danger} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No medications added</Text>
               <Text style={styles.emptySubtitle}>Tap + to add. Mneva AI will remember and track them.</Text>
@@ -201,20 +204,20 @@ export default function ParentMedication({ navigation }) {
                     <View style={styles.medTagRow}>
                       {med.refillDate ? (
                         <View style={styles.refillTag}>
-                          <Feather name="refresh-cw" size={10} color="#D97706" />
+                          <Feather name="refresh-cw" size={10} color={theme.warning} />
                           <Text style={styles.refillTagText}>Refill: {med.refillDate}</Text>
                         </View>
                       ) : null}
                       {med.doctor ? (
                         <View style={styles.doctorTag}>
-                          <Feather name="user" size={10} color="#6B7280" />
+                          <Feather name="user" size={10} color={theme.muted} />
                           <Text style={styles.doctorTagText}>Dr. {med.doctor}</Text>
                         </View>
                       ) : null}
                     </View>
                   </View>
                   <TouchableOpacity onPress={() => toggleActive(med)} style={styles.toggleBtn}>
-                    <View style={[styles.toggleDot, { backgroundColor: med.active ? '#1F9A5A' : '#D1D5DB' }]} />
+                    <View style={[styles.toggleDot, { backgroundColor: med.active ? theme.accent : theme.disabled }]} />
                   </TouchableOpacity>
                 </TouchableOpacity>
               ))}
@@ -252,10 +255,10 @@ export default function ParentMedication({ navigation }) {
               </View>
 
               <Text style={styles.fieldLabel}>Medicine Name <Text style={styles.required}>*</Text></Text>
-              <TextInput style={styles.input} placeholder="e.g. Metformin 500mg" placeholderTextColor="#9AA1AE" value={form.medName} onChangeText={v => setField('medName', v)} />
+              <TextInput style={styles.input} placeholder="e.g. Metformin 500mg" placeholderTextColor={theme.placeholder} value={form.medName} onChangeText={v => setField('medName', v)} />
 
               <Text style={styles.fieldLabel}>Dosage <Text style={styles.required}>*</Text></Text>
-              <TextInput style={styles.input} placeholder="e.g. 1 tablet, 5ml" placeholderTextColor="#9AA1AE" value={form.dosage} onChangeText={v => setField('dosage', v)} />
+              <TextInput style={styles.input} placeholder="e.g. 1 tablet, 5ml" placeholderTextColor={theme.placeholder} value={form.dosage} onChangeText={v => setField('dosage', v)} />
 
               <Text style={styles.fieldLabel}>Frequency <Text style={styles.required}>*</Text></Text>
               <View style={styles.chipRow}>
@@ -278,23 +281,23 @@ export default function ParentMedication({ navigation }) {
               <View style={styles.rowFields}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>Start Date</Text>
-                  <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor="#9AA1AE" value={form.startDate} onChangeText={v => setField('startDate', v)} keyboardType="numeric" />
+                  <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={form.startDate} onChangeText={v => setField('startDate', v)} keyboardType="numeric" />
                 </View>
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>Duration</Text>
-                  <TextInput style={styles.input} placeholder="e.g. 30 days" placeholderTextColor="#9AA1AE" value={form.duration} onChangeText={v => setField('duration', v)} />
+                  <TextInput style={styles.input} placeholder="e.g. 30 days" placeholderTextColor={theme.placeholder} value={form.duration} onChangeText={v => setField('duration', v)} />
                 </View>
               </View>
 
               <Text style={styles.fieldLabel}>Next Refill Date</Text>
-              <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor="#9AA1AE" value={form.refillDate} onChangeText={v => setField('refillDate', v)} keyboardType="numeric" />
+              <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={form.refillDate} onChangeText={v => setField('refillDate', v)} keyboardType="numeric" />
 
               <Text style={styles.fieldLabel}>Doctor Name</Text>
-              <TextInput style={styles.input} placeholder="e.g. Dr. Sharma" placeholderTextColor="#9AA1AE" value={form.doctor} onChangeText={v => setField('doctor', v)} />
+              <TextInput style={styles.input} placeholder="e.g. Dr. Sharma" placeholderTextColor={theme.placeholder} value={form.doctor} onChangeText={v => setField('doctor', v)} />
 
               <Text style={styles.fieldLabel}>Notes</Text>
-              <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Special instructions or side effects..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
+              <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Special instructions or side effects..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
 
               <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={saveMedication}>
                 <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
@@ -325,7 +328,7 @@ export default function ParentMedication({ navigation }) {
                   <Text style={styles.sheetSubtitle}>For {selectedMed.parent}</Text>
                 </View>
                 <TouchableOpacity onPress={() => deleteMed(selectedMed.id)} style={styles.deleteBtn}>
-                  <Feather name="trash-2" size={18} color="#E0546E" />
+                  <Feather name="trash-2" size={18} color={theme.danger} />
                 </TouchableOpacity>
               </View>
 
@@ -342,7 +345,7 @@ export default function ParentMedication({ navigation }) {
                 ].filter(r => r.value).map((row, i) => (
                   <View key={i} style={styles.detailRow}>
                     <View style={styles.detailIconWrap}>
-                      <Feather name={row.icon} size={14} color="#6B7280" />
+                      <Feather name={row.icon} size={14} color={theme.muted} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.detailLabel}>{row.label}</Text>
@@ -353,7 +356,7 @@ export default function ParentMedication({ navigation }) {
 
                 {/* AI memory note */}
                 <View style={styles.aiMemoryNote}>
-                  <Feather name="cpu" size={13} color="#9B72FF" />
+                  <Feather name="cpu" size={13} color={theme.accentAlt} />
                   <Text style={styles.aiMemoryNoteText}>Mneva AI knows about this medication. Ask "What medicines does Dad take?" in chat.</Text>
                 </View>
 
@@ -376,12 +379,12 @@ export default function ParentMedication({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 16 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 12, color: theme.faint, marginTop: 1 },
   addBtn: { borderRadius: 14, overflow: 'hidden' },
   addBtnGrad: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -391,65 +394,65 @@ const styles = StyleSheet.create({
   summaryChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
   summaryChipText: { fontSize: 12, fontWeight: '700' },
 
-  memoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F3EFFE', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16 },
-  memoryBadgeText: { fontSize: 12, color: '#7C3AED', fontWeight: '600', flex: 1 },
+  memoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.12)' : '#F3EFFE', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16 },
+  memoryBadgeText: { fontSize: 12, color: theme.accentAlt, fontWeight: '600', flex: 1 },
 
   emptyWrap: { alignItems: 'center', paddingTop: 60, gap: 14 },
   emptyIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#14171F' },
-  emptySubtitle: { fontSize: 13, color: '#9AA1AE', textAlign: 'center' },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: theme.text },
+  emptySubtitle: { fontSize: 13, color: theme.faint, textAlign: 'center' },
 
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginBottom: 12 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginBottom: 12 },
 
-  medCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  medCard: { backgroundColor: theme.card, borderRadius: 18, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
   medCardInactive: { opacity: 0.5 },
   medIconWrap: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   medCardBody: { flex: 1 },
   medCardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 },
-  medName: { fontSize: 15, fontWeight: '800', color: '#14171F' },
-  medNameInactive: { color: '#9AA1AE' },
+  medName: { fontSize: 15, fontWeight: '800', color: theme.text },
+  medNameInactive: { color: theme.faint },
   parentTag: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   parentTagText: { fontSize: 10, fontWeight: '800' },
-  medDosage: { fontSize: 13, color: '#374151', fontWeight: '600', marginBottom: 2 },
-  medMeta: { fontSize: 12, color: '#9AA1AE', marginBottom: 4 },
+  medDosage: { fontSize: 13, color: theme.textSecondary, fontWeight: '600', marginBottom: 2 },
+  medMeta: { fontSize: 12, color: theme.faint, marginBottom: 4 },
   medTagRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  refillTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEF3C7', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
-  refillTagText: { fontSize: 10, fontWeight: '700', color: '#D97706' },
-  doctorTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F5F6F8', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
-  doctorTagText: { fontSize: 10, fontWeight: '600', color: '#6B7280' },
+  refillTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
+  refillTagText: { fontSize: 10, fontWeight: '700', color: theme.warning },
+  doctorTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
+  doctorTagText: { fontSize: 10, fontWeight: '600', color: theme.muted },
   toggleBtn: { padding: 6 },
   toggleDot: { width: 12, height: 12, borderRadius: 6 },
 
-  overlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.55)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginBottom: 20 },
+  overlay: { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, marginBottom: 20 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   sheetIconGrad: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  sheetSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
-  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  sheetSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#E0546E' },
-  input: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  required: { color: theme.danger },
+  input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  selectChipActive: { backgroundColor: '#FCEAED', borderColor: '#E0546E' },
-  selectChipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  selectChipTextActive: { color: '#E0546E' },
+  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  selectChipActive: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderColor: theme.danger },
+  selectChipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  selectChipTextActive: { color: theme.danger },
 
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
   saveBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 
-  detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  detailIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F5F6F8', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
-  detailLabel: { fontSize: 11, fontWeight: '600', color: '#9AA1AE', marginBottom: 3 },
-  detailValue: { fontSize: 14, fontWeight: '700', color: '#14171F' },
+  detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border },
+  detailIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: theme.surfaceAlt, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  detailLabel: { fontSize: 11, fontWeight: '600', color: theme.faint, marginBottom: 3 },
+  detailValue: { fontSize: 14, fontWeight: '700', color: theme.text },
 
-  aiMemoryNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#F3EFFE', borderRadius: 12, padding: 12, marginTop: 16, marginBottom: 4 },
-  aiMemoryNoteText: { fontSize: 12, color: '#7C3AED', fontWeight: '600', flex: 1, lineHeight: 18 },
+  aiMemoryNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.12)' : '#F3EFFE', borderRadius: 12, padding: 12, marginTop: 16, marginBottom: 4 },
+  aiMemoryNoteText: { fontSize: 12, color: theme.accentAlt, fontWeight: '600', flex: 1, lineHeight: 18 },
 });

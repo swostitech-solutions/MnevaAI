@@ -14,6 +14,7 @@ import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { PetContext } from './PetCare/PetContext';
+import { useTheme } from '../context/ThemeContext';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: 'user' },
@@ -26,6 +27,8 @@ const SPECIES_EMOJI = { Dog: '🐶', Cat: '🐱', Bird: '🐦', Rabbit: '🐰', 
 export default function PetCare({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const pad = width < 360 ? 16 : 20;
   const [activeTab, setActiveTab] = useState('profile');
   const { on } = useSocket();
@@ -152,7 +155,7 @@ export default function PetCare({ navigation }) {
         {/* Header */}
         <View style={[styles.header, { paddingHorizontal: pad }]}>
           <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backBtn}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.headerTitle}>Pet Care</Text>
@@ -190,7 +193,7 @@ export default function PetCare({ navigation }) {
               onPress={() => setActiveTab(tab.id)}
               activeOpacity={0.8}
             >
-              <Feather name={tab.icon} size={14} color={activeTab === tab.id ? '#F5A623' : '#9AA1AE'} />
+              <Feather name={tab.icon} size={14} color={activeTab === tab.id ? theme.warning : theme.faint} />
               <Text style={[styles.tabBtnText, activeTab === tab.id && styles.tabBtnTextActive]}>{tab.label}</Text>
             </TouchableOpacity>
           ))}
@@ -207,8 +210,8 @@ export default function PetCare({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
 
   alertBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999 },
   alertGrad: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
@@ -218,21 +221,21 @@ const styles = StyleSheet.create({
   alertClose: { padding: 4 },
 
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 12 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
-  headerBadge: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 12, color: theme.faint, marginTop: 1 },
+  headerBadge: { width: 42, height: 42, borderRadius: 14, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
 
   petSelector: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
-  petChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: 'transparent' },
-  petChipActive: { borderColor: '#F5A623', backgroundColor: '#FEF3C7' },
+  petChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: theme.card, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: 'transparent' },
+  petChipActive: { borderColor: theme.warning, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7' },
   petChipEmoji: { fontSize: 14 },
-  petChipText: { fontSize: 12, fontWeight: '700', color: '#9AA1AE' },
-  petChipTextActive: { color: '#F5A623' },
+  petChipText: { fontSize: 12, fontWeight: '700', color: theme.faint },
+  petChipTextActive: { color: theme.warning },
 
   tabStrip: { flexDirection: 'row', gap: 8, marginBottom: 4, paddingBottom: 12 },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 14, backgroundColor: '#FFFFFF' },
-  tabBtnActive: { backgroundColor: '#FEF3C7' },
-  tabBtnText: { fontSize: 13, fontWeight: '700', color: '#9AA1AE' },
-  tabBtnTextActive: { color: '#F5A623' },
+  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 14, backgroundColor: theme.card },
+  tabBtnActive: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7' },
+  tabBtnText: { fontSize: 13, fontWeight: '700', color: theme.faint },
+  tabBtnTextActive: { color: theme.warning },
 });

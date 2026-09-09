@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { FamilyTaskProvider, useFamilyTask } from './FamilyTasks/FamilyTaskContext';
 import ConnectionsTab from './FamilyTasks/ConnectionsTab';
 import TasksTab from './FamilyTasks/TasksTab';
+import { useTheme } from '../context/ThemeContext';
 
 const TABS = [
   { id: 'tasks',       label: 'Tasks',       icon: 'check-square' },
@@ -15,6 +16,8 @@ const TABS = [
 function FamilyTasksInner({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const horizontalPad = width < 360 ? 16 : 20;
   const [activeTab, setActiveTab] = useState('tasks');
   const { tasks, connections } = useFamilyTask();
@@ -43,10 +46,10 @@ function FamilyTasksInner({ navigation }) {
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          <StatPill label="Active" value={activeTasks} color="#A7F3D0" />
-          <StatPill label="Done" value={doneTasks} color="#6EE7B7" />
-          <StatPill label="Total" value={totalTasks} color="#D1FAE5" />
-          <StatPill label="People" value={connections.filter(c => c.status === 'ACCEPTED').length} color="#FDE68A" />
+          <StatPill label="Active" value={activeTasks} color="#A7F3D0" styles={styles} />
+          <StatPill label="Done" value={doneTasks} color="#6EE7B7" styles={styles} />
+          <StatPill label="Total" value={totalTasks} color="#D1FAE5" styles={styles} />
+          <StatPill label="People" value={connections.filter(c => c.status === 'ACCEPTED').length} color="#FDE68A" styles={styles} />
         </View>
 
         {/* Tab strip inside hero */}
@@ -61,7 +64,7 @@ function FamilyTasksInner({ navigation }) {
                 onPress={() => setActiveTab(tab.id)}
                 activeOpacity={0.8}
               >
-                <Feather name={tab.icon} size={14} color={active ? '#0F5132' : 'rgba(255,255,255,0.65)'} />
+                <Feather name={tab.icon} size={14} color={active ? theme.text : 'rgba(255,255,255,0.65)'} />
                 <Text style={[styles.tabBtnText, active && styles.tabBtnTextActive]}>{tab.label}</Text>
                 {badge > 0 && (
                   <View style={styles.badge}>
@@ -75,7 +78,7 @@ function FamilyTasksInner({ navigation }) {
       </LinearGradient>
 
       {/* Content */}
-      <View style={{ flex: 1, backgroundColor: '#F2F4F7' }}>
+      <View style={{ flex: 1, backgroundColor: theme.bg }}>
         {activeTab === 'tasks'       && <TasksTab       horizontalPad={horizontalPad} insets={insets} />}
         {activeTab === 'connections' && <ConnectionsTab horizontalPad={horizontalPad} insets={insets} />}
       </View>
@@ -83,7 +86,7 @@ function FamilyTasksInner({ navigation }) {
   );
 }
 
-function StatPill({ label, value, color }) {
+function StatPill({ label, value, color, styles }) {
   return (
     <View style={[styles.statPill, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
@@ -100,7 +103,7 @@ export default function FamilyTasks({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0F5132' },
   hero: { paddingTop: 10, paddingBottom: 0 },
   heroTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
@@ -114,9 +117,9 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.6)', marginTop: 1 },
   tabStrip: { flexDirection: 'row', gap: 8 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)' },
-  tabBtnActive: { backgroundColor: '#F2F4F7' },
+  tabBtnActive: { backgroundColor: theme.bg },
   tabBtnText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.65)' },
-  tabBtnTextActive: { color: '#0F5132' },
-  badge: { backgroundColor: '#E0546E', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  tabBtnTextActive: { color: theme.text },
+  badge: { backgroundColor: theme.danger, borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   badgeText: { fontSize: 9, fontWeight: '800', color: '#FFFFFF' },
 });

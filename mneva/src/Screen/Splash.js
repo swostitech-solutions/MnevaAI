@@ -4,11 +4,14 @@ import React from "react";
 import { View, Text, Image, StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
+import { useTheme } from '../context/ThemeContext';
 
 export default function Splash() {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style={theme.statusBarStyle} />
 
       {/* Soft light halo behind the icon */}
       <Svg
@@ -46,10 +49,10 @@ export default function Splash() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FAFAFC",
+    backgroundColor: theme.bg,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -61,13 +64,13 @@ const styles = StyleSheet.create({
     marginTop: 30,
     fontSize: 23,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     letterSpacing: 5,
   },
   subtitle: {
     marginTop: 18,
     fontSize: 14,
-    color: "#6B7280",
+    color: theme.muted,
     letterSpacing: 0.2,
   },
 });

@@ -1,14 +1,42 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, useWindowDimensions,
+  RefreshControl, useWindowDimensions, Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
+
+const TOKEN_MAP = {
+  '#4FA6E8': 'info',
+  '#F5A623': 'warning',
+  '#1F9A5A': 'accent',
+  '#615FF8': 'accentAlt',
+  '#9B72FF': 'accentAlt',
+  '#E0546E': 'danger',
+  '#D97706': 'warning',
+};
+const TINT_RGB = {
+  '#EAF3FD': [107, 184, 240],
+  '#FEF3C7': [255, 184, 77],
+  '#EFFDF6': [52, 199, 123],
+  '#EEEDFE': [129, 128, 255],
+  '#F3EFFE': [129, 128, 255],
+  '#FCEAED': [241, 113, 134],
+};
+function mColor(hex, theme) {
+  const key = TOKEN_MAP[hex];
+  return key ? theme[key] : hex;
+}
+function mBg(hex, theme) {
+  if (!hex || !theme.isDark) return hex;
+  const rgb = TINT_RGB[hex];
+  return rgb ? `rgba(${rgb.join(',')},0.16)` : theme.surfaceAlt;
+}
 
 const TOOL_ICONS = {
   schedule_event: 'calendar',
@@ -19,6 +47,7 @@ const TOOL_ICONS = {
   book_cab: 'navigation',
   order_food: 'shopping-bag',
   get_daily_brief: 'sun',
+  get_full_summary: 'cpu',
   get_portfolio: 'trending-up',
   get_spending_summary: 'dollar-sign',
   get_health_data: 'heart',
@@ -35,6 +64,7 @@ const TOOL_COLORS = {
   book_cab: '#1F9A5A',
   order_food: '#F5A623',
   get_daily_brief: '#F5A623',
+  get_full_summary: '#615FF8',
   get_portfolio: '#1F9A5A',
   get_spending_summary: '#1F9A5A',
   get_health_data: '#E0546E',
@@ -51,6 +81,7 @@ const TOOL_BG = {
   book_cab: '#EFFDF6',
   order_food: '#FEF3C7',
   get_daily_brief: '#FEF3C7',
+  get_full_summary: '#EEEDFE',
   get_portfolio: '#EFFDF6',
   get_spending_summary: '#EFFDF6',
   get_health_data: '#FCEAED',
@@ -79,18 +110,18 @@ function uniqueEntries(entries) {
   });
 }
 
-function statusColor(status) {
-  if (status === 'completed') return '#1F9A5A';
-  if (status === 'pending_approval') return '#D97706';
-  if (status === 'failed') return '#E0546E';
-  return '#9AA1AE';
+function statusColor(status, theme) {
+  if (status === 'completed') return theme.accent;
+  if (status === 'pending_approval') return theme.warning;
+  if (status === 'failed') return theme.danger;
+  return theme.faint;
 }
 
-function statusBg(status) {
-  if (status === 'completed') return '#EFFDF6';
-  if (status === 'pending_approval') return '#FEF3C7';
-  if (status === 'failed') return '#FCEAED';
-  return '#F3F4F6';
+function statusBg(status, theme) {
+  if (status === 'completed') return mBg('#EFFDF6', theme);
+  if (status === 'pending_approval') return mBg('#FEF3C7', theme);
+  if (status === 'failed') return mBg('#FCEAED', theme);
+  return theme.isDark ? theme.surfaceAlt : '#F3F4F6';
 }
 
 function formatTime(iso) {
@@ -100,8 +131,175 @@ function formatTime(iso) {
   } catch { return ''; }
 }
 
+function formatScheduledTime(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
+
+// A reminder/meeting set today for tomorrow is a commitment the twin is
+// still watching, not history — so it belongs under FUTURE regardless of
+// when it was logged. Everything else buckets by when it actually happened:
+// today is PRESENT, anything earlier is PAST.
+function classifyEntry(entry, now) {
+  let inputData = {};
+  try { inputData = JSON.parse(entry.action || '{}').input || {}; } catch { /* malformed action blob */ }
+  let targetTime = null;
+  if (entry.tool === 'set_reminder' && inputData.time) targetTime = new Date(inputData.time);
+  else if (entry.tool === 'schedule_event' && inputData.start) targetTime = new Date(inputData.start);
+  if (targetTime && !Number.isNaN(targetTime.getTime()) && targetTime.getTime() > now.getTime()) {
+    return { bucket: 'future', targetTime };
+  }
+  const ts = new Date(entry.ts);
+  const isPresent = !Number.isNaN(ts.getTime()) && ts.toDateString() === now.toDateString();
+  return { bucket: isPresent ? 'present' : 'past', targetTime: null };
+}
+
+// A small pulsing dot — the only cue on screen that says "this twin is
+// live right now", next to the PRESENT section header.
+function LiveDot({ styles }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.8, duration: 700, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scale]);
+  return (
+    <View style={styles.liveDotWrap}>
+      <Animated.View style={[styles.liveDotPulse, { transform: [{ scale }] }]} />
+      <View style={styles.liveDotCore} />
+    </View>
+  );
+}
+
+function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, styles }) {
+  const icon = TOOL_ICONS[entry.tool] || 'zap';
+  const color = mColor(TOOL_COLORS[entry.tool] || '#615FF8', theme);
+  const bg = mBg(TOOL_BG[entry.tool] || '#EEEDFE', theme);
+
+  let inputData = {};
+  let resultData = {};
+  try { const p = JSON.parse(entry.action || '{}'); inputData = p.input || {}; resultData = p.result || {}; } catch { /* malformed action blob */ }
+
+  return (
+    <View style={styles.timelineRow}>
+      <View style={styles.timelineLeftCol}>
+        <View style={[styles.timelineDot, { backgroundColor: dotColor || color }]} />
+        {!isLast && <View style={styles.timelineLine} />}
+      </View>
+
+      <TouchableOpacity
+        style={[styles.entryCard, { flex: 1, marginLeft: 10 }]}
+        onPress={onToggle}
+        activeOpacity={0.8}
+      >
+        <View style={styles.entryTop}>
+          <View style={[styles.entryIconWrap, { backgroundColor: bg }]}>
+            <Feather name={icon} size={18} color={color} />
+          </View>
+          <View style={styles.entryTextWrap}>
+            <Text style={styles.entryTool}>{(entry.tool || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</Text>
+            {entry.targetTime ? (
+              <Text style={[styles.entryTime, { color: theme.accentAlt, fontWeight: '700' }]}>Scheduled · {formatScheduledTime(entry.targetTime)}</Text>
+            ) : (
+              <Text style={styles.entryTime}>{formatTime(entry.ts)}</Text>
+            )}
+          </View>
+          <View style={[styles.entryStatusBadge, { backgroundColor: statusBg(entry.status, theme) }]}>
+            <Text style={[styles.entryStatusText, { color: statusColor(entry.status, theme) }]}>
+              {(entry.status || '').replace(/_/g, ' ')}
+            </Text>
+          </View>
+          <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={theme.disabled} style={{ marginLeft: 8 }} />
+        </View>
+
+        {isExpanded && (
+          <View style={styles.entryDetail}>
+            <View style={styles.entryDetailDivider} />
+            {Object.keys(inputData).length > 0 && (
+              <View style={styles.entryDetailSection}>
+                <Text style={styles.entryDetailSectionTitle}>INPUT</Text>
+                {Object.entries(inputData).map(([k, v]) => (
+                  <View key={k} style={styles.entryDetailRow}>
+                    <Text style={styles.entryDetailKey}>{k}</Text>
+                    <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {Object.keys(resultData).length > 0 && (
+              <View style={styles.entryDetailSection}>
+                <Text style={styles.entryDetailSectionTitle}>RESULT</Text>
+                {Object.entries(resultData).map(([k, v]) => (
+                  <View key={k} style={styles.entryDetailRow}>
+                    <Text style={styles.entryDetailKey}>{k}</Text>
+                    <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {entry.hash && (
+              <View style={styles.hashRow}>
+                <Feather name="shield" size={11} color={theme.faint} />
+                <Text style={styles.hashText} numberOfLines={1}>  SHA-256: {entry.hash}</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function TimelineSection({ title, subtitle, icon, color, entries, expanded, onToggleEntry, emptyText, extraHeader, theme, styles }) {
+  return (
+    <View style={styles.timelineSection}>
+      <View style={styles.timelineSectionHeader}>
+        <View style={[styles.timelineSectionIconWrap, { backgroundColor: `${color}1A` }]}>
+          <Feather name={icon} size={14} color={color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={[styles.timelineSectionTitle, { color }]}>{title}</Text>
+            {extraHeader}
+          </View>
+          <Text style={styles.timelineSectionSubtitle}>{subtitle}</Text>
+        </View>
+        <View style={[styles.timelineSectionCount, { backgroundColor: `${color}1A` }]}>
+          <Text style={[styles.timelineSectionCountText, { color }]}>{entries.length}</Text>
+        </View>
+      </View>
+
+      {entries.length === 0 ? (
+        <Text style={styles.timelineEmptyText}>{emptyText}</Text>
+      ) : (
+        entries.map((entry, i) => (
+          <TimelineEntry
+            key={entry.id || i}
+            entry={entry}
+            isLast={i === entries.length - 1}
+            dotColor={color}
+            isExpanded={expanded === entry.id}
+            onToggle={() => onToggleEntry(entry.id)}
+            theme={theme}
+            styles={styles}
+          />
+        ))
+      )}
+    </View>
+  );
+}
+
 export default function TwinDiary({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { width } = useWindowDimensions();
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
@@ -167,8 +365,11 @@ export default function TwinDiary({ navigation }) {
     return () => off?.();
   }, [on]);
 
-  const completedCount = entries.filter(e => e.status === 'completed').length;
-  const pendingCount = entries.filter(e => e.status === 'pending_approval').length;
+  const now = new Date();
+  const classified = entries.map(e => ({ ...e, ...classifyEntry(e, now) }));
+  const futureEntries = classified.filter(e => e.bucket === 'future').sort((a, b) => a.targetTime - b.targetTime);
+  const presentEntries = classified.filter(e => e.bucket === 'present');
+  const pastEntries = classified.filter(e => e.bucket === 'past');
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -176,7 +377,7 @@ export default function TwinDiary({ navigation }) {
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#615FF8" colors={['#615FF8']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.accentAlt} colors={[theme.accentAlt]} />}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -185,136 +386,106 @@ export default function TwinDiary({ navigation }) {
             <Text style={styles.headerSubtitle}>Signed AI action ledger</Text>
           </View>
           <View style={styles.headerBadge}>
-            <Feather name="shield" size={18} color="#615FF8" />
+            <Feather name="shield" size={18} color={theme.accentAlt} />
           </View>
         </View>
 
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{loading ? '—' : entries.length}</Text>
-            <Text style={styles.statLabel}>Total Actions</Text>
+            <Text style={[styles.statValue, { color: theme.accentAlt }]}>{loading ? '—' : futureEntries.length}</Text>
+            <Text style={styles.statLabel}>Future</Text>
           </View>
-          <View style={[styles.statCard, { borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#F0F1F4' }]}>
-            <Text style={[styles.statValue, { color: '#1F9A5A' }]}>{loading ? '—' : completedCount}</Text>
-            <Text style={styles.statLabel}>Completed</Text>
+          <View style={[styles.statCard, { borderLeftWidth: 1, borderRightWidth: 1, borderColor: theme.border }]}>
+            <Text style={[styles.statValue, { color: theme.accent }]}>{loading ? '—' : presentEntries.length}</Text>
+            <Text style={styles.statLabel}>Present</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: '#D97706' }]}>{loading ? '—' : pendingCount}</Text>
-            <Text style={styles.statLabel}>Pending</Text>
+            <Text style={[styles.statValue, { color: theme.muted }]}>{loading ? '—' : pastEntries.length}</Text>
+            <Text style={styles.statLabel}>Past</Text>
           </View>
         </View>
 
         {/* Security note */}
         <View style={styles.securityNote}>
-          <Feather name="lock" size={13} color="#615FF8" />
+          <Feather name="lock" size={13} color={theme.accentAlt} />
           <Text style={styles.securityNoteText}>  All actions are SHA-256 signed and tamper-proof</Text>
         </View>
 
-        {/* Entries */}
-        <Text style={styles.sectionHeader}>ACTION LOG</Text>
-
+        {/* Timeline — Future → Present → Past, exactly how an agent thinks
+            about its own work: what it's watching for you, what it's doing
+            right now, and everything it has already done. */}
         {loading ? (
           [1, 2, 3, 4].map(i => <View key={i} style={styles.entrySkeleton} />)
         ) : entries.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Feather name="activity" size={32} color="#C7CBD3" />
+            <Feather name="activity" size={32} color={theme.disabled} />
             <Text style={styles.emptyTitle}>No AI actions yet</Text>
             <Text style={styles.emptySubtitle}>Actions taken by your AI twin will appear here</Text>
           </View>
         ) : (
-          entries.map((entry, i) => {
-            const icon = TOOL_ICONS[entry.tool] || 'zap';
-            const color = TOOL_COLORS[entry.tool] || '#615FF8';
-            const bg = TOOL_BG[entry.tool] || '#EEEDFE';
-            const isExpanded = expanded === entry.id;
-
-            let inputData = {};
-            let resultData = {};
-            try { const p = JSON.parse(entry.action || '{}'); inputData = p.input || {}; resultData = p.result || {}; } catch {}
-
-            return (
-              <TouchableOpacity
-                key={entry.id || i}
-                style={styles.entryCard}
-                onPress={() => setExpanded(isExpanded ? null : entry.id)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.entryTop}>
-                  <View style={[styles.entryIconWrap, { backgroundColor: bg }]}>
-                    <Feather name={icon} size={18} color={color} />
-                  </View>
-                  <View style={styles.entryTextWrap}>
-                    <Text style={styles.entryTool}>{(entry.tool || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</Text>
-                    <Text style={styles.entryTime}>{formatTime(entry.ts)}</Text>
-                  </View>
-                  <View style={[styles.entryStatusBadge, { backgroundColor: statusBg(entry.status) }]}>
-                    <Text style={[styles.entryStatusText, { color: statusColor(entry.status) }]}>
-                      {(entry.status || '').replace(/_/g, ' ')}
-                    </Text>
-                  </View>
-                  <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#C7CBD3" style={{ marginLeft: 8 }} />
-                </View>
-
-                {isExpanded && (
-                  <View style={styles.entryDetail}>
-                    <View style={styles.entryDetailDivider} />
-                    {Object.keys(inputData).length > 0 && (
-                      <View style={styles.entryDetailSection}>
-                        <Text style={styles.entryDetailSectionTitle}>INPUT</Text>
-                        {Object.entries(inputData).map(([k, v]) => (
-                          <View key={k} style={styles.entryDetailRow}>
-                            <Text style={styles.entryDetailKey}>{k}</Text>
-                            <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                    {Object.keys(resultData).length > 0 && (
-                      <View style={styles.entryDetailSection}>
-                        <Text style={styles.entryDetailSectionTitle}>RESULT</Text>
-                        {Object.entries(resultData).map(([k, v]) => (
-                          <View key={k} style={styles.entryDetailRow}>
-                            <Text style={styles.entryDetailKey}>{k}</Text>
-                            <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                    {entry.hash && (
-                      <View style={styles.hashRow}>
-                        <Feather name="shield" size={11} color="#9AA1AE" />
-                        <Text style={styles.hashText} numberOfLines={1}>  SHA-256: {entry.hash}</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })
+          <>
+            <TimelineSection
+              title="FUTURE"
+              subtitle="What your twin is watching for you"
+              icon="compass"
+              color={theme.accentAlt}
+              entries={futureEntries}
+              expanded={expanded}
+              onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
+              emptyText="Nothing scheduled yet."
+              theme={theme}
+              styles={styles}
+            />
+            <TimelineSection
+              title="PRESENT"
+              subtitle="Happening today"
+              icon="radio"
+              color={theme.accent}
+              entries={presentEntries}
+              expanded={expanded}
+              onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
+              emptyText="No activity yet today."
+              extraHeader={presentEntries.length > 0 ? <LiveDot styles={styles} /> : null}
+              theme={theme}
+              styles={styles}
+            />
+            <TimelineSection
+              title="PAST"
+              subtitle="Everything your twin has already done"
+              icon="archive"
+              color={theme.muted}
+              entries={pastEntries}
+              expanded={expanded}
+              onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
+              emptyText="No history yet."
+              theme={theme}
+              styles={styles}
+            />
+          </>
         )}
       </ScrollView>
 
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -322,43 +493,61 @@ export default function TwinDiary({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
-  headerBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#EEEDFE', alignItems: 'center', justifyContent: 'center' },
-  statsRow: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 20, marginBottom: 14 },
+  headerTitle: { fontSize: 28, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
+  headerBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE', alignItems: 'center', justifyContent: 'center' },
+  statsRow: { flexDirection: 'row', backgroundColor: theme.card, borderRadius: 20, marginBottom: 14 },
   statCard: { flex: 1, alignItems: 'center', paddingVertical: 16 },
-  statValue: { fontSize: 24, fontWeight: '800', color: '#14171F', marginBottom: 4 },
-  statLabel: { fontSize: 11, fontWeight: '600', color: '#9AA1AE' },
-  securityNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEEDFE', borderRadius: 12, padding: 12, marginBottom: 20 },
-  securityNoteText: { fontSize: 12, color: '#615FF8', fontWeight: '600' },
-  sectionHeader: { fontSize: 12, fontWeight: '700', color: '#6B7280', letterSpacing: 0.5, marginBottom: 12 },
-  entrySkeleton: { height: 68, backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 10 },
+  statValue: { fontSize: 24, fontWeight: '800', color: theme.text, marginBottom: 4 },
+  statLabel: { fontSize: 11, fontWeight: '600', color: theme.faint },
+  securityNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE', borderRadius: 12, padding: 12, marginBottom: 20 },
+  securityNoteText: { fontSize: 12, color: theme.accentAlt, fontWeight: '600' },
+  entrySkeleton: { height: 68, backgroundColor: theme.card, borderRadius: 16, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 10 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#374151' },
-  emptySubtitle: { fontSize: 13, color: '#9AA1AE', textAlign: 'center' },
-  entryCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, marginBottom: 10 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: theme.textSecondary },
+  emptySubtitle: { fontSize: 13, color: theme.faint, textAlign: 'center' },
+  // Timeline sections (Future / Present / Past)
+  timelineSection: { marginBottom: 24 },
+  timelineSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  timelineSectionIconWrap: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  timelineSectionTitle: { fontSize: 13, fontWeight: '800', letterSpacing: 0.6 },
+  timelineSectionSubtitle: { fontSize: 11, color: theme.faint, marginTop: 1 },
+  timelineSectionCount: { minWidth: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  timelineSectionCountText: { fontSize: 12, fontWeight: '800' },
+  timelineEmptyText: { fontSize: 12, color: theme.disabled, fontStyle: 'italic', marginLeft: 40, marginBottom: 4 },
+
+  timelineRow: { flexDirection: 'row' },
+  timelineLeftCol: { width: 20, alignItems: 'center' },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 18 },
+  timelineLine: { flex: 1, width: 2, backgroundColor: theme.border, marginTop: 4, marginBottom: 4, minHeight: 16 },
+
+  liveDotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
+  liveDotPulse: { position: 'absolute', width: 10, height: 10, borderRadius: 5, backgroundColor: theme.accent, opacity: 0.35 },
+  liveDotCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.accent },
+
+  entryCard: { backgroundColor: theme.card, borderRadius: 18, padding: 14, marginBottom: 10 },
   entryTop: { flexDirection: 'row', alignItems: 'center' },
   entryIconWrap: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   entryTextWrap: { flex: 1 },
-  entryTool: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  entryTime: { fontSize: 11, color: '#9AA1AE' },
+  entryTool: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  entryTime: { fontSize: 11, color: theme.faint },
   entryStatusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   entryStatusText: { fontSize: 10, fontWeight: '800' },
   entryDetail: { marginTop: 4 },
-  entryDetailDivider: { height: 1, backgroundColor: '#F0F1F4', marginVertical: 12 },
+  entryDetailDivider: { height: 1, backgroundColor: theme.border, marginVertical: 12 },
   entryDetailSection: { marginBottom: 10 },
-  entryDetailSectionTitle: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginBottom: 8 },
+  entryDetailSectionTitle: { fontSize: 10, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginBottom: 8 },
   entryDetailRow: { flexDirection: 'row', marginBottom: 6 },
-  entryDetailKey: { fontSize: 12, color: '#9AA1AE', width: 90, fontWeight: '600' },
-  entryDetailVal: { fontSize: 12, color: '#374151', flex: 1 },
+  entryDetailKey: { fontSize: 12, color: theme.faint, width: 90, fontWeight: '600' },
+  entryDetailVal: { fontSize: 12, color: theme.textSecondary, flex: 1 },
   hashRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  hashText: { fontSize: 10, color: '#C7CBD3', flex: 1 },
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  hashText: { fontSize: 10, color: theme.disabled, flex: 1 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

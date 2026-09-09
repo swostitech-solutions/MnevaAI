@@ -11,6 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch } from "../api/client";
+import { useTheme } from "../context/ThemeContext";
 
 const TAB_BAR_HEIGHT = 50;
 

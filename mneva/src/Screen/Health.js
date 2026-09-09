@@ -10,6 +10,7 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const LOG_CATEGORIES = [
@@ -69,7 +70,7 @@ const CATEGORY_FIELDS = {
   ],
 };
 
-function LogDataSheet({ visible, onClose, onSynced, bottomInset }) {
+function LogDataSheet({ visible, onClose, onSynced, bottomInset, theme, styles }) {
   const [activeTab, setActiveTab] = useState('activity');
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(false);
@@ -124,7 +125,7 @@ function LogDataSheet({ visible, onClose, onSynced, bottomInset }) {
               <Text style={styles.sheetSubtitle}>Manual entry — leave blank to skip</Text>
             </View>
             <TouchableOpacity onPress={onClose}>
-              <Feather name="x" size={20} color="#6B7280" />
+              <Feather name="x" size={20} color={theme.muted} />
             </TouchableOpacity>
           </View>
 
@@ -136,7 +137,7 @@ function LogDataSheet({ visible, onClose, onSynced, bottomInset }) {
                 style={[styles.catTab, activeTab === c.key && { backgroundColor: c.color + '18', borderColor: c.color }]}
                 onPress={() => { setActiveTab(c.key); setError(''); }}
               >
-                <Feather name={c.icon} size={13} color={activeTab === c.key ? c.color : '#9AA1AE'} />
+                <Feather name={c.icon} size={13} color={activeTab === c.key ? c.color : theme.faint} />
                 <Text style={[styles.catTabText, activeTab === c.key && { color: c.color }]}>{c.label}</Text>
               </TouchableOpacity>
             ))}
@@ -153,7 +154,7 @@ function LogDataSheet({ visible, onClose, onSynced, bottomInset }) {
                   <TextInput
                     style={styles.syncInput}
                     placeholder="—"
-                    placeholderTextColor="#C7CBD3"
+                    placeholderTextColor={theme.disabled}
                     keyboardType={keyboard}
                     value={form[key] || ''}
                     onChangeText={v => set(key, v)}
@@ -184,7 +185,7 @@ function LogDataSheet({ visible, onClose, onSynced, bottomInset }) {
   );
 }
 
-function MetricCard({ icon, label, value, unit, color, bg }) {
+function MetricCard({ icon, label, value, unit, color, bg, styles }) {
   return (
     <View style={[styles.metricCard, { backgroundColor: bg }]}>
       <View style={[styles.metricIconWrap, { backgroundColor: color + '22' }]}>
@@ -332,7 +333,7 @@ function groupLogByWeek(log) {
   return weeks;
 }
 
-function WeekCard({ week }) {
+function WeekCard({ week, styles }) {
   return (
     <View style={styles.weekCard}>
       <View style={styles.weekCardHeaderRow}>
@@ -368,7 +369,7 @@ function WeekCard({ week }) {
   );
 }
 
-function HistoryModal({ visible, onClose, weeks, bottomInset }) {
+function HistoryModal({ visible, onClose, weeks, bottomInset, theme, styles }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
@@ -383,11 +384,11 @@ function HistoryModal({ visible, onClose, weeks, bottomInset }) {
               <Text style={styles.sheetSubtitle}>{weeks.length} week{weeks.length === 1 ? '' : 's'} tracked</Text>
             </View>
             <TouchableOpacity onPress={onClose}>
-              <Feather name="x" size={20} color="#6B7280" />
+              <Feather name="x" size={20} color={theme.muted} />
             </TouchableOpacity>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
-            {weeks.map(week => <WeekCard key={week.weekStart} week={week} />)}
+            {weeks.map(week => <WeekCard key={week.weekStart} week={week} styles={styles} />)}
           </ScrollView>
         </View>
       </View>
@@ -400,6 +401,8 @@ export default function Health({ navigation }) {
   const { width } = useWindowDimensions();
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
 
   const [metrics, setMetrics] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -469,12 +472,12 @@ export default function Health({ navigation }) {
   useEffect(() => onAppDataRefresh(() => loadData(true)), []);
 
   const METRIC_CARDS = [
-    { icon: 'activity', label: 'Steps', value: metrics?.steps?.value, unit: 'steps', color: '#1F9A5A', bg: '#EFFDF6' },
-    { icon: 'heart', label: 'Heart Rate', value: metrics?.heartRate?.value, unit: 'bpm', color: '#E0546E', bg: '#FCEAED' },
-    { icon: 'moon', label: 'Sleep', value: metrics?.sleep?.value, unit: 'hrs', color: '#615FF8', bg: '#EEEDFE' },
-    { icon: 'zap', label: 'Calories', value: metrics?.calories?.consumed, unit: 'kcal', color: '#F5A623', bg: '#FEF3C7' },
-    { icon: 'trending-up', label: 'Weight', value: metrics?.weight?.value, unit: 'kg', color: '#4FA6E8', bg: '#EAF3FD' },
-    { icon: 'bar-chart-2', label: 'Height', value: metrics?.height?.value, unit: 'cm', color: '#9B72FF', bg: '#F3EFFE' },
+    { icon: 'activity', label: 'Steps', value: metrics?.steps?.value, unit: 'steps', color: '#1F9A5A', bg: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' },
+    { icon: 'heart', label: 'Heart Rate', value: metrics?.heartRate?.value, unit: 'bpm', color: '#E0546E', bg: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED' },
+    { icon: 'moon', label: 'Sleep', value: metrics?.sleep?.value, unit: 'hrs', color: '#615FF8', bg: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE' },
+    { icon: 'zap', label: 'Calories', value: metrics?.calories?.consumed, unit: 'kcal', color: '#F5A623', bg: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7' },
+    { icon: 'trending-up', label: 'Weight', value: metrics?.weight?.value, unit: 'kg', color: '#4FA6E8', bg: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD' },
+    { icon: 'bar-chart-2', label: 'Height', value: metrics?.height?.value, unit: 'cm', color: '#9B72FF', bg: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE' },
   ];
 
   return (
@@ -483,7 +486,7 @@ export default function Health({ navigation }) {
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#E0546E" colors={['#E0546E']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.danger} colors={[theme.danger]} />}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -492,7 +495,7 @@ export default function Health({ navigation }) {
             <Text style={styles.headerSubtitle}>Vitals, appointments & meds</Text>
           </View>
           <View style={styles.headerBadge}>
-            <Feather name="heart" size={18} color="#E0546E" />
+            <Feather name="heart" size={18} color={theme.danger} />
           </View>
         </View>
 
@@ -503,15 +506,15 @@ export default function Health({ navigation }) {
             onPress={() => navigation?.navigate?.('ConnectedAccounts')}
             activeOpacity={0.8}
           >
-            <Feather name="activity" size={15} color="#1F9A5A" />
+            <Feather name="activity" size={15} color={theme.accent} />
             <Text style={styles.connectBannerText}>  Google Fit not connected — tap to connect and see live vitals</Text>
-            <Feather name="chevron-right" size={14} color="#1F9A5A" />
+            <Feather name="chevron-right" size={14} color={theme.accent} />
           </TouchableOpacity>
         )}
         {fitConnected && metrics?.source === 'google_fit' && !loading && (
-          <View style={[styles.connectBanner, { backgroundColor: '#EFFDF6' }]}>
-            <Feather name="check-circle" size={15} color="#1F9A5A" />
-            <Text style={[styles.connectBannerText, { color: '#1F9A5A' }]}>  Google Fit connected · Live data</Text>
+          <View style={[styles.connectBanner, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' }]}>
+            <Feather name="check-circle" size={15} color={theme.accent} />
+            <Text style={[styles.connectBannerText, { color: theme.accent }]}>  Google Fit connected · Live data</Text>
           </View>
         )}
 
@@ -520,7 +523,7 @@ export default function Health({ navigation }) {
         <View style={styles.metricsGrid}>
           {loading
             ? [1, 2, 3, 4, 5, 6].map(i => <View key={i} style={styles.metricSkeleton} />)
-            : METRIC_CARDS.map(m => <MetricCard key={m.label} {...m} />)
+            : METRIC_CARDS.map(m => <MetricCard key={m.label} {...m} styles={styles} />)
           }
         </View>
 
@@ -538,7 +541,7 @@ export default function Health({ navigation }) {
               <View style={styles.chartHeaderRow}>
                 <Text style={styles.sectionCardTitle}>Weekly Steps</Text>
                 <View style={styles.chartGoalPill}>
-                  <Feather name="target" size={11} color="#1F9A5A" />
+                  <Feather name="target" size={11} color={theme.accent} />
                   <Text style={styles.chartGoalText}>{goal.toLocaleString('en-IN')} goal</Text>
                 </View>
               </View>
@@ -592,18 +595,18 @@ export default function Health({ navigation }) {
         ) : !currentWeek ? (
           <View style={styles.sectionCard}>
             <View style={styles.emptyWrap}>
-              <Feather name="bar-chart-2" size={24} color="#C7CBD3" />
+              <Feather name="bar-chart-2" size={24} color={theme.disabled} />
               <Text style={styles.emptyText}>No health data logged this week yet — tap + to add your first entry</Text>
             </View>
           </View>
         ) : (
-          <WeekCard week={currentWeek} />
+          <WeekCard week={currentWeek} styles={styles} />
         )}
         {weeklyHistory.length > 0 && (
           <TouchableOpacity style={styles.historyLink} onPress={() => setHistoryVisible(true)}>
-            <Feather name="clock" size={14} color="#4FA6E8" />
+            <Feather name="clock" size={14} color={theme.info} />
             <Text style={styles.historyLinkText}>View Full History</Text>
-            <Feather name="chevron-right" size={16} color="#4FA6E8" />
+            <Feather name="chevron-right" size={16} color={theme.info} />
           </TouchableOpacity>
         )}
 
@@ -614,14 +617,14 @@ export default function Health({ navigation }) {
             [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
           ) : appointments.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="calendar" size={24} color="#C7CBD3" />
+              <Feather name="calendar" size={24} color={theme.disabled} />
               <Text style={styles.emptyText}>No upcoming appointments</Text>
             </View>
           ) : (
             appointments.map((appt, i) => (
               <View key={appt.id || i} style={[styles.listRow, i !== appointments.length - 1 && styles.listRowDivider]}>
                 <View style={styles.apptIconWrap}>
-                  <Feather name="calendar" size={16} color="#4FA6E8" />
+                  <Feather name="calendar" size={16} color={theme.info} />
                 </View>
                 <View style={styles.listTextWrap}>
                   <Text style={styles.listTitle}>{appt.title || appt.doctor}</Text>
@@ -642,7 +645,7 @@ export default function Health({ navigation }) {
             [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
           ) : medications.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="package" size={24} color="#C7CBD3" />
+              <Feather name="package" size={24} color={theme.disabled} />
               <Text style={styles.emptyText}>No medications tracked</Text>
             </View>
           ) : (
@@ -655,7 +658,7 @@ export default function Health({ navigation }) {
                   <Text style={styles.listTitle}>{med.name}</Text>
                   <Text style={styles.listSubtitle}>{med.dosage} · {med.frequency}</Text>
                 </View>
-                <View style={[styles.apptBadge, { backgroundColor: '#F3EFFE' }]}>
+                <View style={[styles.apptBadge, { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE' }]}>
                   <Text style={[styles.apptBadgeText, { color: '#9B72FF' }]}>{med.time || 'Daily'}</Text>
                 </View>
               </View>
@@ -677,6 +680,8 @@ export default function Health({ navigation }) {
         onClose={() => setLogVisible(false)}
         onSynced={() => loadData(true)}
         bottomInset={insets.bottom}
+        theme={theme}
+        styles={styles}
       />
 
       <HistoryModal
@@ -684,28 +689,30 @@ export default function Health({ navigation }) {
         onClose={() => setHistoryVisible(false)}
         weeks={weeklyHistory}
         bottomInset={insets.bottom}
+        theme={theme}
+        styles={styles}
       />
 
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -713,128 +720,131 @@ export default function Health({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
-  headerBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
-  connectBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF3FD', borderRadius: 12, padding: 12, marginBottom: 16 },
-  connectBannerText: { fontSize: 12, color: '#4FA6E8', fontWeight: '600', flex: 1 },
-  sectionHeader: { fontSize: 12, fontWeight: '700', color: '#6B7280', letterSpacing: 0.5, marginBottom: 12 },
+  headerTitle: { fontSize: 28, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
+  headerBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  connectBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD', borderRadius: 12, padding: 12, marginBottom: 16 },
+  connectBannerText: { fontSize: 12, color: theme.info, fontWeight: '600', flex: 1 },
+  sectionHeader: { fontSize: 12, fontWeight: '700', color: theme.muted, letterSpacing: 0.5, marginBottom: 12 },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   metricCard: {
     width: '30.5%', borderRadius: 16, padding: 12,
     shadowColor: '#0F1720', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
   },
-  metricSkeleton: { width: '30.5%', height: 90, backgroundColor: '#FFFFFF', borderRadius: 16 },
+  metricSkeleton: { width: '30.5%', height: 90, backgroundColor: theme.card, borderRadius: 16 },
   metricIconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  metricLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.3, marginBottom: 4 },
+  metricLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, letterSpacing: 0.3, marginBottom: 4 },
   metricValueRow: { flexDirection: 'row', alignItems: 'baseline' },
   metricValue: { fontSize: 18, fontWeight: '800' },
-  metricUnit: { fontSize: 10, color: '#9AA1AE', fontWeight: '600' },
+  metricUnit: { fontSize: 10, color: theme.faint, fontWeight: '600' },
   sectionCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4,
+    backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4,
     shadowColor: '#0F1720', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
-  sectionCardTitle: { fontSize: 13, fontWeight: '700', color: '#14171F', marginBottom: 14 },
+  sectionCardTitle: { fontSize: 13, fontWeight: '700', color: theme.text, marginBottom: 14 },
   chartHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
-  chartGoalPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EFFDF6', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  chartGoalText: { fontSize: 11, fontWeight: '700', color: '#1F9A5A' },
+  chartGoalPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  chartGoalText: { fontSize: 11, fontWeight: '700', color: theme.accent },
   chartArea: { height: 130, position: 'relative', marginBottom: 10 },
-  goalLine: { position: 'absolute', left: 0, right: 0, borderTopWidth: 1.5, borderStyle: 'dashed', borderColor: '#4FA6E8', opacity: 0.6 },
+  goalLine: { position: 'absolute', left: 0, right: 0, borderTopWidth: 1.5, borderStyle: 'dashed', borderColor: theme.info, opacity: 0.6 },
   barsRow: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   barCol: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end', position: 'relative', paddingHorizontal: 4 },
-  barTrack: { position: 'absolute', bottom: 0, width: '58%', height: '100%', backgroundColor: '#F1F3F5', borderRadius: 14 },
+  // Chart track/labels are theme-mapped; the bar fill gradients below are
+  // deliberately fixed saturated greens (goal-hit vs normal) — a data-viz
+  // choice, not a theme-structural color.
+  barTrack: { position: 'absolute', bottom: 0, width: '58%', height: '100%', backgroundColor: theme.soft, borderRadius: 14 },
   weeklyBar: {
     width: '58%', borderRadius: 14, minHeight: 8,
     shadowColor: '#1F9A5A', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   goalBadge: {
     position: 'absolute', width: 20, height: 20, borderRadius: 10,
-    backgroundColor: '#1F9A5A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center',
     borderWidth: 2.5, borderColor: '#FFFFFF', zIndex: 3,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4,
   },
   labelsRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  weeklyDayLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: '#9AA1AE', fontWeight: '600' },
-  weeklyDayLabelActive: { color: '#14171F', fontWeight: '800' },
+  weeklyDayLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: theme.faint, fontWeight: '600' },
+  weeklyDayLabelActive: { color: theme.text, fontWeight: '800' },
   weekCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, marginBottom: 12,
+    backgroundColor: theme.card, borderRadius: 20, padding: 16, marginBottom: 12,
     shadowColor: '#0F1720', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
   },
   weekCardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  weekCardRange: { fontSize: 14, fontWeight: '700', color: '#14171F' },
-  weekCardBadge: { backgroundColor: '#FCEAED', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  weekCardBadgeText: { fontSize: 10, fontWeight: '800', color: '#E0546E' },
+  weekCardRange: { fontSize: 14, fontWeight: '700', color: theme.text },
+  weekCardBadge: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  weekCardBadgeText: { fontSize: 10, fontWeight: '800', color: theme.danger },
   weekCategoryBlock: { marginBottom: 12 },
   weekCategoryLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
   weekCategoryLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
   weekStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 10 },
   weekStat: { minWidth: '28%' },
-  weekStatLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.3, marginBottom: 3 },
-  weekStatValue: { fontSize: 14, fontWeight: '800', color: '#14171F' },
-  weekDaysLogged: { fontSize: 11, color: '#9AA1AE', fontWeight: '600' },
-  listSkeleton: { height: 52, backgroundColor: '#F0F1F4', borderRadius: 12, marginBottom: 10 },
+  weekStatLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, letterSpacing: 0.3, marginBottom: 3 },
+  weekStatValue: { fontSize: 14, fontWeight: '800', color: theme.text },
+  weekDaysLogged: { fontSize: 11, color: theme.faint, fontWeight: '600' },
+  listSkeleton: { height: 52, backgroundColor: theme.border, borderRadius: 12, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 24, gap: 8 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', fontWeight: '600' },
+  emptyText: { fontSize: 13, color: theme.faint, fontWeight: '600' },
   listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  listRowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  apptIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#EAF3FD', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  medIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F3EFFE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  listRowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  apptIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  medIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   listTextWrap: { flex: 1 },
-  listTitle: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  listSubtitle: { fontSize: 12, color: '#9AA1AE' },
-  apptBadge: { backgroundColor: '#EAF3FD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  apptBadgeText: { fontSize: 10, fontWeight: '800', color: '#4FA6E8' },
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  listTitle: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  listSubtitle: { fontSize: 12, color: theme.faint },
+  apptBadge: { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  apptBadgeText: { fontSize: 10, fontWeight: '800', color: theme.info },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
   // FAB
   fab: {
     position: 'absolute',
     width: 52, height: 52, borderRadius: 26,
-    backgroundColor: '#E0546E',
+    backgroundColor: theme.danger,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: 6,
   },
   // Sync sheet
-  sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(14,17,26,0.5)' },
+  sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.overlay },
   sheetWrap: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   sheetContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 20, paddingTop: 12,
   },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginBottom: 16 },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, marginBottom: 16 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  sheetSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 3 },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  sheetSubtitle: { fontSize: 12, color: theme.faint, marginTop: 3 },
   historyLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, marginBottom: 4 },
-  historyLinkText: { fontSize: 13, fontWeight: '700', color: '#4FA6E8' },
+  historyLinkText: { fontSize: 13, fontWeight: '700', color: theme.info },
   historySheetWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, top: '15%' },
   historySheetContent: {
     flex: 1,
-    backgroundColor: '#F9FAFC',
+    backgroundColor: theme.bg,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 20, paddingTop: 12,
   },
   syncGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  syncField: { width: '47%', backgroundColor: '#F5F6F8', borderRadius: 14, padding: 12 },
+  syncField: { width: '47%', backgroundColor: theme.surfaceAlt, borderRadius: 14, padding: 12 },
   syncFieldLabel: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
   syncFieldLabelText: { fontSize: 11, fontWeight: '700' },
   syncInputRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
   syncInput: {
-    flex: 1, fontSize: 22, fontWeight: '800', color: '#14171F',
+    flex: 1, fontSize: 22, fontWeight: '800', color: theme.text,
     padding: 0,
   },
-  syncUnit: { fontSize: 11, color: '#9AA1AE', fontWeight: '600' },
-  syncError: { fontSize: 12, color: '#E0546E', marginBottom: 10 },
+  syncUnit: { fontSize: 11, color: theme.faint, fontWeight: '600' },
+  syncError: { fontSize: 12, color: theme.danger, marginBottom: 10 },
   syncBtn: {
-    backgroundColor: '#E0546E',
+    backgroundColor: theme.danger,
     borderRadius: 14, paddingVertical: 15,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
   },
@@ -845,8 +855,8 @@ const styles = StyleSheet.create({
   catTab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 12, paddingVertical: 7,
-    borderRadius: 20, borderWidth: 1.5, borderColor: '#E3E5EA',
-    backgroundColor: '#F5F6F8',
+    borderRadius: 20, borderWidth: 1.5, borderColor: theme.borderStrong,
+    backgroundColor: theme.surfaceAlt,
   },
-  catTabText: { fontSize: 12, fontWeight: '700', color: '#9AA1AE' },
+  catTabText: { fontSize: 12, fontWeight: '700', color: theme.faint },
 });

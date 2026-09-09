@@ -17,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch } from "../api/client";
+import { useTheme } from "../context/ThemeContext";
 
 // Movie data is fetched through the backend's /api/tmdb proxy (see
 // backend/src/routes/tmdb.js) so the TMDB API key stays server-side —
@@ -189,7 +190,7 @@ function openYouTube(title) {
 }
 
 // ── Movie Card ───────────────────────────────────────────────────────────────
-function MovieCard({ title, director, year, color, index, isSaved, onToggleSaved, poster, overview }) {
+function MovieCard({ title, director, year, color, index, isSaved, onToggleSaved, poster, overview, theme, styles }) {
   return (
     <View style={styles.movieCard}>
       {poster ? (
@@ -211,7 +212,7 @@ function MovieCard({ title, director, year, color, index, isSaved, onToggleSaved
             <Text style={styles.trailerBtnText}>Trailer</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onToggleSaved} style={styles.saveBtn}>
-            <Feather name="bookmark" size={15} color={isSaved ? "#6C47FF" : "#9AA1AE"} />
+            <Feather name="bookmark" size={15} color={isSaved ? theme.accentAlt : theme.faint} />
           </TouchableOpacity>
         </View>
       </View>
@@ -223,6 +224,8 @@ export { BROWSE, GROUPS, FALLBACK, parseMoviesFromAI, MovieCard, openYouTube };
 
 // ── AI Chat Panel ────────────────────────────────────────────────────────────
 function AIChatPanel({ onMoviesUpdate, currentContext }) {
+  const { theme } = useTheme();
+  const panelStyles = createPanelStyles(theme);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([
@@ -286,11 +289,11 @@ Keep it concise. User request: ${content}`;
             <Feather name="cpu" size={12} color="#fff" />
           </LinearGradient>
           <Text style={panelStyles.toggleTitle}>Mneva AI</Text>
-          {loading && <ActivityIndicator size="small" color="#6C47FF" style={{ marginLeft: 8 }} />}
+          {loading && <ActivityIndicator size="small" color={theme.accentAlt} style={{ marginLeft: 8 }} />}
         </View>
         <View style={panelStyles.toggleRight}>
           <Text style={panelStyles.toggleHint}>{open ? "Close" : "Ask AI for movies"}</Text>
-          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color="#6C47FF" />
+          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color={theme.accentAlt} />
         </View>
       </TouchableOpacity>
 
@@ -310,7 +313,7 @@ Keep it concise. User request: ${content}`;
           ))}
           {loading && (
             <View style={[panelStyles.bubble, panelStyles.bubbleAi]}>
-              <ActivityIndicator size="small" color="#6C47FF" />
+              <ActivityIndicator size="small" color={theme.accentAlt} />
             </View>
           )}
         </ScrollView>
@@ -319,7 +322,7 @@ Keep it concise. User request: ${content}`;
           <TextInput
             style={panelStyles.input}
             placeholder="Ask for movies, directors, genres…"
-            placeholderTextColor="#9AA1AE"
+            placeholderTextColor={theme.placeholder}
             value={input}
             onChangeText={setInput}
             onSubmitEditing={() => sendMessage()}
@@ -341,6 +344,8 @@ Keep it concise. User request: ${content}`;
 // ── Main Screen ──────────────────────────────────────────────────────────────
 export default function MovieDiscovery({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [section, setSection] = useState("trending");
   const [selection, setSelection] = useState("This Week");
   const [saved, setSaved] = useState([]);
@@ -493,7 +498,7 @@ export default function MovieDiscovery({ navigation }) {
                   {aiMovies ? "✨ AI-curated picks" : tmdbMovies ? "🎬 Live from TMDB" : "Top picks for you"}
                 </Text>
               </View>
-              {tmdbLoading && <ActivityIndicator size="small" color="#6C47FF" style={{ marginRight: 8 }} />}
+              {tmdbLoading && <ActivityIndicator size="small" color={theme.accentAlt} style={{ marginRight: 8 }} />}
               {aiMovies && (
                 <TouchableOpacity onPress={() => { setAiMovies(null); setAiLabel(null); }}>
                   <Text style={styles.resetBtn}>Reset</Text>
@@ -515,6 +520,8 @@ export default function MovieDiscovery({ navigation }) {
                   overview={overview || ""}
                   isSaved={saved.includes(title)}
                   onToggleSaved={() => toggleSaved(title)}
+                  theme={theme}
+                  styles={styles}
                 />
               ))}
             </View>
@@ -528,23 +535,23 @@ export default function MovieDiscovery({ navigation }) {
         {/* ── Bottom tab bar ── */}
         <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
-            <Ionicons name="home" size={22} color="#9AA1AE" />
+            <Ionicons name="home" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>HOME</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Priorities")}>
-            <Feather name="calendar" size={22} color="#9AA1AE" />
+            <Feather name="calendar" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>PRIORITIES</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("AskAI")}>
-            <Feather name="mic" size={22} color="#9AA1AE" />
+            <Feather name="mic" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>ASK AI</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Space")}>
-            <Feather name="folder" size={22} color="#9AA1AE" />
+            <Feather name="folder" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>SPACE</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
-            <Feather name="user" size={22} color="#9AA1AE" />
+            <Feather name="user" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>PROFILE</Text>
           </TouchableOpacity>
         </View>
@@ -555,48 +562,48 @@ export default function MovieDiscovery({ navigation }) {
 }
 
 // ── Styles ───────────────────────────────────────────────────────────────────
-const panelStyles = StyleSheet.create({
-  wrapper: { backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#E8E8F0" },
+const createPanelStyles = (theme) => StyleSheet.create({
+  wrapper: { backgroundColor: theme.card, borderTopWidth: 1, borderTopColor: theme.border },
   toggleBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 11 },
   toggleLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   aiDot: { width: 26, height: 26, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  toggleTitle: { fontSize: 13, fontWeight: "800", color: "#14171F" },
+  toggleTitle: { fontSize: 13, fontWeight: "800", color: theme.text },
   toggleRight: { flexDirection: "row", alignItems: "center", gap: 5 },
-  toggleHint: { fontSize: 11, color: "#6C47FF", fontWeight: "600" },
-  panel: { backgroundColor: "#F5F3FF" },
+  toggleHint: { fontSize: 11, color: theme.accentAlt, fontWeight: "600" },
+  panel: { backgroundColor: theme.isDark ? "rgba(129,128,255,0.10)" : "#F5F3FF" },
   msgScroll: { flex: 1 },
   bubble: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8, maxWidth: "88%" },
-  bubbleAi: { backgroundColor: "#FFFFFF", alignSelf: "flex-start", borderBottomLeftRadius: 4 },
-  bubbleUser: { backgroundColor: "#6C47FF", alignSelf: "flex-end", borderBottomRightRadius: 4 },
-  bubbleTextAi: { fontSize: 12.5, color: "#374151", lineHeight: 18 },
+  bubbleAi: { backgroundColor: theme.card, alignSelf: "flex-start", borderBottomLeftRadius: 4 },
+  bubbleUser: { backgroundColor: theme.accentAlt, alignSelf: "flex-end", borderBottomRightRadius: 4 },
+  bubbleTextAi: { fontSize: 12.5, color: theme.textSecondary, lineHeight: 18 },
   bubbleTextUser: { fontSize: 12.5, color: "#FFFFFF", lineHeight: 18 },
-  inputRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#E8E8F0" },
-  input: { flex: 1, backgroundColor: "#FFFFFF", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, color: "#14171F" },
-  sendBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#6C47FF", alignItems: "center", justifyContent: "center" },
+  inputRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: theme.border },
+  input: { flex: 1, backgroundColor: theme.card, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, color: theme.text },
+  sendBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.accentAlt, alignItems: "center", justifyContent: "center" },
 });
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F4F3FA" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
 
   // Header
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, backgroundColor: "#F4F3FA" },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
-  headerLabel: { fontSize: 10, fontWeight: "800", color: "#8B83C0", letterSpacing: 1.1, textTransform: "uppercase" },
-  headerTitle: { fontSize: 24, fontWeight: "800", color: "#14171F", letterSpacing: -0.4, marginTop: 2 },
-  livePill: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#EDE9FE" },
-  liveDot: { height: 6, width: 6, borderRadius: 3, backgroundColor: "#6C47FF" },
-  liveText: { fontSize: 9, fontWeight: "800", color: "#6C47FF", letterSpacing: 0.7 },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, backgroundColor: theme.bg },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.card, alignItems: "center", justifyContent: "center" },
+  headerLabel: { fontSize: 10, fontWeight: "800", color: theme.accentAlt, letterSpacing: 1.1, textTransform: "uppercase" },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: theme.text, letterSpacing: -0.4, marginTop: 2 },
+  livePill: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.isDark ? "rgba(129,128,255,0.16)" : "#EDE9FE" },
+  liveDot: { height: 6, width: 6, borderRadius: 3, backgroundColor: theme.accentAlt },
+  liveText: { fontSize: 9, fontWeight: "800", color: theme.accentAlt, letterSpacing: 0.7 },
 
   content: { paddingHorizontal: 16, paddingTop: 4 },
 
   // Browse grid
   browseGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 10, marginBottom: 16 },
-  browseCard: { width: "23.5%", backgroundColor: "#FFFFFF", borderRadius: 16, padding: 10, alignItems: "center", borderWidth: 1, borderColor: "#EBEBF5", gap: 7 },
-  browseCardActive: { borderColor: "#A78BFA", backgroundColor: "#F5F3FF", shadowColor: "#6C47FF", shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  browseCard: { width: "23.5%", backgroundColor: theme.card, borderRadius: 16, padding: 10, alignItems: "center", borderWidth: 1, borderColor: theme.border, gap: 7 },
+  browseCardActive: { borderColor: theme.isDark ? "rgba(129,128,255,0.5)" : "#A78BFA", backgroundColor: theme.isDark ? "rgba(129,128,255,0.12)" : "#F5F3FF", shadowColor: "#6C47FF", shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   browseIcon: { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  selectedMark: { position: "absolute", top: 7, right: 7, backgroundColor: "#6C47FF", width: 15, height: 15, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  browseTitle: { fontSize: 9, fontWeight: "800", color: "#4B5563", textAlign: "center" },
-  browseTitleActive: { color: "#6C47FF" },
+  selectedMark: { position: "absolute", top: 7, right: 7, backgroundColor: theme.accentAlt, width: 15, height: 15, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  browseTitle: { fontSize: 9, fontWeight: "800", color: theme.textSecondary, textAlign: "center" },
+  browseTitleActive: { color: theme.accentAlt },
 
   // Agent strip
   agentStrip: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, flexDirection: "row", alignItems: "center", marginBottom: 20 },
@@ -606,38 +613,38 @@ const styles = StyleSheet.create({
 
   // Section heading + chips
   headingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 12 },
-  sectionLabel: { fontSize: 10, fontWeight: "800", color: "#8B83C0", letterSpacing: 1.1, textTransform: "uppercase" },
-  sectionHeading: { fontSize: 18, fontWeight: "800", color: "#14171F", letterSpacing: -0.3, marginTop: 3 },
-  countBadge: { fontSize: 10, fontWeight: "800", color: "#6C47FF", paddingBottom: 2 },
+  sectionLabel: { fontSize: 10, fontWeight: "800", color: theme.accentAlt, letterSpacing: 1.1, textTransform: "uppercase" },
+  sectionHeading: { fontSize: 18, fontWeight: "800", color: theme.text, letterSpacing: -0.3, marginTop: 3 },
+  countBadge: { fontSize: 10, fontWeight: "800", color: theme.accentAlt, paddingBottom: 2 },
   chips: { gap: 8, paddingBottom: 16 },
-  chip: { borderRadius: 20, backgroundColor: "#EBEBF5", paddingHorizontal: 14, paddingVertical: 9 },
-  chipActive: { backgroundColor: "#6C47FF" },
-  chipText: { fontSize: 12, color: "#4B5563", fontWeight: "700" },
+  chip: { borderRadius: 20, backgroundColor: theme.soft, paddingHorizontal: 14, paddingVertical: 9 },
+  chipActive: { backgroundColor: theme.accentAlt },
+  chipText: { fontSize: 12, color: theme.textSecondary, fontWeight: "700" },
   chipTextActive: { color: "#FFFFFF" },
 
   // List header
   listHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  listTitle: { fontSize: 17, fontWeight: "800", color: "#14171F", letterSpacing: -0.3 },
-  listSub: { fontSize: 11, color: "#8B83C0", marginTop: 2 },
-  resetBtn: { fontSize: 12, color: "#6C47FF", fontWeight: "800" },
+  listTitle: { fontSize: 17, fontWeight: "800", color: theme.text, letterSpacing: -0.3 },
+  listSub: { fontSize: 11, color: theme.accentAlt, marginTop: 2 },
+  resetBtn: { fontSize: 12, color: theme.accentAlt, fontWeight: "800" },
 
   // Movie cards
   movieList: { gap: 12, marginBottom: 8 },
-  movieCard: { backgroundColor: "#FFFFFF", borderRadius: 18, flexDirection: "row", overflow: "hidden", shadowColor: "#6C47FF", shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  movieCard: { backgroundColor: theme.card, borderRadius: 18, flexDirection: "row", overflow: "hidden", shadowColor: "#6C47FF", shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   moviePoster: { width: 90, height: 120 },
-  movieOverview: { fontSize: 10, color: "#9AA1AE", marginTop: 3, lineHeight: 14 },
+  movieOverview: { fontSize: 10, color: theme.faint, marginTop: 3, lineHeight: 14 },
   movieRank: { fontSize: 11, fontWeight: "800", color: "rgba(255,255,255,0.8)" },
   movieInfo: { flex: 1, padding: 14, justifyContent: "space-between" },
-  movieTitle: { fontSize: 14, fontWeight: "800", color: "#14171F", lineHeight: 20 },
-  movieDirector: { fontSize: 11, color: "#6B7280", marginTop: 3 },
-  movieYear: { fontSize: 10, color: "#A78BFA", fontWeight: "700", marginTop: 2 },
+  movieTitle: { fontSize: 14, fontWeight: "800", color: theme.text, lineHeight: 20 },
+  movieDirector: { fontSize: 11, color: theme.muted, marginTop: 3 },
+  movieYear: { fontSize: 10, color: theme.accentAlt, fontWeight: "700", marginTop: 2 },
   movieActions: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
-  trailerBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#FEF2F2", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  trailerBtnText: { fontSize: 11, fontWeight: "700", color: "#EF4444" },
+  trailerBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.isDark ? "rgba(241,113,134,0.14)" : "#FEF2F2", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  trailerBtnText: { fontSize: 11, fontWeight: "700", color: theme.danger },
   saveBtn: { padding: 4 },
 
   // Tab bar
-  tabBar: { flexDirection: "row", backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EBEBF5", paddingTop: 10 },
+  tabBar: { flexDirection: "row", backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: "center" },
-  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
+import { useTheme } from '../../context/ThemeContext';
 import DateField from './DateField';
 
 const EMI_TYPES = ['Loan EMI', 'Credit Card EMI', 'Product EMI', 'Other'];
@@ -44,6 +45,8 @@ const ACCENT = ['#F5A623', '#E0901A'];
 export default function EmiScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { on } = useSocket();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [emis, setEmis] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -130,7 +133,7 @@ export default function EmiScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>{showForm ? (isEditing ? 'Edit EMI' : 'Add EMI') : 'EMIs'}</Text>
@@ -138,7 +141,7 @@ export default function EmiScreen({ navigation }) {
         </View>
         {showForm && isEditing ? (
           <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-            <Feather name="trash-2" size={18} color="#E0546E" />
+            <Feather name="trash-2" size={18} color={theme.danger} />
           </TouchableOpacity>
         ) : !showForm ? (
           <TouchableOpacity onPress={openAdd}>
@@ -154,7 +157,7 @@ export default function EmiScreen({ navigation }) {
           <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>EMI Name <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. Laptop EMI" placeholderTextColor="#9AA1AE" value={form.name} onChangeText={v => setField('name', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Laptop EMI" placeholderTextColor={theme.placeholder} value={form.name} onChangeText={v => setField('name', v)} />
 
             <Text style={styles.fieldLabel}>EMI Type <Text style={styles.required}>*</Text></Text>
             <View style={styles.chipRow}>
@@ -166,60 +169,60 @@ export default function EmiScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Provider / Bank / Merchant <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. Amazon Pay Later" placeholderTextColor="#9AA1AE" value={form.provider} onChangeText={v => setField('provider', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Amazon Pay Later" placeholderTextColor={theme.placeholder} value={form.provider} onChangeText={v => setField('provider', v)} />
 
             <Text style={styles.fieldLabel}>Description</Text>
-            <TextInput style={styles.input} placeholder="e.g. MacBook Air M2" placeholderTextColor="#9AA1AE" value={form.description} onChangeText={v => setField('description', v)} />
+            <TextInput style={styles.input} placeholder="e.g. MacBook Air M2" placeholderTextColor={theme.placeholder} value={form.description} onChangeText={v => setField('description', v)} />
 
             <Text style={styles.sectionLabel}>AMOUNT</Text>
             <Text style={styles.fieldLabel}>Total Amount (₹) <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.totalAmount} onChangeText={v => setField('totalAmount', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.totalAmount} onChangeText={v => setField('totalAmount', v)} />
 
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Down Payment (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.downPayment} onChangeText={v => setField('downPayment', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.downPayment} onChangeText={v => setField('downPayment', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Financed Amount (₹) <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.financedAmount} onChangeText={v => setField('financedAmount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.financedAmount} onChangeText={v => setField('financedAmount', v)} />
               </View>
             </View>
 
             <Text style={styles.fieldLabel}>EMI Amount (₹) <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.emiAmount} onChangeText={v => setField('emiAmount', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.emiAmount} onChangeText={v => setField('emiAmount', v)} />
 
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Interest Rate (%)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.interestRate} onChangeText={v => setField('interestRate', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.interestRate} onChangeText={v => setField('interestRate', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Processing Fee (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.processingFee} onChangeText={v => setField('processingFee', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.processingFee} onChangeText={v => setField('processingFee', v)} />
               </View>
             </View>
 
             <Text style={styles.fieldLabel}>Total Payable (₹)</Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.totalPayable} onChangeText={v => setField('totalPayable', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.totalPayable} onChangeText={v => setField('totalPayable', v)} />
 
             <Text style={styles.sectionLabel}>SCHEDULE</Text>
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>No. of Installments <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.numberOfInstallments} onChangeText={v => setField('numberOfInstallments', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.numberOfInstallments} onChangeText={v => setField('numberOfInstallments', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Installments Paid</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.installmentsPaid} onChangeText={v => setField('installmentsPaid', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.installmentsPaid} onChangeText={v => setField('installmentsPaid', v)} />
               </View>
             </View>
 
             <Text style={styles.fieldLabel}>Installments Remaining</Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.installmentsRemaining} onChangeText={v => setField('installmentsRemaining', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.installmentsRemaining} onChangeText={v => setField('installmentsRemaining', v)} />
 
             <DateField label="Start Date" required value={form.startDate} onChange={v => setField('startDate', v)} />
             <DateField label="Next Payment Date" value={form.nextPaymentDate} onChange={v => setField('nextPaymentDate', v)} />
@@ -254,10 +257,10 @@ export default function EmiScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Payment Account</Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor="#9AA1AE" value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor={theme.placeholder} value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
 
             <Text style={styles.fieldLabel}>Payment Day (of month)</Text>
-            <TextInput style={styles.input} placeholder="e.g. 5" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.paymentDay} onChangeText={v => setField('paymentDay', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 5" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.paymentDay} onChangeText={v => setField('paymentDay', v)} />
 
             <Text style={styles.sectionLabel}>STATUS</Text>
             <View style={styles.chipRow}>
@@ -270,13 +273,13 @@ export default function EmiScreen({ navigation }) {
 
             <Text style={styles.sectionLabel}>OPTIONAL</Text>
             <Text style={styles.fieldLabel}>Product / Purchase Name</Text>
-            <TextInput style={styles.input} placeholder="e.g. MacBook Air M2" placeholderTextColor="#9AA1AE" value={form.productName} onChangeText={v => setField('productName', v)} />
+            <TextInput style={styles.input} placeholder="e.g. MacBook Air M2" placeholderTextColor={theme.placeholder} value={form.productName} onChangeText={v => setField('productName', v)} />
 
             <Text style={styles.fieldLabel}>Order Reference</Text>
-            <TextInput style={styles.input} placeholder="e.g. Order #12345" placeholderTextColor="#9AA1AE" value={form.orderReference} onChangeText={v => setField('orderReference', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Order #12345" placeholderTextColor={theme.placeholder} value={form.orderReference} onChangeText={v => setField('orderReference', v)} />
 
             <Text style={styles.fieldLabel}>Notes</Text>
-            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
+            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
 
             <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={handleSave}>
               <LinearGradient colors={ACCENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
@@ -290,13 +293,13 @@ export default function EmiScreen({ navigation }) {
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#F5A623" colors={['#F5A623']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.warning} colors={[theme.warning]} />}
         >
           {loading ? (
             [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
           ) : emis.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="credit-card" size={32} color="#C7CBD3" />
+              <Feather name="credit-card" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>No EMIs added yet. Tap + to add one.</Text>
             </View>
           ) : (
@@ -304,7 +307,7 @@ export default function EmiScreen({ navigation }) {
               {emis.map((emi, i) => (
                 <TouchableOpacity key={emi.id} style={[styles.row, i !== emis.length - 1 && styles.rowDivider]} onPress={() => openEdit(emi)} activeOpacity={0.7}>
                   <View style={styles.iconWrap}>
-                    <Feather name="credit-card" size={16} color="#F5A623" />
+                    <Feather name="credit-card" size={16} color={theme.warning} />
                   </View>
                   <View style={styles.rowTextWrap}>
                     <Text style={styles.rowName}>{emi.name}</Text>
@@ -314,7 +317,7 @@ export default function EmiScreen({ navigation }) {
                     <Text style={styles.rowAmount}>₹{(emi.emiAmount || 0).toLocaleString('en-IN')}</Text>
                     <Text style={styles.rowMeta}>{fmtShortDate(emi.nextPaymentDate)}</Text>
                   </View>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" style={{ marginLeft: 8 }} />
+                  <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -325,43 +328,43 @@ export default function EmiScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   addBtnGrad: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
   scrollContent: { paddingHorizontal: 20 },
-  skeleton: { height: 60, backgroundColor: '#F0F1F4', borderRadius: 14, marginBottom: 10 },
+  skeleton: { height: 60, backgroundColor: theme.border, borderRadius: 14, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
+  emptyText: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 19 },
 
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  sectionCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowTextWrap: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowSub: { fontSize: 12, color: '#9AA1AE' },
+  rowName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowSub: { fontSize: 12, color: theme.faint },
   rowRight: { alignItems: 'flex-end', gap: 4 },
-  rowAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
-  rowMeta: { fontSize: 11, color: '#9AA1AE' },
+  rowAmount: { fontSize: 15, fontWeight: '800', color: theme.text },
+  rowMeta: { fontSize: 11, color: theme.faint },
 
   formScroll: { paddingHorizontal: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#E0546E' },
-  input: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  required: { color: theme.danger },
+  input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  selectChipActive: { backgroundColor: '#FEF3C7', borderColor: '#F5A623' },
-  selectChipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  selectChipTextActive: { color: '#D97706' },
+  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  selectChipActive: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderColor: theme.warning },
+  selectChipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  selectChipTextActive: { color: theme.warning },
 
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },

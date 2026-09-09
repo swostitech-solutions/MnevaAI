@@ -16,8 +16,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Signup({ navigation }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -87,7 +90,7 @@ export default function Signup({ navigation }) {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <StatusBar style="dark" />
+        <StatusBar style={theme.statusBarStyle} />
 
         <Image
           source={require('../../assets/mneva-m-icon.png')}
@@ -105,7 +108,7 @@ export default function Signup({ navigation }) {
           <TextInput
             style={styles.input}
             placeholder="John Doe"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={theme.placeholder}
             value={fullName}
             onChangeText={setFullName}
             autoCapitalize="words"
@@ -121,7 +124,7 @@ export default function Signup({ navigation }) {
             <TextInput
               style={styles.phoneInput}
               placeholder="10-digit mobile number"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.placeholder}
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
@@ -135,7 +138,7 @@ export default function Signup({ navigation }) {
           <TextInput
             style={styles.input}
             placeholder="you@example.com"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={theme.placeholder}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -150,7 +153,7 @@ export default function Signup({ navigation }) {
             <TextInput
               style={styles.passwordInput}
               placeholder="Min. 8 characters"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.placeholder}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
@@ -162,7 +165,7 @@ export default function Signup({ navigation }) {
               <Ionicons
                 name={showPassword ? 'eye' : 'eye-off'}
                 size={20}
-                color="#9AA1AE"
+                color={theme.faint}
               />
             </TouchableOpacity>
           </View>
@@ -174,7 +177,7 @@ export default function Signup({ navigation }) {
             <TextInput
               style={styles.passwordInput}
               placeholder="••••••••"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.placeholder}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry={!showConfirmPassword}
@@ -186,7 +189,7 @@ export default function Signup({ navigation }) {
               <Ionicons
                 name={showConfirmPassword ? 'eye' : 'eye-off'}
                 size={20}
-                color="#9AA1AE"
+                color={theme.faint}
               />
             </TouchableOpacity>
           </View>
@@ -242,7 +245,7 @@ export default function Signup({ navigation }) {
                 {termsModal === 'terms' ? 'Terms of Service' : 'Privacy Policy'}
               </Text>
               <TouchableOpacity onPress={() => setTermsModal(null)} style={styles.modalClose}>
-                <Ionicons name="close" size={22} color="#6B7280" />
+                <Ionicons name="close" size={22} color={theme.muted} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
@@ -309,10 +312,10 @@ support@swostitech.com`}</Text>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: '#FAFAFC',
+    backgroundColor: theme.bg,
   },
   container: {
     flexGrow: 1,
@@ -329,16 +332,16 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#14171F',
+    color: theme.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: theme.muted,
     marginBottom: 28,
   },
   errorText: {
-    color: '#DC2626',
+    color: theme.danger,
     fontSize: 13,
     marginBottom: 16,
     textAlign: 'center',
@@ -348,27 +351,27 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    color: '#374151',
+    color: theme.textSecondary,
     fontSize: 13,
     marginBottom: 8,
     fontWeight: '600',
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: '#E4E7EF',
+    borderColor: theme.borderStrong,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: '#14171F',
+    color: theme.text,
     fontSize: 15,
   },
   passwordRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: '#E4E7EF',
+    borderColor: theme.borderStrong,
     borderRadius: 12,
     paddingRight: 8,
   },
@@ -376,7 +379,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: '#14171F',
+    color: theme.text,
     fontSize: 15,
   },
   eyeButton: {
@@ -394,33 +397,33 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 5,
     borderWidth: 1.5,
-    borderColor: '#D1D5DB',
+    borderColor: theme.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
     marginTop: 1,
   },
   checkboxChecked: {
-    backgroundColor: '#7B5FE8',
-    borderColor: '#7B5FE8',
+    backgroundColor: theme.accentAlt,
+    borderColor: theme.accentAlt,
   },
   termsText: {
     flex: 1,
-    color: '#6B7280',
+    color: theme.muted,
     fontSize: 13,
     lineHeight: 19,
   },
   termsLink: {
-    color: '#7B5FE8',
+    color: theme.accentAlt,
     fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(14,17,26,0.5)',
+    backgroundColor: theme.overlay,
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 22,
@@ -433,7 +436,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#E3E5EA',
+    backgroundColor: theme.borderStrong,
     marginBottom: 16,
   },
   modalHeader: {
@@ -445,17 +448,17 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#14171F',
+    color: theme.text,
   },
   modalClose: { padding: 4 },
   modalBody: { marginBottom: 20 },
   modalText: {
     fontSize: 13.5,
-    color: '#374151',
+    color: theme.textSecondary,
     lineHeight: 22,
   },
   modalBtn: {
-    backgroundColor: '#7B5FE8',
+    backgroundColor: theme.accentAlt,
     borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
@@ -488,40 +491,40 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   signinText: {
-    color: '#6B7280',
+    color: theme.muted,
     fontSize: 14,
   },
   signinLink: {
-    color: '#7B5FE8',
+    color: theme.accentAlt,
     fontSize: 14,
     fontWeight: '700',
   },
   phoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: '#E4E7EF',
+    borderColor: theme.borderStrong,
     borderRadius: 12,
     overflow: 'hidden',
   },
   phonePrefix: {
     paddingHorizontal: 12,
     paddingVertical: 14,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: theme.soft,
     borderRightWidth: 1,
-    borderRightColor: '#E4E7EF',
+    borderRightColor: theme.borderStrong,
   },
   phonePrefixText: {
     fontSize: 14,
-    color: '#374151',
+    color: theme.textSecondary,
     fontWeight: '600',
   },
   phoneInput: {
     flex: 1,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    color: '#14171F',
+    color: theme.text,
     fontSize: 15,
   },
 });

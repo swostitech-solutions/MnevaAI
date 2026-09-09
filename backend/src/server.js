@@ -56,6 +56,8 @@ import { connectRedis, disconnectRedis } from "./config/redis.js";
 import { startEmailWorker } from "./queues/email.queue.js";
 import { startReminderWorker } from "./queues/reminder.queue.js";
 import { startWorkflowWorker } from "./queues/workflow.queue.js";
+import { startDailyDigestWorker, scheduleDailyDigest } from "./queues/dailyDigest.queue.js";
+import { startAdvanceReminderWorker, scheduleAdvanceReminderScan } from "./queues/advanceReminder.queue.js";
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
 
 const app = express();
@@ -497,6 +499,10 @@ server.on("listening", () => {
         startEmailWorker();
         startReminderWorker(io);
         startWorkflowWorker();
+        startDailyDigestWorker();
+        await scheduleDailyDigest();
+        startAdvanceReminderWorker();
+        await scheduleAdvanceReminderScan();
         logger.info("✅ BullMQ workers started");
       } catch (error) {
         logger.warn(`⚠️ Could not start BullMQ workers: ${error.message}`);

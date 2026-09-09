@@ -10,6 +10,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
+import { useTheme } from '../../context/ThemeContext';
 import DateField from './DateField';
 
 const LOAN_TYPES = ['Personal Loan', 'Home Loan', 'Car Loan', 'Education Loan', 'Business Loan', 'Gold Loan', 'Other'];
@@ -54,6 +55,8 @@ const ACCENT = ['#4FA6E8', '#3D8BFF'];
 export default function LoanScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { on } = useSocket();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -164,7 +167,7 @@ export default function LoanScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>{showForm ? (isEditing ? 'Edit Loan' : 'Add Loan') : 'Loans'}</Text>
@@ -172,7 +175,7 @@ export default function LoanScreen({ navigation }) {
         </View>
         {showForm && isEditing ? (
           <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-            <Feather name="trash-2" size={18} color="#E0546E" />
+            <Feather name="trash-2" size={18} color={theme.danger} />
           </TouchableOpacity>
         ) : !showForm ? (
           <TouchableOpacity onPress={openAdd}>
@@ -188,7 +191,7 @@ export default function LoanScreen({ navigation }) {
           <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>Loan Name <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. Home Loan — HDFC" placeholderTextColor="#9AA1AE" value={form.name} onChangeText={v => setField('name', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Home Loan — HDFC" placeholderTextColor={theme.placeholder} value={form.name} onChangeText={v => setField('name', v)} />
 
             <Text style={styles.fieldLabel}>Loan Type <Text style={styles.required}>*</Text></Text>
             <View style={styles.chipRow}>
@@ -200,13 +203,13 @@ export default function LoanScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Lender / Bank Name <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC Bank" placeholderTextColor="#9AA1AE" value={form.lenderName} onChangeText={v => setField('lenderName', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC Bank" placeholderTextColor={theme.placeholder} value={form.lenderName} onChangeText={v => setField('lenderName', v)} />
 
             <Text style={styles.fieldLabel}>Loan Account Number</Text>
-            <TextInput style={styles.input} placeholder="e.g. ••••4521" placeholderTextColor="#9AA1AE" value={form.accountNumber} onChangeText={v => setField('accountNumber', v)} />
+            <TextInput style={styles.input} placeholder="e.g. ••••4521" placeholderTextColor={theme.placeholder} value={form.accountNumber} onChangeText={v => setField('accountNumber', v)} />
 
             <Text style={styles.fieldLabel}>Purpose</Text>
-            <TextInput style={styles.input} placeholder="e.g. Home renovation" placeholderTextColor="#9AA1AE" value={form.purpose} onChangeText={v => setField('purpose', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Home renovation" placeholderTextColor={theme.placeholder} value={form.purpose} onChangeText={v => setField('purpose', v)} />
 
             <Text style={styles.fieldLabel}>Status</Text>
             <View style={styles.chipRow}>
@@ -219,29 +222,29 @@ export default function LoanScreen({ navigation }) {
 
             <Text style={styles.sectionLabel}>LOAN AMOUNT</Text>
             <Text style={styles.fieldLabel}>Original Loan Amount (₹) <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.originalAmount} onChangeText={v => setField('originalAmount', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.originalAmount} onChangeText={v => setField('originalAmount', v)} />
 
             <Text style={styles.fieldLabel}>Current Outstanding Amount (₹) <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.outstandingAmount} onChangeText={v => setField('outstandingAmount', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.outstandingAmount} onChangeText={v => setField('outstandingAmount', v)} />
 
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Amount Already Paid (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.amountPaid} onChangeText={v => setField('amountPaid', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.amountPaid} onChangeText={v => setField('amountPaid', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Processing Fee (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.processingFee} onChangeText={v => setField('processingFee', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.processingFee} onChangeText={v => setField('processingFee', v)} />
               </View>
             </View>
 
             <Text style={styles.fieldLabel}>Other Charges (₹)</Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.otherCharges} onChangeText={v => setField('otherCharges', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.otherCharges} onChangeText={v => setField('otherCharges', v)} />
 
             <Text style={styles.sectionLabel}>INTEREST DETAILS</Text>
             <Text style={styles.fieldLabel}>Interest Rate (%) <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. 8.5" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.interestRate} onChangeText={v => setField('interestRate', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 8.5" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.interestRate} onChangeText={v => setField('interestRate', v)} />
 
             <Text style={styles.fieldLabel}>Interest Type <Text style={styles.required}>*</Text></Text>
             <View style={styles.chipRow}>
@@ -263,7 +266,7 @@ export default function LoanScreen({ navigation }) {
 
             <Text style={styles.sectionLabel}>EMI DETAILS</Text>
             <Text style={styles.fieldLabel}>EMI Amount (₹) <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.emiAmount} onChangeText={v => setField('emiAmount', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.emiAmount} onChangeText={v => setField('emiAmount', v)} />
 
             <Text style={styles.fieldLabel}>EMI Frequency</Text>
             <View style={styles.chipRow}>
@@ -281,17 +284,17 @@ export default function LoanScreen({ navigation }) {
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Number of EMIs <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.numberOfEmis} onChangeText={v => setField('numberOfEmis', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.numberOfEmis} onChangeText={v => setField('numberOfEmis', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>EMIs Paid</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.emisPaid} onChangeText={v => setField('emisPaid', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.emisPaid} onChangeText={v => setField('emisPaid', v)} />
               </View>
             </View>
 
             <Text style={styles.fieldLabel}>EMIs Remaining</Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.emisRemaining} onChangeText={v => setField('emisRemaining', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.emisRemaining} onChangeText={v => setField('emisRemaining', v)} />
 
             <Text style={styles.sectionLabel}>LOAN DATES</Text>
             <DateField label="Loan Start Date" required value={form.loanStartDate} onChange={v => setField('loanStartDate', v)} />
@@ -308,10 +311,10 @@ export default function LoanScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Payment Account / Bank</Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor="#9AA1AE" value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor={theme.placeholder} value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
 
             <Text style={styles.fieldLabel}>Payment Day (of month)</Text>
-            <TextInput style={styles.input} placeholder="e.g. 5" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.paymentDay} onChangeText={v => setField('paymentDay', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 5" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.paymentDay} onChangeText={v => setField('paymentDay', v)} />
 
             <Text style={styles.sectionLabel}>OPTIONAL</Text>
             <Text style={styles.fieldLabel}>Prepayment Allowed?</Text>
@@ -324,14 +327,14 @@ export default function LoanScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Prepayment Charges (₹)</Text>
-            <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.prepaymentCharges} onChangeText={v => setField('prepaymentCharges', v)} />
+            <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.prepaymentCharges} onChangeText={v => setField('prepaymentCharges', v)} />
 
             <Text style={styles.fieldLabel}>Notes</Text>
-            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
+            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
 
             <Text style={styles.fieldLabel}>Attach Document</Text>
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} disabled={uploading}>
-              {uploading ? <ActivityIndicator size="small" color="#4FA6E8" /> : <Feather name="paperclip" size={16} color="#4FA6E8" />}
+              {uploading ? <ActivityIndicator size="small" color={theme.info} /> : <Feather name="paperclip" size={16} color={theme.info} />}
               <Text style={styles.attachBtnText}>{form.attachmentName || 'Attach a document'}</Text>
             </TouchableOpacity>
 
@@ -347,13 +350,13 @@ export default function LoanScreen({ navigation }) {
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#4FA6E8" colors={['#4FA6E8']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.info} colors={[theme.info]} />}
         >
           {loading ? (
             [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
           ) : loans.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="briefcase" size={32} color="#C7CBD3" />
+              <Feather name="briefcase" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>No loans added yet. Tap + to add one.</Text>
             </View>
           ) : (
@@ -361,7 +364,7 @@ export default function LoanScreen({ navigation }) {
               {loans.map((loan, i) => (
                 <TouchableOpacity key={loan.id} style={[styles.row, i !== loans.length - 1 && styles.rowDivider]} onPress={() => openEdit(loan)} activeOpacity={0.7}>
                   <View style={styles.iconWrap}>
-                    <Feather name="briefcase" size={16} color="#4FA6E8" />
+                    <Feather name="briefcase" size={16} color={theme.info} />
                   </View>
                   <View style={styles.rowTextWrap}>
                     <Text style={styles.rowName}>{loan.name}</Text>
@@ -369,11 +372,11 @@ export default function LoanScreen({ navigation }) {
                   </View>
                   <View style={styles.rowRight}>
                     <Text style={styles.rowAmount}>₹{(loan.outstandingAmount || 0).toLocaleString('en-IN')}</Text>
-                    <View style={[styles.badge, { backgroundColor: loan.status === 'Active' ? '#EFFDF6' : '#F3F4F6' }]}>
-                      <Text style={[styles.badgeText, { color: loan.status === 'Active' ? '#1F9A5A' : '#6B7280' }]}>{loan.status}</Text>
+                    <View style={[styles.badge, { backgroundColor: loan.status === 'Active' ? (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') : theme.soft }]}>
+                      <Text style={[styles.badgeText, { color: loan.status === 'Active' ? theme.accent : theme.muted }]}>{loan.status}</Text>
                     </View>
                   </View>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" style={{ marginLeft: 8 }} />
+                  <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -384,47 +387,47 @@ export default function LoanScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   addBtnGrad: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
   scrollContent: { paddingHorizontal: 20 },
-  skeleton: { height: 60, backgroundColor: '#F0F1F4', borderRadius: 14, marginBottom: 10 },
+  skeleton: { height: 60, backgroundColor: theme.border, borderRadius: 14, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
+  emptyText: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 19 },
 
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  sectionCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowTextWrap: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowSub: { fontSize: 12, color: '#9AA1AE' },
+  rowName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowSub: { fontSize: 12, color: theme.faint },
   rowRight: { alignItems: 'flex-end', gap: 4 },
-  rowAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  rowAmount: { fontSize: 15, fontWeight: '800', color: theme.text },
   badge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 10, fontWeight: '800' },
 
   formScroll: { paddingHorizontal: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#E0546E' },
-  input: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  required: { color: theme.danger },
+  input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  selectChipActive: { backgroundColor: '#EAF3FD', borderColor: '#4FA6E8' },
-  selectChipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  selectChipTextActive: { color: '#3D8BFF' },
+  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  selectChipActive: { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.14)' : '#EAF3FD', borderColor: theme.info },
+  selectChipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  selectChipTextActive: { color: theme.info },
 
-  attachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#EAF3FD', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
-  attachBtnText: { fontSize: 13, fontWeight: '600', color: '#3D8BFF', flex: 1 },
+  attachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(107,184,240,0.14)' : '#EAF3FD', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
+  attachBtnText: { fontSize: 13, fontWeight: '600', color: theme.info, flex: 1 },
 
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },

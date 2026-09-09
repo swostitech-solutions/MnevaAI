@@ -16,6 +16,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch } from "../api/client";
 import { useTheme } from '@react-navigation/native';
+import { useTheme as useAppTheme } from '../context/ThemeContext';
 
 const CATEGORY_COLORS = {
   Politics:      ["#EF4444", "#B91C1C"],
@@ -60,7 +61,7 @@ Return ONLY the JSON object.`;
 }
 
 // ── Ask Mneva chat ────────────────────────────────────────────────────────────
-function AskMnevaPanel({ headline, summary }) {
+function AskMnevaPanel({ headline, summary, theme, chatStyles }) {
   const [open, setOpen]         = useState(false);
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
@@ -116,11 +117,11 @@ Answer this question concisely (3-5 sentences max): ${content}`;
             <Feather name="cpu" size={12} color="#fff" />
           </LinearGradient>
           <Text style={chatStyles.toggleTitle}>Ask Mneva</Text>
-          {loading && <ActivityIndicator size="small" color="#6C47FF" style={{ marginLeft: 8 }} />}
+          {loading && <ActivityIndicator size="small" color={theme.accentAlt} style={{ marginLeft: 8 }} />}
         </View>
         <View style={chatStyles.toggleRight}>
           <Text style={chatStyles.toggleHint}>{open ? "Close" : "Ask about this story"}</Text>
-          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color="#6C47FF" />
+          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color={theme.accentAlt} />
         </View>
       </TouchableOpacity>
 
@@ -148,7 +149,7 @@ Answer this question concisely (3-5 sentences max): ${content}`;
           ))}
           {loading && (
             <View style={[chatStyles.bubble, chatStyles.bubbleAi]}>
-              <ActivityIndicator size="small" color="#6C47FF" />
+              <ActivityIndicator size="small" color={theme.accentAlt} />
             </View>
           )}
         </ScrollView>
@@ -158,7 +159,7 @@ Answer this question concisely (3-5 sentences max): ${content}`;
           <TextInput
             style={chatStyles.input}
             placeholder="Ask anything about this story…"
-            placeholderTextColor="#9AA1AE"
+            placeholderTextColor={theme.placeholder}
             value={input}
             onChangeText={setInput}
             onSubmitEditing={() => sendMessage()}
@@ -180,6 +181,9 @@ Answer this question concisely (3-5 sentences max): ${content}`;
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function NewsStory({ route, navigation }) {
   const insets  = useSafeAreaInsets();
+  const { theme } = useAppTheme();
+  const styles = createStyles(theme);
+  const chatStyles = createChatStyles(theme);
   const story   = route?.params?.story || {};
   const colors  = getCategoryColors(story.category);
 
@@ -201,11 +205,11 @@ export default function NewsStory({ route, navigation }) {
     })();
   }, []);
 
-  const sentimentColor = analysis?.sentiment === "Positive" ? "#10B981"
-    : analysis?.sentiment === "Negative" ? "#EF4444" : "#F59E0B";
+  const sentimentColor = analysis?.sentiment === "Positive" ? theme.accent
+    : analysis?.sentiment === "Negative" ? theme.danger : theme.warning;
 
-  const impactColor = analysis?.impact === "High" ? "#EF4444"
-    : analysis?.impact === "Medium" ? "#F97316" : "#10B981";
+  const impactColor = analysis?.impact === "High" ? theme.danger
+    : analysis?.impact === "Medium" ? theme.warning : theme.accent;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
@@ -214,7 +218,7 @@ export default function NewsStory({ route, navigation }) {
         {/* ── Header ── */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <View style={[styles.categoryPill, { backgroundColor: colors[0] + "18" }]}>
             <Text style={[styles.categoryText, { color: colors[0] }]}>{story.category}</Text>
@@ -242,7 +246,7 @@ export default function NewsStory({ route, navigation }) {
                 <Text style={styles.sourceText}>{story.source}</Text>
               </View>
               <View style={styles.readRow}>
-                <Feather name="clock" size={11} color="#9AA1AE" />
+                <Feather name="clock" size={11} color={theme.faint} />
                 <Text style={styles.readTime}>{story.readTime}</Text>
               </View>
             </View>
@@ -258,7 +262,7 @@ export default function NewsStory({ route, navigation }) {
                   <Feather name="cpu" size={13} color="#fff" />
                 </LinearGradient>
                 <Text style={styles.analysisTitle}>Mneva AI Analysis</Text>
-                {loading && <ActivityIndicator size="small" color="#6C47FF" style={{ marginLeft: 8 }} />}
+                {loading && <ActivityIndicator size="small" color={theme.accentAlt} style={{ marginLeft: 8 }} />}
               </View>
 
               {loading && (
@@ -310,7 +314,7 @@ export default function NewsStory({ route, navigation }) {
                   )}
 
                   <View style={styles.aiSourceRow}>
-                    <Feather name="cpu" size={10} color="#6C47FF" />
+                    <Feather name="cpu" size={10} color={theme.accentAlt} />
                     <Text style={styles.aiSourceText}>Powered by Mneva AI · DeepSeek</Text>
                   </View>
                 </View>
@@ -321,85 +325,85 @@ export default function NewsStory({ route, navigation }) {
         </ScrollView>
 
         {/* ── Ask Mneva panel ── */}
-        <AskMnevaPanel headline={story.headline} summary={story.summary} />
+        <AskMnevaPanel headline={story.headline} summary={story.summary} theme={theme} chatStyles={chatStyles} />
 
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F4F3FA" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
 
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
-  backBtn: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#EBEBF5" },
+  backBtn: { width: 36, height: 36, borderRadius: 11, backgroundColor: theme.card, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.border },
   categoryPill: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   categoryText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
-  timeText: { fontSize: 11, color: "#9AA1AE", fontWeight: "600" },
+  timeText: { fontSize: 11, color: theme.faint, fontWeight: "600" },
 
   categoryBar: { height: 4, marginHorizontal: 16, borderRadius: 2, marginBottom: 16 },
   content: { paddingHorizontal: 16 },
 
-  headline: { fontSize: 22, fontWeight: "800", color: "#14171F", lineHeight: 30, letterSpacing: -0.4, marginBottom: 12 },
+  headline: { fontSize: 22, fontWeight: "800", color: theme.text, lineHeight: 30, letterSpacing: -0.4, marginBottom: 12 },
 
   metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
   sourceRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   sourceDot: { width: 7, height: 7, borderRadius: 4 },
-  sourceText: { fontSize: 12, color: "#6B7280", fontWeight: "700" },
+  sourceText: { fontSize: 12, color: theme.muted, fontWeight: "700" },
   readRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  readTime: { fontSize: 11, color: "#9AA1AE", fontWeight: "600" },
+  readTime: { fontSize: 11, color: theme.faint, fontWeight: "600" },
 
-  originalSummary: { fontSize: 14, color: "#374151", lineHeight: 22, marginBottom: 20 },
+  originalSummary: { fontSize: 14, color: theme.textSecondary, lineHeight: 22, marginBottom: 20 },
 
   // Analysis card
-  analysisCard: { backgroundColor: "#FFFFFF", borderRadius: 20, overflow: "hidden", borderWidth: 1, borderColor: "#EBEBF5", marginBottom: 16, shadowColor: "#6C47FF", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  analysisCard: { backgroundColor: theme.card, borderRadius: 20, overflow: "hidden", borderWidth: 1, borderColor: theme.border, marginBottom: 16, shadowColor: "#6C47FF", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   analysisBar: { height: 3 },
   analysisHeader: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, paddingBottom: 10 },
   analysisIcon: { width: 28, height: 28, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  analysisTitle: { fontSize: 13, fontWeight: "800", color: "#14171F" },
+  analysisTitle: { fontSize: 13, fontWeight: "800", color: theme.text },
   analysisLoading: { paddingHorizontal: 14, paddingBottom: 14 },
-  analysisLoadingText: { fontSize: 12, color: "#9AA1AE", fontWeight: "600" },
-  analysisError: { fontSize: 12, color: "#F97316", paddingHorizontal: 14, paddingBottom: 14 },
+  analysisLoadingText: { fontSize: 12, color: theme.faint, fontWeight: "600" },
+  analysisError: { fontSize: 12, color: theme.warning, paddingHorizontal: 14, paddingBottom: 14 },
 
   analysisBody: { paddingHorizontal: 14, paddingBottom: 14, gap: 10 },
   badgeRow: { flexDirection: "row", gap: 8 },
   badge: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   badgeText: { fontSize: 11, fontWeight: "800" },
 
-  aiSummaryLabel: { fontSize: 9, fontWeight: "800", color: "#8B83C0", letterSpacing: 1.2, textTransform: "uppercase", marginTop: 4 },
-  aiSummaryText: { fontSize: 13, color: "#374151", lineHeight: 20 },
+  aiSummaryLabel: { fontSize: 9, fontWeight: "800", color: theme.faint, letterSpacing: 1.2, textTransform: "uppercase", marginTop: 4 },
+  aiSummaryText: { fontSize: 13, color: theme.textSecondary, lineHeight: 20 },
 
   keyPointsList: { gap: 8 },
   keyPointRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   keyPointDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
-  keyPointText: { fontSize: 12, color: "#374151", lineHeight: 18, flex: 1 },
+  keyPointText: { fontSize: 12, color: theme.textSecondary, lineHeight: 18, flex: 1 },
 
   impactBox: { flexDirection: "row", alignItems: "flex-start", gap: 7, borderRadius: 10, borderWidth: 1, padding: 10 },
   impactText: { fontSize: 11, fontWeight: "600", flex: 1, lineHeight: 16 },
 
   aiSourceRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 },
-  aiSourceText: { fontSize: 10, color: "#6C47FF", fontWeight: "700" },
+  aiSourceText: { fontSize: 10, color: theme.accentAlt, fontWeight: "700" },
 });
 
-const chatStyles = StyleSheet.create({
-  wrapper:        { backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#E8E8F0" },
+const createChatStyles = (theme) => StyleSheet.create({
+  wrapper:        { backgroundColor: theme.card, borderTopWidth: 1, borderTopColor: theme.border },
   toggleBar:      { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 11 },
   toggleLeft:     { flexDirection: "row", alignItems: "center", gap: 8 },
   aiDot:          { width: 26, height: 26, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  toggleTitle:    { fontSize: 13, fontWeight: "800", color: "#14171F" },
+  toggleTitle:    { fontSize: 13, fontWeight: "800", color: theme.text },
   toggleRight:    { flexDirection: "row", alignItems: "center", gap: 5 },
-  toggleHint:     { fontSize: 11, color: "#6C47FF", fontWeight: "600" },
-  panel:          { backgroundColor: "#F5F3FF" },
+  toggleHint:     { fontSize: 11, color: theme.accentAlt, fontWeight: "600" },
+  panel:          { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : "#F5F3FF" },
   quickChips:     { gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  quickChip:      { backgroundColor: "#FFFFFF", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#DDD6FE" },
-  quickChipText:  { fontSize: 11, fontWeight: "700", color: "#6C47FF" },
+  quickChip:      { backgroundColor: theme.card, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: theme.isDark ? 'rgba(129,128,255,0.16)' : "#DDD6FE" },
+  quickChipText:  { fontSize: 11, fontWeight: "700", color: theme.accentAlt },
   msgScroll:      { flex: 1 },
   bubble:         { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8, maxWidth: "88%" },
-  bubbleAi:       { backgroundColor: "#FFFFFF", alignSelf: "flex-start", borderBottomLeftRadius: 4 },
-  bubbleUser:     { backgroundColor: "#6C47FF", alignSelf: "flex-end", borderBottomRightRadius: 4 },
-  bubbleTextAi:   { fontSize: 12.5, color: "#374151", lineHeight: 18 },
+  bubbleAi:       { backgroundColor: theme.card, alignSelf: "flex-start", borderBottomLeftRadius: 4 },
+  bubbleUser:     { backgroundColor: theme.accentAlt, alignSelf: "flex-end", borderBottomRightRadius: 4 },
+  bubbleTextAi:   { fontSize: 12.5, color: theme.textSecondary, lineHeight: 18 },
   bubbleTextUser: { fontSize: 12.5, color: "#FFFFFF", lineHeight: 18 },
-  inputRow:       { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#E8E8F0" },
-  input:          { flex: 1, backgroundColor: "#FFFFFF", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, color: "#14171F" },
-  sendBtn:        { width: 32, height: 32, borderRadius: 16, backgroundColor: "#6C47FF", alignItems: "center", justifyContent: "center" },
+  inputRow:       { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: theme.border },
+  input:          { flex: 1, backgroundColor: theme.card, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, color: theme.text },
+  sendBtn:        { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.accentAlt, alignItems: "center", justifyContent: "center" },
 });

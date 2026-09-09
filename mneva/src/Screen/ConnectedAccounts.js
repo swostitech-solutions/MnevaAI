@@ -7,8 +7,36 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch, BASE_URL, peekCachedResponse } from '../api/client';
 import { getStoredAuth } from '../storage/auth';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
+
+const TINT_RGB = {
+  '#FCEAED': [241, 113, 134],
+  '#EFFDF6': [52, 199, 123],
+  '#FEF3C7': [255, 184, 77],
+  '#EAF3FD': [107, 184, 240],
+  '#EEEDFE': [129, 128, 255],
+  '#F3EFFE': [129, 128, 255],
+};
+const COLOR_MAP = {
+  '#E0546E': 'danger',
+  '#1F9A5A': 'accent',
+  '#F5A623': 'warning',
+  '#4FA6E8': 'info',
+  '#615FF8': 'accentAlt',
+  '#9B72FF': 'accentAlt',
+  '#374151': 'textSecondary',
+};
+function intgColor(hex, theme) {
+  const key = COLOR_MAP[hex];
+  return key ? theme[key] : hex;
+}
+function intgBg(hex, theme) {
+  if (!theme.isDark) return hex;
+  const rgb = TINT_RGB[hex];
+  return rgb ? `rgba(${rgb.join(',')},0.16)` : theme.surfaceAlt;
+}
 
 const INTEGRATIONS = [
   {
@@ -22,6 +50,8 @@ const INTEGRATIONS = [
     connectEndpoint: '/api/gmail/connect',
     disconnectEndpoint: '/api/gmail/disconnect',
     connectMethod: 'oauth',
+    chainId: 'google-account',
+    chainRole: 'primary',
   },
   {
     id: 'calendar',
@@ -34,6 +64,9 @@ const INTEGRATIONS = [
     connectEndpoint: '/api/calendar/connect',
     disconnectEndpoint: '/api/calendar/disconnect',
     connectMethod: 'oauth',
+    chainId: 'google-account',
+    chainRole: 'linked',
+    linkedNote: 'Auto-connects with Gmail — same Google sign-in',
   },
   {
     id: 'drive',
@@ -46,6 +79,8 @@ const INTEGRATIONS = [
     connectEndpoint: '/api/gdrive/connect',
     disconnectEndpoint: '/api/gdrive/disconnect',
     connectMethod: 'oauth',
+    chainId: 'google-drive',
+    chainRole: 'primary',
   },
   {
     id: 'docs',
@@ -58,6 +93,9 @@ const INTEGRATIONS = [
     connectEndpoint: '/api/gdrive/connect',
     disconnectEndpoint: '/api/gdrive/disconnect',
     connectMethod: 'oauth',
+    chainId: 'google-drive',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Google Drive',
   },
   {
     id: 'sheets',
@@ -70,6 +108,9 @@ const INTEGRATIONS = [
     connectEndpoint: '/api/gdrive/connect',
     disconnectEndpoint: '/api/gdrive/disconnect',
     connectMethod: 'oauth',
+    chainId: 'google-drive',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Google Drive',
   },
   {
     id: 'slides',
@@ -82,6 +123,9 @@ const INTEGRATIONS = [
     connectEndpoint: '/api/gdrive/connect',
     disconnectEndpoint: '/api/gdrive/disconnect',
     connectMethod: 'oauth',
+    chainId: 'google-drive',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Google Drive',
   },
   {
     id: 'tasks',
@@ -195,6 +239,8 @@ const INTEGRATIONS = [
 
 export default function ConnectedAccounts({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { width } = useWindowDimensions();
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
@@ -301,7 +347,27 @@ export default function ConnectedAccounts({ navigation }) {
     finally { setActionLoading(prev => ({ ...prev, [intg.id]: false })); }
   };
 
-  const connectedCount = Object.values(statuses).filter(s => s.connected).length;
+  // Linked items (Calendar under Gmail; Docs/Sheets/Slides under Drive) share one
+  // OAuth grant with their chain's primary, so they're excluded from the summary
+  // counts to avoid the same connection being counted 2-4x over.
+  const summaryItems = INTEGRATIONS.filter(i => i.chainRole !== 'linked');
+  const connectedCount = summaryItems.filter(i => statuses[i.id]?.connected).length;
+
+  const chainGroups = [];
+  const seenChains = new Set();
+  const standaloneItems = [];
+  INTEGRATIONS.forEach(i => {
+    if (i.chainRole === 'primary') {
+      seenChains.add(i.chainId);
+      chainGroups.push({
+        chainId: i.chainId,
+        primary: i,
+        linked: INTEGRATIONS.filter(l => l.chainId === i.chainId && l.chainRole === 'linked'),
+      });
+    } else if (!i.chainId) {
+      standaloneItems.push(i);
+    }
+  });
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -309,12 +375,12 @@ export default function ConnectedAccounts({ navigation }) {
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadStatuses(true); }} tintColor="#9B72FF" colors={['#9B72FF']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadStatuses(true); }} tintColor={theme.accentAlt} colors={[theme.accentAlt]} />}
       >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>Connected Accounts</Text>
@@ -330,22 +396,95 @@ export default function ConnectedAccounts({ navigation }) {
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryLeft}>
-            <Text style={styles.summaryCount}>{INTEGRATIONS.length}</Text>
+            <Text style={styles.summaryCount}>{summaryItems.length}</Text>
             <Text style={styles.summaryLabel}>Total</Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryLeft}>
-            <Text style={[styles.summaryCount, { color: '#1F9A5A' }]}>
-              {loading ? '—' : INTEGRATIONS.length - connectedCount}
+            <Text style={[styles.summaryCount, { color: theme.accent }]}>
+              {loading ? '—' : summaryItems.length - connectedCount}
             </Text>
             <Text style={styles.summaryLabel}>Available</Text>
           </View>
         </View>
 
-        {/* Integration rows */}
-        <Text style={styles.sectionHeader}>ALL INTEGRATIONS</Text>
+        {/* Chained Google connections */}
+        <Text style={styles.sectionHeader}>GOOGLE ACCOUNT CHAINS</Text>
+        {chainGroups.map(group => {
+          const primaryStatus = statuses[group.primary.id];
+          const primaryConnected = primaryStatus?.connected || false;
+          const isLoading = actionLoading[group.primary.id] || false;
+
+          return (
+            <View key={group.chainId} style={styles.chainCard}>
+              <View style={styles.chainHeaderRow}>
+                <Feather name="link-2" size={12} color={theme.faint} />
+                <Text style={styles.chainHeaderText}>
+                  ONE CONNECTION · {1 + group.linked.length} SERVICES
+                </Text>
+              </View>
+
+              {/* Primary row */}
+              <View style={styles.row}>
+                <View style={[styles.iconWrap, { backgroundColor: intgBg(group.primary.bg, theme) }]}>
+                  <Feather name={group.primary.icon} size={20} color={intgColor(group.primary.color, theme)} />
+                </View>
+                <View style={styles.textWrap}>
+                  <Text style={styles.rowTitle}>{group.primary.title}</Text>
+                  <Text style={styles.rowSubtitle}>
+                    {primaryConnected && primaryStatus?.email ? primaryStatus.email : group.primary.subtitle}
+                  </Text>
+                </View>
+                {primaryConnected ? (
+                  <TouchableOpacity
+                    style={styles.disconnectBtn}
+                    onPress={() => handleDisconnect(group.primary)}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.disconnectBtnText}>{isLoading ? '…' : 'Disconnect'}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.connectBtn, { backgroundColor: intgColor(group.primary.color, theme) }]}
+                    onPress={() => handleConnect(group.primary)}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.connectBtnText}>{isLoading ? '…' : 'Connect'}</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={[styles.statusDot, { backgroundColor: primaryConnected ? theme.accent : theme.borderStrong }]} />
+              </View>
+
+              {/* Linked (chained) rows — derive their state from the primary, since they share one OAuth grant */}
+              <View style={styles.chainLinkedWrap}>
+                <View style={styles.chainConnectorLine} />
+                {group.linked.map(intg => (
+                  <View key={intg.id} style={styles.chainLinkedRow}>
+                    <View style={styles.chainBranchDot} />
+                    <View style={[styles.chainLinkedIconWrap, { backgroundColor: intgBg(intg.bg, theme) }]}>
+                      <Feather name={intg.icon} size={15} color={intgColor(intg.color, theme)} />
+                    </View>
+                    <View style={styles.textWrap}>
+                      <Text style={styles.chainLinkedTitle}>{intg.title}</Text>
+                      <Text style={styles.chainLinkedSubtitle}>{intg.linkedNote}</Text>
+                    </View>
+                    <View style={[styles.chainLinkedBadge, { backgroundColor: primaryConnected ? intgBg('#EFFDF6', theme) : theme.surfaceAlt }]}>
+                      <Feather name={primaryConnected ? 'link' : 'circle'} size={10} color={primaryConnected ? theme.accent : theme.faint} />
+                      <Text style={[styles.chainLinkedBadgeText, { color: primaryConnected ? theme.accent : theme.faint }]}>
+                        {primaryConnected ? 'Linked' : 'Not linked'}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          );
+        })}
+
+        {/* Standalone integration rows */}
+        <Text style={styles.sectionHeader}>OTHER INTEGRATIONS</Text>
         <View style={styles.listCard}>
-          {INTEGRATIONS.map((intg, i) => {
+          {standaloneItems.map((intg, i) => {
             const status = statuses[intg.id];
             const isConnected = status?.connected || false;
             const isLoading = actionLoading[intg.id] || false;
@@ -354,11 +493,11 @@ export default function ConnectedAccounts({ navigation }) {
             return (
               <View
                 key={intg.id}
-                style={[styles.row, i !== INTEGRATIONS.length - 1 && styles.rowDivider]}
+                style={[styles.row, i !== standaloneItems.length - 1 && styles.rowDivider]}
               >
                 {/* Icon */}
-                <View style={[styles.iconWrap, { backgroundColor: intg.bg }]}>
-                  <Feather name={intg.icon} size={20} color={intg.color} />
+                <View style={[styles.iconWrap, { backgroundColor: intgBg(intg.bg, theme) }]}>
+                  <Feather name={intg.icon} size={20} color={intgColor(intg.color, theme)} />
                 </View>
 
                 {/* Text */}
@@ -386,7 +525,7 @@ export default function ConnectedAccounts({ navigation }) {
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.connectBtn, { backgroundColor: intg.color }]}
+                    style={[styles.connectBtn, { backgroundColor: intgColor(intg.color, theme) }]}
                     onPress={() => handleConnect(intg)}
                     disabled={isLoading}
                   >
@@ -398,7 +537,7 @@ export default function ConnectedAccounts({ navigation }) {
 
                 {/* Connected dot */}
                 {!isComingSoon && (
-                  <View style={[styles.statusDot, { backgroundColor: isConnected ? '#1F9A5A' : '#E3E5EA' }]} />
+                  <View style={[styles.statusDot, { backgroundColor: isConnected ? theme.accent : theme.borderStrong }]} />
                 )}
               </View>
             );
@@ -407,7 +546,7 @@ export default function ConnectedAccounts({ navigation }) {
 
         {/* Info note */}
         <View style={styles.infoNote}>
-          <Feather name="lock" size={13} color="#9AA1AE" />
+          <Feather name="lock" size={13} color={theme.faint} />
           <Text style={styles.infoNoteText}>  All connections use OAuth 2.0. Mneva never stores your passwords.</Text>
         </View>
       </ScrollView>
@@ -415,23 +554,23 @@ export default function ConnectedAccounts({ navigation }) {
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -439,38 +578,52 @@ export default function ConnectedAccounts({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 14 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1 },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
-  summaryCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 20, paddingVertical: 18, marginBottom: 24, alignItems: 'center' },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
+  summaryCard: { flexDirection: 'row', backgroundColor: theme.card, borderRadius: 20, paddingVertical: 18, marginBottom: 24, alignItems: 'center' },
   summaryLeft: { flex: 1, alignItems: 'center' },
-  summaryCount: { fontSize: 26, fontWeight: '800', color: '#14171F', marginBottom: 4 },
-  summaryLabel: { fontSize: 11, fontWeight: '600', color: '#9AA1AE' },
-  summaryDivider: { width: 1, height: 36, backgroundColor: '#F0F1F4' },
-  sectionHeader: { fontSize: 12, fontWeight: '700', color: '#6B7280', letterSpacing: 0.5, marginBottom: 12 },
-  listCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16 },
+  summaryCount: { fontSize: 26, fontWeight: '800', color: theme.text, marginBottom: 4 },
+  summaryLabel: { fontSize: 11, fontWeight: '600', color: theme.faint },
+  summaryDivider: { width: 1, height: 36, backgroundColor: theme.border },
+  sectionHeader: { fontSize: 12, fontWeight: '700', color: theme.muted, letterSpacing: 0.5, marginBottom: 12 },
+  listCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16 },
+
+  // Chain (grouped-connection) card
+  chainCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, marginBottom: 16 },
+  chainHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 14 },
+  chainHeaderText: { fontSize: 10, fontWeight: '800', color: theme.faint, letterSpacing: 0.6 },
+  chainLinkedWrap: { position: 'relative', paddingLeft: 22, paddingBottom: 10 },
+  chainConnectorLine: { position: 'absolute', left: 21, top: 0, bottom: 18, width: 2, backgroundColor: theme.border },
+  chainLinkedRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
+  chainBranchDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.border, marginLeft: -5, marginRight: 2 },
+  chainLinkedIconWrap: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  chainLinkedTitle: { fontSize: 13, fontWeight: '700', color: theme.text, marginBottom: 1 },
+  chainLinkedSubtitle: { fontSize: 11, color: theme.faint },
+  chainLinkedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
+  chainLinkedBadgeText: { fontSize: 10, fontWeight: '800' },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
   iconWrap: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   textWrap: { flex: 1 },
-  rowTitle: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowSubtitle: { fontSize: 12, color: '#9AA1AE' },
+  rowTitle: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowSubtitle: { fontSize: 12, color: theme.faint },
   connectBtn: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
   connectBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
-  disconnectBtn: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F3F4F6', marginRight: 8 },
-  disconnectBtnText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
-  comingSoonBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#F3F4F6', marginRight: 8 },
-  comingSoonText: { fontSize: 10, fontWeight: '800', color: '#9AA1AE' },
+  disconnectBtn: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, marginRight: 8 },
+  disconnectBtnText: { fontSize: 12, fontWeight: '700', color: theme.muted },
+  comingSoonBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: theme.surfaceAlt, marginRight: 8 },
+  comingSoonText: { fontSize: 10, fontWeight: '800', color: theme.faint },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   infoNote: { flexDirection: 'row', alignItems: 'center', marginTop: 16, paddingHorizontal: 4 },
-  infoNoteText: { fontSize: 12, color: '#9AA1AE', flex: 1, lineHeight: 18 },
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  infoNoteText: { fontSize: 12, color: theme.faint, flex: 1, lineHeight: 18 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

@@ -12,6 +12,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const MODULES = [
@@ -98,9 +99,20 @@ const MODULES = [
   },
 ];
 
+// Every module's iconBg above is a light pastel tuned to sit behind a
+// saturated icon color on a white card — on a dark card those same pastels
+// read as a jarring bright patch, so in dark mode we swap to a translucent
+// tint of the icon's own color instead of the literal pastel hex.
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return m ? `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}` : '255, 255, 255';
+}
+
 export default function Space({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
 
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const horizontalPad = width < 360 ? 16 : 20;
@@ -134,7 +146,7 @@ export default function Space({ navigation }) {
               activeOpacity={0.8}
               onPress={() => handleModulePress(mod)}
             >
-              <View style={[styles.categoryIconWrap, { backgroundColor: mod.iconBg }]}>
+              <View style={[styles.categoryIconWrap, { backgroundColor: theme.isDark ? `rgba(${hexToRgb(mod.iconColor)}, 0.18)` : mod.iconBg }]}>
                 <Feather name={mod.icon} size={20} color={mod.iconColor} />
               </View>
               <Text style={styles.categoryTitle}>{mod.title}</Text>
@@ -148,23 +160,23 @@ export default function Space({ navigation }) {
 
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Priorities")}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("AskAI")}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem}>
-          <Feather name="folder" size={22} color="#1F7A54" />
+          <Feather name="folder" size={22} color={theme.accent} />
           <Text style={[styles.tabLabel, styles.tabLabelActive]}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -173,15 +185,15 @@ export default function Space({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFC" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
-  headerTitle: { fontSize: 32, fontWeight: "800", color: "#14171F", marginBottom: 4 },
-  headerSubtitle: { fontSize: 14, color: "#9AA1AE", marginBottom: 20 },
+  headerTitle: { fontSize: 32, fontWeight: "800", color: theme.text, marginBottom: 4 },
+  headerSubtitle: { fontSize: 14, color: theme.faint, marginBottom: 20 },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   categoryCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 20,
     padding: 16,
     marginBottom: 12,
@@ -194,16 +206,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 14,
   },
-  categoryTitle: { fontSize: 15, fontWeight: "700", color: "#14171F", marginBottom: 4 },
-  categorySubtitle: { fontSize: 12, color: "#9AA1AE" },
+  categoryTitle: { fontSize: 15, fontWeight: "700", color: theme.text, marginBottom: 4 },
+  categorySubtitle: { fontSize: 12, color: theme.faint },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.tabBarBg,
     borderTopWidth: 1,
-    borderTopColor: "#EEF0F3",
+    borderTopColor: theme.border,
     paddingTop: 10,
   },
   tabItem: { flex: 1, alignItems: "center" },
-  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
-  tabLabelActive: { color: "#1F7A54" },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
+  tabLabelActive: { color: theme.accent },
 });

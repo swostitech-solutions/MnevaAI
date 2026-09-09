@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, ActivityIndicator, useWindowDimensions, RefreshControl,
+  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const TABS = ["TODAY", "UPCOMING", "MEETINGS"];
 
@@ -38,7 +39,7 @@ function fmtMeeting(start, end) {
   return { date, time, durStr };
 }
 
-function TaskCard({ task, onCheck }) {
+function TaskCard({ task, onCheck, styles }) {
   const done = task.status === "COMPLETED";
   return (
     <View style={[styles.card, done && styles.cardDone]}>
@@ -60,7 +61,97 @@ function TaskCard({ task, onCheck }) {
   );
 }
 
-function MeetingCard({ m, done, onCheck }) {
+// Flattens the cross-module summary (backend's get_full_summary aggregator)
+// into one common shape so bills/medication refills/pet reminders/family
+// items/subscriptions/loan-EMIs can all render as the same kind of card
+// alongside the priorities the user set manually. Urgent emails and pending
+// tasks are deliberately left out here — they already have their own
+// sections above, sourced from the same underlying data.
+function buildAutoItems(summary) {
+  if (!summary?.sections) return [];
+  const items = [];
+  const push = (id, title, subtitle, date, icon, color, category) => {
+    items.push({ id, title, subtitle, date: date || null, icon, color, category });
+  };
+  const { communications, family, finance } = summary.sections;
+
+  (communications?.unreadAlerts || []).forEach((a, i) =>
+    push(`alert-${i}`, a.title, 'Phone alert', null, 'bell', '#E0546E', 'Alert'));
+  (family?.tasks || []).forEach((t, i) =>
+    push(`famtask-${i}`, t.title, `Family task${t.priority ? ' · ' + t.priority : ''}`, t.dueDate, 'users', '#615FF8', 'Family'));
+  (family?.medicationRefills || []).forEach((m, i) =>
+    push(`med-${i}`, `${m.medName} refill`, m.parent, m.refillDate, 'plus-square', '#E0546E', 'Medication'));
+  (family?.petReminders || []).forEach((p, i) =>
+    push(`pet-${i}`, p.title, 'Pet reminder', p.remindAt, 'heart', '#F5A623', 'Pet'));
+  (family?.upcoming || []).forEach((f, i) =>
+    push(`fam-${i}`, `${f.type} (${f.domain})`, 'Family', f.remindAt, 'home', '#9B72FF', 'Family'));
+  (finance?.upcomingBills || []).forEach((b, i) =>
+    push(`bill-${i}`, `${b.name} bill due`, `₹${(b.amount || 0).toLocaleString('en-IN')}`, b.dueDate, 'file-text', '#F5A623', 'Finance'));
+  (finance?.upcomingPayments || []).forEach((p, i) =>
+    push(`pay-${i}`, `${p.name} payment`, `₹${(p.amount || 0).toLocaleString('en-IN')}`, p.dueDate, 'credit-card', '#4FA6E8', 'Finance'));
+  (finance?.upcomingSubscriptions || []).forEach((s, i) =>
+    push(`sub-${i}`, `${s.name} renewal`, `₹${(s.amount || 0).toLocaleString('en-IN')}`, s.dueDate, 'repeat', '#9B72FF', 'Finance'));
+  (finance?.maturingFixedDeposits || []).forEach((f, i) =>
+    push(`fd-${i}`, `${f.name} matures`, `₹${(f.amount || 0).toLocaleString('en-IN')}`, f.maturityDate, 'lock', '#06B6D4', 'Finance'));
+
+  return items;
+}
+
+function fmtAutoDate(d) {
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+// A small pulsing dot — the same "this agent is live" cue used on the Twin
+// Diary screen, so the two feel like one product rather than a to-do list
+// bolted onto an AI feature.
+function LiveDot({ styles }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.8, duration: 700, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scale]);
+  return (
+    <View style={styles.liveDotWrap}>
+      <Animated.View style={[styles.liveDotPulse, { transform: [{ scale }] }]} />
+      <View style={styles.liveDotCore} />
+    </View>
+  );
+}
+
+// Auto-detected items render as a connected timeline (dot + line per row),
+// matching the Twin Diary screen's visual language — this is the agent's
+// own analysis, not something the user typed in, so it reads differently
+// from a plain task card.
+function AutoTimelineRow({ item, isLast, styles }) {
+  return (
+    <View style={styles.timelineRow}>
+      <View style={styles.timelineLeftCol}>
+        <View style={[styles.timelineDot, { backgroundColor: item.color }]} />
+        {!isLast && <View style={styles.timelineLine} />}
+      </View>
+      <View style={[styles.autoItemCard, { borderLeftColor: item.color, flex: 1, marginLeft: 10 }]}>
+        <View style={[styles.autoItemIconWrap, { backgroundColor: `${item.color}1A` }]}>
+          <Feather name={item.icon} size={16} color={item.color} />
+        </View>
+        <View style={styles.autoItemBody}>
+          <Text style={styles.autoItemTitle} numberOfLines={1}>{item.title}</Text>
+          {!!item.subtitle && <Text style={styles.autoItemSubtitle} numberOfLines={1}>{item.subtitle}</Text>}
+        </View>
+        {!!item.date && <Text style={styles.autoItemDate}>{fmtAutoDate(item.date)}</Text>}
+      </View>
+    </View>
+  );
+}
+
+function MeetingCard({ m, done, onCheck, styles }) {
   const { date, time, durStr } = fmtMeeting(m.start, m.end);
   const attendees = Array.isArray(m.attendees) ? m.attendees : [];
   const isRealtimeMeeting = isJoinableMeetingLink(m.meetLink);
@@ -110,6 +201,8 @@ function MeetingCard({ m, done, onCheck }) {
 export default function Priorities({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [activeTab, setActiveTab] = useState("TODAY");
   const [tasks, setTasks] = useState([]);
   const [allCalendarItems, setAllCalendarItems] = useState([]);
@@ -117,6 +210,7 @@ export default function Priorities({ navigation }) {
   const [urgentEmails, setUrgentEmails] = useState([]);
   const [suggestedMeetings, setSuggestedMeetings] = useState([]);
   const [meetingActed, setMeetingActed] = useState({});
+  const [autoSummary, setAutoSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const isMountedRef = useRef(false);
@@ -130,6 +224,7 @@ export default function Priorities({ navigation }) {
   // round-trip takes.
   const hasRealDataRef = useRef(false);
   const hasRealBriefRef = useRef(false);
+  const hasRealSummaryRef = useRef(false);
 
   const applyTasksData = ({ taskRes, meetRes, doneRes }) => {
     const allTasks = Array.isArray(taskRes) ? taskRes : [];
@@ -152,11 +247,12 @@ export default function Priorities({ navigation }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [taskRes, meetRes, doneRes, brief] = await Promise.all([
+      const [taskRes, meetRes, doneRes, brief, summary] = await Promise.all([
         peekCachedResponse("/api/tasks"),
         peekCachedResponse("/api/calendar/meetings"),
         peekCachedResponse("/api/tasks/meeting-done"),
         peekCachedResponse("/api/dashboard/brief"),
+        peekCachedResponse("/api/dashboard/full-summary"),
       ]);
       if (cancelled) return;
       if (!hasRealDataRef.current && (taskRes || meetRes || doneRes)) {
@@ -166,16 +262,20 @@ export default function Priorities({ navigation }) {
       if (!hasRealBriefRef.current && brief) {
         applyBriefData(brief);
       }
+      if (!hasRealSummaryRef.current && summary) {
+        setAutoSummary(summary);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
-    // Started alongside the batch below instead of after it — it doesn't
-    // depend on their results, so waiting for them first only added a full
-    // extra serial round-trip to every screen load.
+    // Started alongside the batch below instead of after it — neither
+    // depends on the tasks/meetings result, so waiting for them first only
+    // added a full extra serial round-trip to every screen load.
     const briefPromise = apiFetch("/api/dashboard/brief").catch(() => null);
+    const summaryPromise = apiFetch("/api/dashboard/full-summary").catch(() => null);
     try {
       // These feeds are supplemental to tasks.  Do not blank the whole
       // Priorities screen when Calendar or the meeting-completion feed is
@@ -199,6 +299,11 @@ export default function Priorities({ navigation }) {
     if (brief) {
       hasRealBriefRef.current = true;
       applyBriefData(brief);
+    }
+    const summary = await summaryPromise;
+    if (summary) {
+      hasRealSummaryRef.current = true;
+      setAutoSummary(summary);
     }
   }, []);
 
@@ -259,6 +364,16 @@ export default function Priorities({ navigation }) {
   const upcomingItems = allCalendarItems
     .filter(m => new Date(m.start) > todayEnd)
     .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  // Everything the cross-module analysis (get_full_summary) surfaced —
+  // bills, EMIs, subscriptions, medication refills, pet reminders, family
+  // items — split the same way as calendar items: no date or due today vs.
+  // due on a later date.
+  const autoItems = buildAutoItems(autoSummary);
+  const autoToday = autoItems.filter(it => !it.date || isToday(it.date, todayStart, todayEnd));
+  const autoUpcoming = autoItems
+    .filter(it => it.date && new Date(it.date) > todayEnd)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const handleMeetingSuggest = async (emailId, action, suggestion) => {
     setMeetingActed(prev => ({ ...prev, [emailId]: action }));
@@ -323,8 +438,8 @@ export default function Priorities({ navigation }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); loadData(true); }}
-            tintColor="#1F9A5A"
-            colors={['#1F9A5A']}
+            tintColor={theme.accent}
+            colors={[theme.accent]}
           />
         }
       >
@@ -332,6 +447,18 @@ export default function Priorities({ navigation }) {
         <Text style={styles.headerSubtitle}>
           {pendingTasks.length} task{pendingTasks.length !== 1 ? "s" : ""}{urgentEmails.length > 0 ? ` · ${urgentEmails.length} urgent mail` : ""}{suggestedMeetings.length > 0 ? ` · ${suggestedMeetings.length} meeting request${suggestedMeetings.length !== 1 ? 's' : ''}` : ""} · {meetings.filter(m => !doneMeetingIds.has(m.id)).length} meeting{meetings.filter(m => !doneMeetingIds.has(m.id)).length !== 1 ? "s" : ""}
         </Text>
+
+        {/* Agent status — the same live cue as Twin Diary, so this reads as
+            a background agent watching everything, not a static to-do list. */}
+        <View style={styles.agentStatusBar}>
+          <LiveDot styles={styles} />
+          <Text style={styles.agentStatusText}>
+            Mneva is analyzing your day
+            {(autoToday.length + autoUpcoming.length) > 0
+              ? ` · ${autoToday.length + autoUpcoming.length} item${(autoToday.length + autoUpcoming.length) !== 1 ? 's' : ''} detected`
+              : ''}
+          </Text>
+        </View>
 
         {/* Segment tabs */}
         <ScrollView
@@ -344,8 +471,8 @@ export default function Priorities({ navigation }) {
           {TABS.map((tab) => {
             const active = tab === activeTab;
             const isMeetings = tab === "MEETINGS";
-            const badgeCount = tab === "TODAY" ? pendingTasks.length + todayReminders.filter(m => !doneMeetingIds.has(m.id)).length
-              : tab === "UPCOMING" ? upcomingItems.filter(m => !doneMeetingIds.has(m.id)).length
+            const badgeCount = tab === "TODAY" ? pendingTasks.length + todayReminders.filter(m => !doneMeetingIds.has(m.id)).length + autoToday.length
+              : tab === "UPCOMING" ? upcomingItems.filter(m => !doneMeetingIds.has(m.id)).length + autoUpcoming.length
               : meetings.filter(m => !doneMeetingIds.has(m.id)).length;
             return (
               <TouchableOpacity
@@ -372,15 +499,15 @@ export default function Priorities({ navigation }) {
         </ScrollView>
 
         {loading ? (
-          <ActivityIndicator size="small" color="#1F9A5A" style={{ marginTop: 40 }} />
+          <ActivityIndicator size="small" color={theme.accent} style={{ marginTop: 40 }} />
         ) : (
           <>
             {/* TODAY tab */}
             {activeTab === "TODAY" && (
               <>
-                {pendingTasks.length === 0 && todayReminders.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && (
+                {pendingTasks.length === 0 && todayReminders.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && autoToday.length === 0 && (
                   <View style={styles.emptyWrap}>
-                    <Feather name="check-circle" size={28} color="#C7CBD3" />
+                    <Feather name="check-circle" size={28} color={theme.disabled} />
                     <Text style={styles.emptyText}>All clear for today!</Text>
                   </View>
                 )}
@@ -457,7 +584,7 @@ export default function Priorities({ navigation }) {
                   </>
                 )}
                 {pendingTasks.map(task => (
-                  <TaskCard key={task.id} task={task} onCheck={handleCheckTask} />
+                  <TaskCard key={task.id} task={task} onCheck={handleCheckTask} styles={styles} />
                 ))}
                 {todayReminders.length > 0 && (
                   <>
@@ -466,7 +593,18 @@ export default function Priorities({ navigation }) {
                       <Text style={[styles.sectionDividerText, { color: '#D88900' }]}>REMINDERS TODAY</Text>
                     </View>
                     {todayReminders.map(m => (
-                      <MeetingCard key={m.id} m={m} done={doneMeetingIds.has(m.id)} onCheck={handleCheckMeeting} />
+                      <MeetingCard key={m.id} m={m} done={doneMeetingIds.has(m.id)} onCheck={handleCheckMeeting} styles={styles} />
+                    ))}
+                  </>
+                )}
+                {autoToday.length > 0 && (
+                  <>
+                    <View style={styles.sectionDivider}>
+                      <Feather name="cpu" size={12} color={theme.accentAlt} />
+                      <Text style={[styles.sectionDividerText, { color: theme.accentAlt }]}>AI DETECTED TODAY</Text>
+                    </View>
+                    {autoToday.map((item, i) => (
+                      <AutoTimelineRow key={item.id} item={item} isLast={i === autoToday.length - 1} styles={styles} />
                     ))}
                   </>
                 )}
@@ -476,19 +614,33 @@ export default function Priorities({ navigation }) {
             {/* UPCOMING tab */}
             {activeTab === "UPCOMING" && (
               <>
-                {upcomingItems.length === 0 ? (
+                {upcomingItems.length === 0 && autoUpcoming.length === 0 ? (
                   <View style={styles.emptyWrap}>
-                    <Feather name="calendar" size={28} color="#C7CBD3" />
+                    <Feather name="calendar" size={28} color={theme.disabled} />
                     <Text style={styles.emptyText}>Nothing upcoming yet.</Text>
                   </View>
                 ) : (
-                  upcomingItems.map(m => (
-                    <MeetingCard
-                      key={m.id} m={m}
-                      done={doneMeetingIds.has(m.id)}
-                      onCheck={handleCheckMeeting}
-                    />
-                  ))
+                  <>
+                    {upcomingItems.map(m => (
+                      <MeetingCard
+                        key={m.id} m={m}
+                        done={doneMeetingIds.has(m.id)}
+                        onCheck={handleCheckMeeting}
+                        styles={styles}
+                      />
+                    ))}
+                    {autoUpcoming.length > 0 && (
+                      <>
+                        <View style={styles.sectionDivider}>
+                          <Feather name="cpu" size={12} color={theme.accentAlt} />
+                          <Text style={[styles.sectionDividerText, { color: theme.accentAlt }]}>AI DETECTED — COMING UP</Text>
+                        </View>
+                        {autoUpcoming.map((item, i) => (
+                          <AutoTimelineRow key={item.id} item={item} isLast={i === autoUpcoming.length - 1} styles={styles} />
+                        ))}
+                      </>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -498,7 +650,7 @@ export default function Priorities({ navigation }) {
               <>
                 {meetings.length === 0 ? (
                   <View style={styles.emptyWrap}>
-                    <Feather name="video" size={28} color="#C7CBD3" />
+                    <Feather name="video" size={28} color={theme.disabled} />
                     <Text style={styles.emptyText}>No live meetings scheduled yet.</Text>
                     <Text style={styles.emptyHint}>Use Ask Mneva → Schedule to create one.</Text>
                   </View>
@@ -508,6 +660,7 @@ export default function Priorities({ navigation }) {
                       key={m.id} m={m}
                       done={doneMeetingIds.has(m.id)}
                       onCheck={handleCheckMeeting}
+                      styles={styles}
                     />
                   ))
                 )}
@@ -521,23 +674,23 @@ export default function Priorities({ navigation }) {
       {/* Bottom tab bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem}>
-          <Feather name="calendar" size={22} color="#1F7A54" />
+          <Feather name="calendar" size={22} color={theme.accent} />
           <Text style={[styles.tabLabel, styles.tabLabelActive]}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("AskAI")}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Space")}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -545,83 +698,113 @@ export default function Priorities({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFC" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
-  headerTitle: { fontSize: 32, fontWeight: "800", color: "#14171F", marginBottom: 4 },
-  headerSubtitle: { fontSize: 14, color: "#9AA1AE", marginBottom: 16 },
+  headerTitle: { fontSize: 32, fontWeight: "800", color: theme.text, marginBottom: 4 },
+  headerSubtitle: { fontSize: 14, color: theme.faint, marginBottom: 16 },
+
+  // Agent status bar
+  agentStatusBar: { flexDirection: "row", alignItems: "center", backgroundColor: theme.isDark ? "rgba(129,128,255,0.16)" : "#F3F2FF", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 16, gap: 8 },
+  agentStatusText: { fontSize: 12, fontWeight: "600", color: theme.accentAlt },
+  liveDotWrap: { width: 14, height: 14, alignItems: "center", justifyContent: "center" },
+  liveDotPulse: { position: "absolute", width: 10, height: 10, borderRadius: 5, backgroundColor: theme.accent, opacity: 0.35 },
+  liveDotCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.accent },
+
+  // Timeline (used for AI-detected items)
+  timelineRow: { flexDirection: "row" },
+  timelineLeftCol: { width: 20, alignItems: "center" },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 18 },
+  timelineLine: { flex: 1, width: 2, backgroundColor: theme.border, marginTop: 4, marginBottom: 4, minHeight: 16 },
 
   segmentScroll: { marginBottom: 20 },
-  segmentWrap: { flexDirection: "row", backgroundColor: "#EEF0F3", borderRadius: 14, padding: 4, gap: 4 },
+  segmentWrap: { flexDirection: "row", backgroundColor: theme.soft, borderRadius: 14, padding: 4, gap: 4 },
   segmentItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 11, borderRadius: 11 },
-  segmentItemActive: { backgroundColor: "#FFFFFF", shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
-  segmentItemMeetingActive: { backgroundColor: "#EFFDF6" },
-  segmentItemReminderActive: { backgroundColor: "#FFF8EA" },
-  segmentText: { fontSize: 12, fontWeight: "700", color: "#9AA1AE", letterSpacing: 0.3 },
-  segmentTextActive: { color: "#14171F" },
-  meetBadgeDot: { marginLeft: 5, backgroundColor: "#1F9A5A", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-  meetBadgeDotActive: { backgroundColor: "#14171F" },
+  segmentItemActive: { backgroundColor: theme.card, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  segmentItemMeetingActive: { backgroundColor: theme.isDark ? "rgba(52,199,123,0.16)" : "#EFFDF6" },
+  segmentItemReminderActive: { backgroundColor: theme.isDark ? "rgba(255,184,77,0.16)" : "#FFF8EA" },
+  segmentText: { fontSize: 12, fontWeight: "700", color: theme.faint, letterSpacing: 0.3 },
+  segmentTextActive: { color: theme.text },
+  meetBadgeDot: { marginLeft: 5, backgroundColor: theme.accent, borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
+  meetBadgeDotActive: { backgroundColor: theme.text },
   meetBadgeDotText: { fontSize: 9, fontWeight: "800", color: "#FFFFFF" },
 
   // Task card
-  card: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 18, paddingVertical: 16, paddingHorizontal: 16, marginBottom: 12 },
+  card: {
+    flexDirection: "row", alignItems: "center", backgroundColor: theme.card, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 16, marginBottom: 12,
+    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
   cardDone: { opacity: 0.5 },
-  checkCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: "#E3E5EA", alignItems: "center", justifyContent: "center", marginRight: 14, flexShrink: 0 },
-  checkCircleActive: { backgroundColor: "#1F9A5A", borderColor: "#1F9A5A" },
+  checkCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: theme.borderStrong, alignItems: "center", justifyContent: "center", marginRight: 14, flexShrink: 0 },
+  checkCircleActive: { backgroundColor: theme.accent, borderColor: theme.accent },
   cardTextWrap: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#14171F", marginBottom: 3 },
-  cardTitleChecked: { color: "#9AA1AE", textDecorationLine: "line-through" },
-  cardSubtitle: { fontSize: 12, color: "#9AA1AE" },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: theme.text, marginBottom: 3 },
+  cardTitleChecked: { color: theme.faint, textDecorationLine: "line-through" },
+  cardSubtitle: { fontSize: 12, color: theme.faint },
 
   // Section divider
   sectionDivider: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10, marginTop: 6 },
-  sectionDividerText: { fontSize: 12, fontWeight: "700", color: "#6B7280", letterSpacing: 0.5 },
+  sectionDividerText: { fontSize: 12, fontWeight: "700", color: theme.muted, letterSpacing: 0.5 },
 
   // Meeting card — same row layout as task card
-  meetCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: "#FFFFFF", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12 },
+  meetCard: {
+    flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.card, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12,
+    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
   meetBody: { flex: 1 },
   meetTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
-  meetTitle: { fontSize: 15, fontWeight: "700", color: "#14171F", flex: 1, marginRight: 8 },
+  meetTitle: { fontSize: 15, fontWeight: "700", color: theme.text, flex: 1, marginRight: 8 },
   meetMetaRow: { flexDirection: "row", alignItems: "center", marginBottom: 3 },
-  meetMeta: { fontSize: 12, color: "#6B7280" },
-  meetAttendees: { fontSize: 12, color: "#9AA1AE", flex: 1 },
-  meetDesc: { fontSize: 12, color: "#9AA1AE", marginTop: 4, lineHeight: 17 },
-  joinBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#1F9A5A", borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
+  meetMeta: { fontSize: 12, color: theme.muted },
+  meetAttendees: { fontSize: 12, color: theme.faint, flex: 1 },
+  meetDesc: { fontSize: 12, color: theme.faint, marginTop: 4, lineHeight: 17 },
+  joinBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: theme.accent, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
   joinBtnText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
 
   // Empty
   emptyWrap: { alignItems: "center", paddingVertical: 40, gap: 10 },
-  emptyText: { fontSize: 14, color: "#9AA1AE", fontWeight: "600" },
-  emptyHint: { fontSize: 12, color: "#C7CBD3", textAlign: "center" },
+  emptyText: { fontSize: 14, color: theme.faint, fontWeight: "600" },
+  emptyHint: { fontSize: 12, color: theme.disabled, textAlign: "center" },
 
   // Meeting suggestion card
-  meetSuggestCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: "#F5F3FF", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: "#615FF8" },
-  meetSuggestIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#EEEDFE", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
+  meetSuggestCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.isDark ? "rgba(129,128,255,0.10)" : "#F5F3FF", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: theme.accentAlt },
+  meetSuggestIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: theme.isDark ? "rgba(129,128,255,0.18)" : "#EEEDFE", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
   meetSuggestBody: { flex: 1 },
-  meetSuggestTitle: { fontSize: 14, fontWeight: "700", color: "#14171F", marginBottom: 2 },
-  meetSuggestFrom: { fontSize: 12, color: "#615FF8", marginBottom: 2 },
-  meetSuggestSubject: { fontSize: 11, color: "#9AA1AE", marginBottom: 10 },
+  meetSuggestTitle: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 2 },
+  meetSuggestFrom: { fontSize: 12, color: theme.accentAlt, marginBottom: 2 },
+  meetSuggestSubject: { fontSize: 11, color: theme.faint, marginBottom: 10 },
   meetSuggestBtnRow: { flexDirection: "row", gap: 8 },
-  meetSuggestDenyBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: "#FFF0F3" },
-  meetSuggestDenyText: { fontSize: 12, fontWeight: "700", color: "#E0546E" },
-  meetSuggestApproveBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#615FF8", flex: 1, justifyContent: "center" },
+  meetSuggestDenyBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: theme.isDark ? "rgba(241,113,134,0.14)" : "#FFF0F3" },
+  meetSuggestDenyText: { fontSize: 12, fontWeight: "700", color: theme.danger },
+  meetSuggestApproveBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: theme.accentAlt, flex: 1, justifyContent: "center" },
   meetSuggestApproveText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
   meetSuggestActed: { fontSize: 12, fontWeight: "600", marginTop: 4 },
 
   // Urgent email card
-  urgentEmailCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: "#FFF5F7", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: "#E0546E" },
-  urgentEmailIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#FCEAED", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
+  urgentEmailCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.isDark ? "rgba(241,113,134,0.10)" : "#FFF5F7", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: theme.danger },
+  urgentEmailIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: theme.isDark ? "rgba(241,113,134,0.16)" : "#FCEAED", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
   urgentEmailBody: { flex: 1 },
-  urgentEmailSubject: { fontSize: 14, fontWeight: "700", color: "#14171F", marginBottom: 3 },
-  urgentEmailFrom: { fontSize: 12, color: "#6B7280", marginBottom: 2 },
-  urgentEmailSnippet: { fontSize: 11, color: "#9AA1AE" },
-  urgentBadge: { backgroundColor: "#FCEAED", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginLeft: 8, alignSelf: "flex-start" },
-  urgentBadgeText: { fontSize: 10, fontWeight: "800", color: "#E0546E" },
+  urgentEmailSubject: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 3 },
+  urgentEmailFrom: { fontSize: 12, color: theme.muted, marginBottom: 2 },
+  urgentEmailSnippet: { fontSize: 11, color: theme.faint },
+  urgentBadge: { backgroundColor: theme.isDark ? "rgba(241,113,134,0.16)" : "#FCEAED", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginLeft: 8, alignSelf: "flex-start" },
+  urgentBadgeText: { fontSize: 10, fontWeight: "800", color: theme.danger },
+
+  // Auto-detected item card (from the cross-module analysis)
+  autoItemCard: {
+    flexDirection: "row", alignItems: "center", backgroundColor: theme.card, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3,
+    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
+  autoItemIconWrap: { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
+  autoItemBody: { flex: 1 },
+  autoItemTitle: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 2 },
+  autoItemSubtitle: { fontSize: 12, color: theme.faint },
+  autoItemDate: { fontSize: 11, fontWeight: "700", color: theme.muted, marginLeft: 8 },
 
   // Tab bar
-  tabBar: { flexDirection: "row", backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EEF0F3", paddingTop: 10 },
+  tabBar: { flexDirection: "row", backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: "center" },
-  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
-  tabLabelActive: { color: "#1F7A54" },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
+  tabLabelActive: { color: theme.accent },
 });

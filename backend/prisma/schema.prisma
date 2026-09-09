@@ -61,6 +61,7 @@ model User {
   subscriptions             Subscription[]
   bills                     Bill[]
   fixedDeposits             FixedDeposit[]
+  reminderSchedules         ReminderSchedule[]
 
   conversations Conversation[]
   agents        Agent[]
@@ -618,6 +619,23 @@ model FixedDeposit {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+// Dedup ledger for the advance-reminder scanner — one row per
+// (item, lead time) combination that has already been sent, so the
+// every-5-minutes scan never pushes the same advance warning twice.
+model ReminderSchedule {
+  id          String   @id @default(uuid())
+  userId      String
+  itemType    String // 'bill' | 'loan' | 'emi' | 'subscription' | 'fixed_deposit' | 'medication' | 'pet_reminder' | 'family_item'
+  itemId      String
+  leadMinutes Int
+  sentAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemType, itemId, leadMinutes])
   @@index([userId])
 }
 

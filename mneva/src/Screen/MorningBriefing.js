@@ -9,8 +9,36 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
+
+const TOKEN_MAP = {
+  '#615FF8': 'accentAlt',
+  '#1F9A5A': 'accent',
+  '#E0546E': 'danger',
+  '#4FA6E8': 'info',
+  '#F5A623': 'warning',
+  '#9B72FF': 'accentAlt',
+};
+const TINT_RGB = {
+  '#EEEDFE': [129, 128, 255],
+  '#EFFDF6': [52, 199, 123],
+  '#FCEAED': [241, 113, 134],
+  '#EAF3FD': [107, 184, 240],
+  '#FEF3C7': [255, 184, 77],
+  '#F3EFFE': [129, 128, 255],
+  '#FFF0F3': [241, 113, 134],
+};
+function mColor(hex, theme) {
+  const key = TOKEN_MAP[hex];
+  return key ? theme[key] : hex;
+}
+function mBg(hex, theme) {
+  if (!hex || !theme.isDark) return hex;
+  const rgb = TINT_RGB[hex];
+  return rgb ? `rgba(${rgb.join(',')},0.16)` : theme.surfaceAlt;
+}
 
 const DOMAIN_META = {
   notifications: { icon: 'bell',        color: '#615FF8', bg: '#EEEDFE', label: 'Notification' },
@@ -38,56 +66,62 @@ const TOOL_META = {
   personal_search:   { icon: 'search',      color: '#4FA6E8', label: 'Search' },
 };
 
-function StatCard({ icon, color, bg, label, value }) {
+function StatCard({ icon, color, bg, label, value, theme, styles }) {
+  const c = mColor(color, theme);
+  const b = mBg(bg, theme);
   return (
-    <View style={[styles.statCard, { backgroundColor: bg }]}>
-      <View style={[styles.statIconWrap, { backgroundColor: color + '22' }]}>
-        <Feather name={icon} size={16} color={color} />
+    <View style={[styles.statCard, { backgroundColor: b }]}>
+      <View style={[styles.statIconWrap, { backgroundColor: c + '22' }]}>
+        <Feather name={icon} size={16} color={c} />
       </View>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={[styles.statValue, { color: c }]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
-function SectionHeader({ title }) {
+function SectionHeader({ title, styles }) {
   return <Text style={styles.sectionHeader}>{title}</Text>;
 }
 
-function ActionRow({ item, index, total, type }) {
-  const meta = type === 'auto'
+function ActionRow({ item, index, total, type, theme, styles }) {
+  const rawMeta = type === 'auto'
     ? (TOOL_META[item.tool] || { icon: 'zap', color: '#9B72FF', label: 'Action' })
     : (DOMAIN_META[item.domain] || DOMAIN_META.default);
+  const color = mColor(rawMeta.color, theme);
+  const bg = rawMeta.bg ? mBg(rawMeta.bg, theme) : color + '18';
 
   return (
     <View style={[styles.actionRow, index !== total - 1 && styles.actionRowDivider]}>
-      <View style={[styles.actionIconWrap, { backgroundColor: meta.bg || meta.color + '18' }]}>
-        <Feather name={meta.icon} size={16} color={meta.color} />
+      <View style={[styles.actionIconWrap, { backgroundColor: bg }]}>
+        <Feather name={rawMeta.icon} size={16} color={color} />
       </View>
       <View style={styles.actionTextWrap}>
         <Text style={styles.actionTitle} numberOfLines={2}>{item.title}</Text>
         {!!item.detail && <Text style={styles.actionDetail} numberOfLines={1}>{item.detail}</Text>}
         {!!item.time && <Text style={styles.actionTime}>{item.time}</Text>}
       </View>
-      <View style={[styles.actionBadge, { backgroundColor: meta.bg || meta.color + '18' }]}>
-        <Text style={[styles.actionBadgeText, { color: meta.color }]}>{meta.label}</Text>
+      <View style={[styles.actionBadge, { backgroundColor: bg }]}>
+        <Text style={[styles.actionBadgeText, { color }]}>{rawMeta.label}</Text>
       </View>
     </View>
   );
 }
 
-function PendingTaskRow({ task, index, total }) {
+function PendingTaskRow({ task, index, total, theme, styles }) {
+  const bg = mBg('#EEEDFE', theme);
+  const color = theme.accentAlt;
   return (
     <View style={[styles.actionRow, index !== total - 1 && styles.actionRowDivider]}>
-      <View style={[styles.actionIconWrap, { backgroundColor: '#EEEDFE' }]}>
-        <Feather name="check-square" size={16} color="#615FF8" />
+      <View style={[styles.actionIconWrap, { backgroundColor: bg }]}>
+        <Feather name="check-square" size={16} color={color} />
       </View>
       <View style={styles.actionTextWrap}>
         <Text style={styles.actionTitle} numberOfLines={2}>{task.title}</Text>
         {!!task.description && <Text style={styles.actionDetail} numberOfLines={1}>{task.description}</Text>}
       </View>
-      <View style={[styles.actionBadge, { backgroundColor: '#EEEDFE' }]}>
-        <Text style={[styles.actionBadgeText, { color: '#615FF8' }]}>Pending</Text>
+      <View style={[styles.actionBadge, { backgroundColor: bg }]}>
+        <Text style={[styles.actionBadgeText, { color }]}>Pending</Text>
       </View>
     </View>
   );
@@ -95,6 +129,8 @@ function PendingTaskRow({ task, index, total }) {
 
 export default function MorningBriefing({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { width } = useWindowDimensions();
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
@@ -202,15 +238,15 @@ export default function MorningBriefing({ navigation, route }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); loadBrief(true); }}
-            tintColor="#1F9A5A"
-            colors={['#1F9A5A']}
+            tintColor={theme.accent}
+            colors={[theme.accent]}
           />
         }
       >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Today’s Priorities</Text>
@@ -220,13 +256,13 @@ export default function MorningBriefing({ navigation, route }) {
             style={styles.refreshBtn}
             onPress={() => { setRefreshing(true); loadBrief(true); }}
           >
-            <Feather name="refresh-cw" size={18} color="#1F9A5A" />
+            <Feather name="refresh-cw" size={18} color={theme.accent} />
           </TouchableOpacity>
         </View>
 
         {loading ? (
           <View style={styles.loadingWrap}>
-            <ActivityIndicator size="large" color="#1F9A5A" />
+            <ActivityIndicator size="large" color={theme.accent} />
             <Text style={styles.loadingText}>Loading your briefing…</Text>
           </View>
         ) : (
@@ -249,31 +285,31 @@ export default function MorningBriefing({ navigation, route }) {
 
             {/* Stats row */}
             <View style={styles.statsRow}>
-              <StatCard icon="alert-circle" color="#E0546E" bg="#FCEAED" label="Urgent Mail"    value={urgentEmails.length} />
-              <StatCard icon="calendar"     color="#615FF8" bg="#EEEDFE" label="Meet Requests" value={suggestedMeetings.length} />
-              <StatCard icon="zap"          color="#1F9A5A" bg="#EFFDF6" label="AI Done"       value={autoCompleted.length} />
+              <StatCard icon="alert-circle" color="#E0546E" bg="#FCEAED" label="Urgent Mail"    value={urgentEmails.length} theme={theme} styles={styles} />
+              <StatCard icon="calendar"     color="#615FF8" bg="#EEEDFE" label="Meet Requests" value={suggestedMeetings.length} theme={theme} styles={styles} />
+              <StatCard icon="zap"          color="#1F9A5A" bg="#EFFDF6" label="AI Done"       value={autoCompleted.length} theme={theme} styles={styles} />
             </View>
 
             {/* Suggested meetings from urgent emails */}
             {suggestedMeetings.length > 0 && (
               <>
-                <SectionHeader title="📅  MEETING REQUESTS" />
+                <SectionHeader title="📅  MEETING REQUESTS" styles={styles} />
                 <View style={styles.card}>
                   {suggestedMeetings.map((mtg, i) => {
                     const acted = meetingActed[mtg.emailId];
                     return (
                       <View key={mtg.emailId} style={[styles.actionRow, i !== suggestedMeetings.length - 1 && styles.actionRowDivider, { flexDirection: 'column', alignItems: 'stretch', gap: 10 }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <View style={[styles.actionIconWrap, { backgroundColor: '#EEEDFE' }]}>
-                            <Feather name="user" size={16} color="#615FF8" />
+                          <View style={[styles.actionIconWrap, { backgroundColor: mBg('#EEEDFE', theme) }]}>
+                            <Feather name="user" size={16} color={theme.accentAlt} />
                           </View>
                           <View style={styles.actionTextWrap}>
                             <Text style={styles.actionTitle} numberOfLines={1}>{mtg.senderName} wants to meet</Text>
                             <Text style={styles.actionDetail} numberOfLines={1}>{mtg.senderEmail}</Text>
                             <Text style={styles.actionTime} numberOfLines={1}>{mtg.subject}</Text>
                           </View>
-                          <View style={[styles.actionBadge, { backgroundColor: '#EEEDFE' }]}>
-                            <Text style={[styles.actionBadgeText, { color: '#615FF8' }]}>REQUEST</Text>
+                          <View style={[styles.actionBadge, { backgroundColor: mBg('#EEEDFE', theme) }]}>
+                            <Text style={[styles.actionBadgeText, { color: theme.accentAlt }]}>REQUEST</Text>
                           </View>
                         </View>
                         {!acted ? (
@@ -282,7 +318,7 @@ export default function MorningBriefing({ navigation, route }) {
                               style={styles.mtgDenyBtn}
                               onPress={() => handleMeetingSuggest(mtg.emailId, 'deny', mtg)}
                             >
-                              <Feather name="x" size={13} color="#E0546E" />
+                              <Feather name="x" size={13} color={theme.danger} />
                               <Text style={styles.mtgDenyText}>Skip</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -294,7 +330,7 @@ export default function MorningBriefing({ navigation, route }) {
                             </TouchableOpacity>
                           </View>
                         ) : (
-                          <Text style={[styles.mtgActedText, { color: acted === 'approve' ? '#1F9A5A' : '#9AA1AE', paddingLeft: 50 }]}>
+                          <Text style={[styles.mtgActedText, { color: acted === 'approve' ? theme.accent : theme.faint, paddingLeft: 50 }]}>
                             {acted === 'approve' ? '✓ Meeting scheduled' : '✗ Skipped'}
                           </Text>
                         )}
@@ -308,20 +344,20 @@ export default function MorningBriefing({ navigation, route }) {
             {/* Urgent emails */}
             {urgentEmails.length > 0 && (
               <>
-                <SectionHeader title="🚨  URGENT EMAILS TODAY" />
+                <SectionHeader title="🚨  URGENT EMAILS TODAY" styles={styles} />
                 <View style={styles.card}>
                   {urgentEmails.map((email, i) => (
                     <View key={email.id || i} style={[styles.actionRow, i !== urgentEmails.length - 1 && styles.actionRowDivider]}>
-                      <View style={[styles.actionIconWrap, { backgroundColor: '#FCEAED' }]}>
-                        <Feather name="mail" size={16} color="#E0546E" />
+                      <View style={[styles.actionIconWrap, { backgroundColor: mBg('#FCEAED', theme) }]}>
+                        <Feather name="mail" size={16} color={theme.danger} />
                       </View>
                       <View style={styles.actionTextWrap}>
                         <Text style={styles.actionTitle} numberOfLines={1}>{email.subject}</Text>
                         <Text style={styles.actionDetail} numberOfLines={1}>From: {email.from.replace(/<.*>/, '').trim()}</Text>
                         {!!email.snippet && <Text style={styles.actionTime} numberOfLines={1}>{email.snippet}</Text>}
                       </View>
-                      <View style={[styles.actionBadge, { backgroundColor: '#FCEAED' }]}>
-                        <Text style={[styles.actionBadgeText, { color: '#E0546E' }]}>URGENT</Text>
+                      <View style={[styles.actionBadge, { backgroundColor: mBg('#FCEAED', theme) }]}>
+                        <Text style={[styles.actionBadgeText, { color: theme.danger }]}>URGENT</Text>
                       </View>
                     </View>
                   ))}
@@ -332,10 +368,10 @@ export default function MorningBriefing({ navigation, route }) {
             {/* Auto-completed actions */}
             {autoCompleted.length > 0 && (
               <>
-                <SectionHeader title="✅  AUTO-COMPLETED BY AI TWIN" />
+                <SectionHeader title="✅  AUTO-COMPLETED BY AI TWIN" styles={styles} />
                 <View style={styles.card}>
                   {autoCompleted.map((item, i) => (
-                    <ActionRow key={i} item={item} index={i} total={autoCompleted.length} type="auto" />
+                    <ActionRow key={i} item={item} index={i} total={autoCompleted.length} type="auto" theme={theme} styles={styles} />
                   ))}
                 </View>
               </>
@@ -344,10 +380,10 @@ export default function MorningBriefing({ navigation, route }) {
             {/* Pending actions (notifications) */}
             {pendingActions.length > 0 && (
               <>
-                <SectionHeader title="🔔  NEEDS YOUR ATTENTION" />
+                <SectionHeader title="🔔  NEEDS YOUR ATTENTION" styles={styles} />
                 <View style={styles.card}>
                   {pendingActions.map((item, i) => (
-                    <ActionRow key={i} item={item} index={i} total={pendingActions.length} type="pending" />
+                    <ActionRow key={i} item={item} index={i} total={pendingActions.length} type="pending" theme={theme} styles={styles} />
                   ))}
                 </View>
               </>
@@ -356,10 +392,10 @@ export default function MorningBriefing({ navigation, route }) {
             {/* Pending tasks */}
             {pendingTasks.length > 0 && (
               <>
-                <SectionHeader title="📋  TODAY'S PRIORITIES" />
+                <SectionHeader title="📋  TODAY'S PRIORITIES" styles={styles} />
                 <View style={styles.card}>
                   {pendingTasks.map((task, i) => (
-                    <PendingTaskRow key={task.id || i} task={task} index={i} total={pendingTasks.length} />
+                    <PendingTaskRow key={task.id || i} task={task} index={i} total={pendingTasks.length} theme={theme} styles={styles} />
                   ))}
                 </View>
               </>
@@ -378,7 +414,7 @@ export default function MorningBriefing({ navigation, route }) {
 
             {/* Footer tip */}
             <View style={styles.tipCard}>
-              <Feather name="info" size={14} color="#9AA1AE" />
+              <Feather name="info" size={14} color={theme.faint} />
               <Text style={styles.tipText}>  Pull down to refresh your briefing with the latest data from all connected sources.</Text>
             </View>
           </>
@@ -388,23 +424,23 @@ export default function MorningBriefing({ navigation, route }) {
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -412,19 +448,19 @@ export default function MorningBriefing({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
 
   header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  refreshBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
+  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  refreshBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
 
   loadingWrap: { alignItems: 'center', paddingTop: 80, gap: 16 },
-  loadingText: { fontSize: 14, color: '#9AA1AE', fontWeight: '600' },
+  loadingText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
 
   heroCard: { borderRadius: 22, padding: 22, marginBottom: 16 },
   heroLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
@@ -436,38 +472,38 @@ const styles = StyleSheet.create({
   statCard: { flex: 1, borderRadius: 16, padding: 14, alignItems: 'center' },
   statIconWrap: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   statValue: { fontSize: 22, fontWeight: '800', marginBottom: 2 },
-  statLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', textAlign: 'center' },
+  statLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, textAlign: 'center' },
 
-  sectionHeader: { fontSize: 11, fontWeight: '800', color: '#6B7280', letterSpacing: 0.5, marginBottom: 10, marginTop: 4 },
+  sectionHeader: { fontSize: 11, fontWeight: '800', color: theme.muted, letterSpacing: 0.5, marginBottom: 10, marginTop: 4 },
 
-  card: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, marginBottom: 16 },
+  card: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, marginBottom: 16 },
 
   actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  actionRowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  actionRowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
   actionIconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   actionTextWrap: { flex: 1 },
-  actionTitle: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  actionDetail: { fontSize: 12, color: '#6B7280', marginBottom: 2 },
-  actionTime: { fontSize: 11, color: '#9AA1AE' },
+  actionTitle: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  actionDetail: { fontSize: 12, color: theme.muted, marginBottom: 2 },
+  actionTime: { fontSize: 11, color: theme.faint },
   actionBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginLeft: 8 },
   actionBadgeText: { fontSize: 10, fontWeight: '800' },
 
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 14 },
   emptyIconWrap: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 22, fontWeight: '800', color: '#14171F' },
-  emptySubtitle: { fontSize: 14, color: '#9AA1AE', textAlign: 'center', lineHeight: 21, paddingHorizontal: 20 },
+  emptyTitle: { fontSize: 22, fontWeight: '800', color: theme.text },
+  emptySubtitle: { fontSize: 14, color: theme.faint, textAlign: 'center', lineHeight: 21, paddingHorizontal: 20 },
 
-  tipCard: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, marginTop: 4 },
-  tipText: { fontSize: 12, color: '#9AA1AE', flex: 1, lineHeight: 18 },
+  tipCard: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: theme.card, borderRadius: 14, padding: 14, marginTop: 4 },
+  tipText: { fontSize: 12, color: theme.faint, flex: 1, lineHeight: 18 },
 
   // Meeting suggestion buttons
-  mtgDenyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#FFF0F3' },
-  mtgDenyText: { fontSize: 12, fontWeight: '700', color: '#E0546E' },
-  mtgApproveBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#615FF8', flex: 1, justifyContent: 'center' },
+  mtgDenyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FFF0F3' },
+  mtgDenyText: { fontSize: 12, fontWeight: '700', color: theme.danger },
+  mtgApproveBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: theme.accentAlt, flex: 1, justifyContent: 'center' },
   mtgApproveText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
   mtgActedText: { fontSize: 12, fontWeight: '600' },
 
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

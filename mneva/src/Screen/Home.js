@@ -4776,7 +4776,7 @@
 //             onPress={() => loadData(true)}
 //             activeOpacity={0.8}
 //           >
-//             <Feather name="wifi-off" size={16} color="#B45309" />
+//             <Feather name="wifi-off" size={16} color={theme.warning} />
 //             <Text style={styles.connectionBannerText}>
 //               Couldn't reach the server — retrying automatically. Tap to retry
 //               now.
@@ -5147,7 +5147,7 @@
 //                   <Feather
 //                     name={alert.priority >= 85 ? "alert-circle" : "bell"}
 //                     size={16}
-//                     color={alert.priority >= 85 ? "#B42318" : "#9A6700"}
+//                     color={alert.priority >= 85 ? theme.danger : theme.warning}
 //                   />
 //                 </View>
 //                 <View style={styles.phoneAlertTextWrap}>
@@ -6759,6 +6759,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as Speech from "expo-speech";
 import * as FileSystem from "expo-file-system/legacy";
+import { useTheme } from "../context/ThemeContext";
 
 // NOTE: This screen expects your app root to be wrapped in
 // <SafeAreaProvider> (from react-native-safe-area-context) so that
@@ -6821,7 +6822,41 @@ function isToday(value, todayStart, todayEnd) {
   );
 }
 
-function FocusRing({ percent }) {
+// Used by the dashboard's Twin Diary widget, which — unlike the full Twin
+// Diary screen — must only ever show today's entries, so the boundary has
+// to be recomputed at call time rather than captured once in an effect.
+function isSameLocalDay(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+// Same tool → icon/color mapping as TwinDiary.js, kept local since that
+// screen doesn't export them — just enough for the dashboard preview card.
+const DIARY_TOOL_ICONS = {
+  schedule_event: 'calendar', set_reminder: 'bell', initiate_payment: 'credit-card',
+  send_email: 'mail', draft_reply: 'edit-2', book_cab: 'navigation', order_food: 'shopping-bag',
+  get_daily_brief: 'sun', get_full_summary: 'cpu', get_portfolio: 'trending-up',
+  get_spending_summary: 'dollar-sign', get_health_data: 'heart', query_bills: 'file-text',
+  personal_search: 'search',
+};
+const DIARY_TOOL_COLORS = {
+  schedule_event: '#4FA6E8', set_reminder: '#F5A623', initiate_payment: '#1F9A5A',
+  send_email: '#615FF8', draft_reply: '#9B72FF', book_cab: '#1F9A5A', order_food: '#F5A623',
+  get_daily_brief: '#F5A623', get_full_summary: '#615FF8', get_portfolio: '#1F9A5A',
+  get_spending_summary: '#1F9A5A', get_health_data: '#E0546E', query_bills: '#4FA6E8',
+  personal_search: '#615FF8',
+};
+const DIARY_TOOL_BG = {
+  schedule_event: '#EAF3FD', set_reminder: '#FEF3C7', initiate_payment: '#EFFDF6',
+  send_email: '#EEEDFE', draft_reply: '#F3EFFE', book_cab: '#EFFDF6', order_food: '#FEF3C7',
+  get_daily_brief: '#FEF3C7', get_full_summary: '#EEEDFE', get_portfolio: '#EFFDF6',
+  get_spending_summary: '#EFFDF6', get_health_data: '#FCEAED', query_bills: '#EAF3FD',
+  personal_search: '#EEEDFE',
+};
+
+function FocusRing({ percent, theme, styles }) {
   const progress = RING_CIRC - (percent / 100) * RING_CIRC;
   return (
     <View style={{ width: RING_SIZE, height: RING_SIZE }}>
@@ -6830,7 +6865,7 @@ function FocusRing({ percent }) {
           cx={RING_SIZE / 2}
           cy={RING_SIZE / 2}
           r={RING_RADIUS}
-          stroke="#EDEFF3"
+          stroke={theme.border}
           strokeWidth={RING_STROKE}
           fill="none"
         />
@@ -6838,7 +6873,7 @@ function FocusRing({ percent }) {
           cx={RING_SIZE / 2}
           cy={RING_SIZE / 2}
           r={RING_RADIUS}
-          stroke="#14171F"
+          stroke={theme.text}
           strokeWidth={RING_STROKE}
           fill="none"
           strokeDasharray={`${RING_CIRC} ${RING_CIRC}`}
@@ -6864,7 +6899,7 @@ const CATEGORY_COLORS = {
   Relationships: "#E0546E",
 };
 
-function QuickCaptureSheet({ visible, onClose, onSubmit, bottomInset }) {
+function QuickCaptureSheet({ visible, onClose, onSubmit, bottomInset, theme, styles }) {
   const [text, setText] = useState("");
   const [category, setCategory] = useState("Finance");
 
@@ -6910,7 +6945,7 @@ function QuickCaptureSheet({ visible, onClose, onSubmit, bottomInset }) {
           <TextInput
             style={styles.sheetInput}
             placeholder="Approve quarterly budget, schedule call..."
-            placeholderTextColor="#9AA1AE"
+            placeholderTextColor={theme.placeholder}
             value={text}
             onChangeText={setText}
             multiline
@@ -7026,7 +7061,7 @@ function WaveBars({ active, color }) {
   );
 }
 
-function VoiceOrb({ visible, onClose, navigation }) {
+function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
   const slideAnim = useRef(new Animated.Value(60)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const orbScale = useRef(new Animated.Value(0.85)).current;
@@ -7329,35 +7364,35 @@ function VoiceOrb({ visible, onClose, navigation }) {
   // Per-phase design tokens
   const PHASE = {
     idle: {
-      color: "#1F9A5A",
+      color: theme.accent,
       glow: "rgba(31,154,90,0.35)",
       icon: "mic",
       label: "TAP TO SPEAK",
       sub: "Your AI Chief of Staff is ready",
     },
     listening: {
-      color: "#E0546E",
+      color: theme.danger,
       glow: "rgba(224,84,110,0.35)",
       icon: "activity",
       label: "LISTENING",
       sub: "Tap the orb to stop",
     },
     thinking: {
-      color: "#615FF8",
+      color: theme.accentAlt,
       glow: "rgba(97,95,248,0.35)",
       icon: "cpu",
       label: "PROCESSING",
       sub: "Mneva is thinking…",
     },
     speaking: {
-      color: "#4FA6E8",
+      color: theme.info,
       glow: "rgba(79,166,232,0.35)",
       icon: "volume-2",
       label: "SPEAKING",
       sub: "Tap to stop",
     },
     error: {
-      color: "#F5A623",
+      color: theme.warning,
       glow: "rgba(245,166,35,0.35)",
       icon: "alert-circle",
       label: "TRY AGAIN",
@@ -7395,7 +7430,7 @@ function VoiceOrb({ visible, onClose, navigation }) {
           <Text style={styles.orbBrandText}>MNEVA AI</Text>
         </View>
         <TouchableOpacity onPress={onClose} style={styles.orbCloseBtn}>
-          <Feather name="x" size={18} color="#6B7280" />
+          <Feather name="x" size={18} color={theme.muted} />
         </TouchableOpacity>
       </Animated.View>
 
@@ -7514,9 +7549,9 @@ function VoiceOrb({ visible, onClose, navigation }) {
         ]}
       >
         <TouchableOpacity style={styles.orbFooterBtn} onPress={openFullChat}>
-          <Feather name="message-square" size={14} color="#9AA1AE" />
+          <Feather name="message-square" size={14} color={theme.faint} />
           <Text style={styles.orbFooterText}>Open full conversation</Text>
-          <Feather name="chevron-right" size={14} color="#C7CBD3" />
+          <Feather name="chevron-right" size={14} color={theme.disabled} />
         </TouchableOpacity>
       </Animated.View>
     </Animated.View>
@@ -7526,12 +7561,15 @@ function VoiceOrb({ visible, onClose, navigation }) {
 export default function Home({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [captureVisible, setCaptureVisible] = useState(false);
   const [logoutVisible, setLogoutVisible] = useState(false);
   const [orbVisible, setOrbVisible] = useState(false);
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [recentNotifs, setRecentNotifs] = useState([]);
+  const [diaryToday, setDiaryToday] = useState([]);
   const [phoneAlerts, setPhoneAlerts] = useState([]);
   const [brief, setBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(true);
@@ -7710,10 +7748,10 @@ export default function Home({ navigation }) {
       setAllTasks(allTasks);
       const STRIPE_COLORS = [
         "#44BA82",
-        "#615FF8",
-        "#4FA6E8",
-        "#E0546E",
-        "#F5A623",
+        theme.accentAlt,
+        theme.info,
+        theme.danger,
+        theme.warning,
       ];
       const seeded = allTasks
         .filter(
@@ -8009,10 +8047,10 @@ export default function Home({ navigation }) {
             setAllTasks(allTasks);
             const STRIPE_COLORS = [
               "#44BA82",
-              "#615FF8",
-              "#4FA6E8",
-              "#E0546E",
-              "#F5A623",
+              theme.accentAlt,
+              theme.info,
+              theme.danger,
+              theme.warning,
             ];
             const seeded = allTasks
               .filter(
@@ -8094,6 +8132,30 @@ export default function Home({ navigation }) {
     };
   }, [on]);
 
+  // Twin Diary widget — today's AI-executed actions only. This replaces the
+  // old Recent Inbox card; the full past/present/future history still lives
+  // unfiltered on the Twin Diary screen itself.
+  useEffect(() => {
+    let cancelled = false;
+    const filterToday = (entries) => (entries || []).filter(e => e?.status !== 'failed' && isSameLocalDay(e.ts));
+
+    (async () => {
+      const cached = await peekCachedResponse('/api/twin/diary').catch(() => null);
+      if (!cancelled && cached) setDiaryToday(filterToday(cached.entries));
+    })();
+
+    apiFetch('/api/twin/diary')
+      .then((data) => { if (!cancelled) setDiaryToday(filterToday(data?.entries)); })
+      .catch(() => {});
+
+    const offDiaryLedger = on('ledger:updated', (entry) => {
+      if (!entry?.id || entry.status === 'failed' || !isSameLocalDay(entry.ts)) return;
+      setDiaryToday(prev => prev.find(e => e.id === entry.id) ? prev : [entry, ...prev]);
+    });
+
+    return () => { cancelled = true; offDiaryLedger?.(); };
+  }, [on]);
+
   // Polling fallback — silently refresh notifications every 30s
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -8142,10 +8204,10 @@ export default function Home({ navigation }) {
           setAllTasks(allTasks);
           const STRIPE_COLORS = [
             "#44BA82",
-            "#615FF8",
-            "#4FA6E8",
-            "#E0546E",
-            "#F5A623",
+            theme.accentAlt,
+            theme.info,
+            theme.danger,
+            theme.warning,
           ];
           const seeded = allTasks
             .filter(
@@ -8256,19 +8318,19 @@ export default function Home({ navigation }) {
   const TOOL_META = {
     initiate_payment: {
       icon: "credit-card",
-      color: "#1F9A5A",
+      color: theme.accent,
       label: "Payment",
     },
-    book_cab: { icon: "navigation", color: "#4FA6E8", label: "Cab Booking" },
-    order_food: { icon: "shopping-bag", color: "#F5A623", label: "Food Order" },
-    send_email: { icon: "mail", color: "#615FF8", label: "Send Email" },
-    draft_reply: { icon: "edit-2", color: "#615FF8", label: "Draft Reply" },
+    book_cab: { icon: "navigation", color: theme.info, label: "Cab Booking" },
+    order_food: { icon: "shopping-bag", color: theme.warning, label: "Food Order" },
+    send_email: { icon: "mail", color: theme.accentAlt, label: "Send Email" },
+    draft_reply: { icon: "edit-2", color: theme.accentAlt, label: "Draft Reply" },
     schedule_event: {
       icon: "calendar",
-      color: "#E0546E",
+      color: theme.danger,
       label: "Schedule Event",
     },
-    set_reminder: { icon: "bell", color: "#F5A623", label: "Reminder" },
+    set_reminder: { icon: "bell", color: theme.warning, label: "Reminder" },
   };
 
   const getActionLabel = (action) => {
@@ -8317,11 +8379,11 @@ export default function Home({ navigation }) {
   };
 
   const getWeatherIconColor = (code) => {
-    if (code === 0) return "#F5A623";
-    if (code <= 3) return "#9AA1AE";
-    if (code <= 67) return "#4FA6E8";
+    if (code === 0) return theme.warning;
+    if (code <= 3) return theme.faint;
+    if (code <= 67) return theme.info;
     if (code <= 77) return "#A8C8F0";
-    return "#4FA6E8";
+    return theme.info;
   };
 
   const getInitials = (name) => {
@@ -8376,17 +8438,17 @@ export default function Home({ navigation }) {
   const getNotifIcon = (type) => {
     switch (type) {
       case "email":
-        return { icon: "mail", color: "#615FF8", bg: "#EEEDFE" };
+        return { icon: "mail", color: theme.accentAlt, bg: (theme.isDark ? 'rgba(129,128,255,0.16)' : "#EEEDFE") };
       case "sms":
-        return { icon: "message-square", color: "#1F9A5A", bg: "#EFFDF6" };
+        return { icon: "message-square", color: theme.accent, bg: (theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6") };
       case "calendar":
-        return { icon: "calendar", color: "#4FA6E8", bg: "#EAF3FD" };
+        return { icon: "calendar", color: theme.info, bg: (theme.isDark ? 'rgba(107,184,240,0.16)' : "#EAF3FD") };
       case "payment":
-        return { icon: "credit-card", color: "#1F9A5A", bg: "#EFFDF6" };
+        return { icon: "credit-card", color: theme.accent, bg: (theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6") };
       case "reminder":
-        return { icon: "bell", color: "#F5A623", bg: "#FEF3C7" };
+        return { icon: "bell", color: theme.warning, bg: (theme.isDark ? 'rgba(255,184,77,0.16)' : "#FEF3C7") };
       default:
-        return { icon: "zap", color: "#9AA1AE", bg: "#F3F4F6" };
+        return { icon: "zap", color: theme.faint, bg: theme.soft };
     }
   };
 
@@ -8421,7 +8483,7 @@ export default function Home({ navigation }) {
   };
 
   // Merge backend tasks + locally added priorities + meetings
-  const STRIPE_COLORS = ["#44BA82", "#615FF8", "#4FA6E8", "#E0546E", "#F5A623"];
+  const STRIPE_COLORS = ["#44BA82", theme.accentAlt, theme.info, theme.danger, theme.warning];
   // Titles already shown in Recent Logs — don't count them twice in the overview.
   const loggedTitles = new Set(
     (brief?.autoCompleted || []).map((l) =>
@@ -8478,7 +8540,7 @@ export default function Home({ navigation }) {
       const isRealMeeting = !!m.meetLink;
       return {
         id: m.eventId || m.id,
-        color: isRealMeeting ? "#E0546E" : "#F5A623",
+        color: isRealMeeting ? theme.danger : theme.warning,
         title: m.title,
         subtitle: isRealMeeting
           ? `Meeting · ${time}${durStr ? ` · ${durStr}` : ""}`
@@ -8606,8 +8668,8 @@ export default function Home({ navigation }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#1F9A5A"
-            colors={["#1F9A5A"]}
+            tintColor={theme.accent}
+            colors={[theme.accent]}
           />
         }
       >
@@ -8622,7 +8684,7 @@ export default function Home({ navigation }) {
             onPress={() => loadData(true)}
             activeOpacity={0.8}
           >
-            <Feather name="wifi-off" size={16} color="#B45309" />
+            <Feather name="wifi-off" size={16} color={theme.warning} />
             <Text style={styles.connectionBannerText}>
               Couldn't reach the server — retrying automatically. Tap to retry
               now.
@@ -8643,7 +8705,7 @@ export default function Home({ navigation }) {
               {user?.name?.split(" ")[0] || "there"} 👋
             </Text>
             <View style={styles.subGreetingRow}>
-              <Feather name="sun" size={14} color="#F5A623" />
+              <Feather name="sun" size={14} color={theme.warning} />
               <Text style={styles.subGreeting}>
                 {"  "}
                 {getDateString()}
@@ -8655,17 +8717,17 @@ export default function Home({ navigation }) {
               style={styles.searchIconBtn}
               onPress={() => navigation?.navigate?.("Search")}
             >
-              <Feather name="search" size={20} color="#6B7280" />
+              <Feather name="search" size={20} color={theme.muted} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.logoutBtn}
               onPress={() => setLogoutVisible(true)}
             >
-              <Feather name="log-out" size={18} color="#9AA1AE" />
+              <Feather name="log-out" size={18} color={theme.faint} />
             </TouchableOpacity>
             <View style={styles.avatarWrapper}>
               <LinearGradient
-                colors={["#6C63FF", "#4C3AED"]}
+                colors={["#6C63FF", theme.accentAlt]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.avatar}
@@ -8683,7 +8745,7 @@ export default function Home({ navigation }) {
             onPress={() => navigation?.navigate?.("AIProfile")}
             activeOpacity={0.8}
           >
-            <FocusRing percent={profilePct ?? 0} />
+            <FocusRing percent={profilePct ?? 0} theme={theme} styles={styles} />
             <Text style={styles.focusCaption}>
               {profilePct >= 80
                 ? "Profile strong"
@@ -8692,7 +8754,7 @@ export default function Home({ navigation }) {
                   : "Complete profile"}
             </Text>
             <View style={styles.focusProfileBadge}>
-              <Feather name="user" size={9} color="#615FF8" />
+              <Feather name="user" size={9} color={theme.accentAlt} />
               <Text style={styles.focusProfileBadgeText}> AI Profile</Text>
             </View>
           </TouchableOpacity>
@@ -8713,14 +8775,14 @@ export default function Home({ navigation }) {
                   name={weather ? getWeatherIcon(weather.code) : "cloud"}
                   size={22}
                   color={
-                    weather ? getWeatherIconColor(weather.code) : "#9AA1AE"
+                    weather ? getWeatherIconColor(weather.code) : theme.faint
                   }
                 />
               </View>
             </View>
             {/* City */}
             <View style={styles.weatherCityRow}>
-              <Feather name="map-pin" size={10} color="#4FA6E8" />
+              <Feather name="map-pin" size={10} color={theme.info} />
               <Text style={styles.weatherLocation} numberOfLines={1}>
                 {weather ? weather.city : "Loading…"}
               </Text>
@@ -8732,19 +8794,19 @@ export default function Home({ navigation }) {
             {/* Stats row */}
             <View style={styles.weatherStatsRow}>
               <View style={styles.weatherStat}>
-                <Feather name="droplet" size={10} color="#4FA6E8" />
+                <Feather name="droplet" size={10} color={theme.info} />
                 <Text style={styles.weatherStatText}>
                   {weather ? `${weather.humidity}%` : "--"}
                 </Text>
               </View>
               <View style={styles.weatherStat}>
-                <Feather name="wind" size={10} color="#9AA1AE" />
+                <Feather name="wind" size={10} color={theme.faint} />
                 <Text style={styles.weatherStatText}>
                   {weather ? `${weather.wind}km/h` : "--"}
                 </Text>
               </View>
               <View style={styles.weatherStat}>
-                <Feather name="thermometer" size={10} color="#E0546E" />
+                <Feather name="thermometer" size={10} color={theme.danger} />
                 <Text style={styles.weatherStatText}>
                   {weather ? `${weather.high}°/${weather.low}°` : "--"}
                 </Text>
@@ -8773,7 +8835,7 @@ export default function Home({ navigation }) {
             {pendingActions.map((action) => {
               const meta = TOOL_META[action.tool] || {
                 icon: "zap",
-                color: "#9AA1AE",
+                color: theme.faint,
                 label: "Action",
               };
               const acted = actedIds[action.id];
@@ -8823,7 +8885,7 @@ export default function Home({ navigation }) {
                         style={styles.denyBtn}
                         onPress={() => handleAction(action.id, "deny")}
                       >
-                        <Feather name="x" size={16} color="#E0546E" />
+                        <Feather name="x" size={16} color={theme.danger} />
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.approveBtn}
@@ -8841,7 +8903,7 @@ export default function Home({ navigation }) {
 
         {/* Today's priorities overview */}
         <LinearGradient
-          colors={["#3CB37A", "#1F7A54"]}
+          colors={[theme.accent, theme.accent]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.briefingCard}
@@ -8850,7 +8912,7 @@ export default function Home({ navigation }) {
           <View style={styles.briefingLabelRow}>
             <View style={styles.briefingLabelLeft}>
               <View style={styles.briefingLabelIconWrap}>
-                <Feather name="sun" size={12} color="#1F7A54" />
+                <Feather name="sun" size={12} color={theme.accent} />
               </View>
               <Text style={styles.briefingLabel}>TODAY'S PRIORITIES</Text>
             </View>
@@ -8900,7 +8962,7 @@ export default function Home({ navigation }) {
                     <Feather
                       name={item.done ? "check" : item.icon}
                       size={12}
-                      color="#1F7A54"
+                      color={theme.accent}
                     />
                   </View>
                   <View style={styles.briefingItemTextWrap}>
@@ -8942,13 +9004,13 @@ export default function Home({ navigation }) {
             onPress={() => navigation?.navigate?.("Priorities")}
           >
             <View style={styles.briefingButtonLeft}>
-              <Feather name="list" size={14} color="#1F7A54" />
+              <Feather name="list" size={14} color={theme.accent} />
               <Text style={styles.briefingButtonText}>
                 View today’s priorities
               </Text>
             </View>
             <View style={styles.briefingButtonArrow}>
-              <Feather name="arrow-right" size={14} color="#1F7A54" />
+              <Feather name="arrow-right" size={14} color={theme.accent} />
             </View>
           </TouchableOpacity>
         </LinearGradient>
@@ -8960,7 +9022,7 @@ export default function Home({ navigation }) {
             <View style={styles.sectionHeaderRow}>
               <View style={styles.phoneAlertsHeading}>
                 <View style={styles.phoneAlertsIcon}>
-                  <Feather name="smartphone" size={14} color="#1F7A54" />
+                  <Feather name="smartphone" size={14} color={theme.accent} />
                 </View>
                 <Text style={styles.sectionHeader}>PHONE ALERTS</Text>
                 <View style={styles.phoneAlertsCount}>
@@ -8993,7 +9055,7 @@ export default function Home({ navigation }) {
                   <Feather
                     name={alert.priority >= 85 ? "alert-circle" : "bell"}
                     size={16}
-                    color={alert.priority >= 85 ? "#B42318" : "#9A6700"}
+                    color={alert.priority >= 85 ? theme.danger : theme.warning}
                   />
                 </View>
                 <View style={styles.phoneAlertTextWrap}>
@@ -9010,14 +9072,15 @@ export default function Home({ navigation }) {
                       : ""}
                   </Text>
                 </View>
-                <Feather name="chevron-right" size={16} color="#9AA1AE" />
+                <Feather name="chevron-right" size={16} color={theme.faint} />
               </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {/* Recent Inbox */}
-        {recentNotifs.length > 0 && (
+        {/* Twin Diary — today only. Full past/present/future history lives
+            on the Twin Diary screen itself, unfiltered. */}
+        {diaryToday.length > 0 && (
           <>
             <View
               style={[
@@ -9029,71 +9092,65 @@ export default function Home({ navigation }) {
                 style={{ flexDirection: "row", alignItems: "center", gap: 7 }}
               >
                 <View style={styles.inboxDot} />
-                <Text style={styles.sectionHeader}>RECENT INBOX</Text>
+                <Text style={styles.sectionHeader}>TWIN DIARY — TODAY</Text>
                 <View style={styles.inboxCountBadge}>
                   <Text style={styles.inboxCountText}>
-                    {recentNotifs.length}
+                    {diaryToday.length}
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={markAllNotifsRead}>
-                <Text style={styles.markAllReadText}>Mark all read</Text>
-              </TouchableOpacity>
             </View>
 
-            {recentNotifs.map((notif) => {
-              const meta = getNotifIcon(notif.type);
-              const timeStr = notif.ts
-                ? new Date(notif.ts).toLocaleTimeString("en-IN", {
+            {diaryToday.slice(0, 4).map((entry) => {
+              const icon = DIARY_TOOL_ICONS[entry.tool] || "zap";
+              const color = DIARY_TOOL_COLORS[entry.tool] || theme.accentAlt;
+              const bg = DIARY_TOOL_BG[entry.tool] || (theme.isDark ? 'rgba(129,128,255,0.16)' : "#EEEDFE");
+              const timeStr = entry.ts
+                ? new Date(entry.ts).toLocaleTimeString("en-IN", {
                     hour: "2-digit",
                     minute: "2-digit",
                     hour12: true,
                   })
                 : "";
+              const statusLabel = entry.status === "completed"
+                ? "Completed"
+                : entry.status === "pending_approval"
+                ? "Awaiting approval"
+                : (entry.status || "").replace(/_/g, " ");
               return (
                 <TouchableOpacity
-                  key={notif.id}
+                  key={entry.id}
                   style={styles.notifCard}
                   activeOpacity={0.75}
-                  onPress={() => navigation?.navigate?.("Communications")}
+                  onPress={() => navigation?.navigate?.("TwinDiary")}
                 >
                   <View
-                    style={[styles.notifIconWrap, { backgroundColor: meta.bg }]}
+                    style={[styles.notifIconWrap, { backgroundColor: bg }]}
                   >
-                    <Feather name={meta.icon} size={16} color={meta.color} />
+                    <Feather name={icon} size={16} color={color} />
                   </View>
                   <View style={styles.notifTextWrap}>
                     <View style={styles.notifTitleRow}>
                       <Text style={styles.notifTitle} numberOfLines={1}>
-                        {notif.from || notif.title}
+                        {(entry.tool || "Action").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                       </Text>
                       <Text style={styles.notifTime}>{timeStr}</Text>
                     </View>
-                    <Text style={styles.notifBody} numberOfLines={2}>
-                      {notif.body || notif.title}
+                    <Text style={styles.notifBody} numberOfLines={1}>
+                      {statusLabel}
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    style={styles.notifReadBtn}
-                    onPress={(e) => {
-                      e.stopPropagation?.();
-                      markNotifRead(notif.id);
-                    }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="x" size={13} color="#9AA1AE" />
-                  </TouchableOpacity>
                 </TouchableOpacity>
               );
             })}
 
             <TouchableOpacity
               style={styles.inboxViewAllBtn}
-              onPress={() => navigation?.navigate?.("Communications")}
+              onPress={() => navigation?.navigate?.("TwinDiary")}
             >
-              <Feather name="inbox" size={13} color="#615FF8" />
-              <Text style={styles.inboxViewAllText}>Open full inbox</Text>
-              <Feather name="arrow-right" size={13} color="#615FF8" />
+              <Feather name="book-open" size={13} color={theme.accentAlt} />
+              <Text style={styles.inboxViewAllText}>Open full Twin Diary</Text>
+              <Feather name="arrow-right" size={13} color={theme.accentAlt} />
             </TouchableOpacity>
           </>
         )}
@@ -9102,7 +9159,7 @@ export default function Home({ navigation }) {
         <View style={styles.summaryRow}>
           <View style={[styles.card, styles.summaryCard]}>
             <View style={styles.summaryLabelRow}>
-              <Feather name="credit-card" size={14} color="#3CB37A" />
+              <Feather name="credit-card" size={14} color={theme.accent} />
               <Text style={styles.summaryLabel}>{"  "}Finance</Text>
             </View>
             <Text style={styles.summaryValue}>
@@ -9127,7 +9184,7 @@ export default function Home({ navigation }) {
 
           <View style={[styles.card, styles.summaryCard]}>
             <View style={styles.summaryLabelRow}>
-              <Feather name="heart" size={14} color="#E0546E" />
+              <Feather name="heart" size={14} color={theme.danger} />
               <Text style={styles.summaryLabel}>{"  "}Health Core</Text>
             </View>
             <Text style={styles.summaryValue}>
@@ -9176,7 +9233,7 @@ export default function Home({ navigation }) {
           ))
         ) : (brief?.autoCompleted || []).length === 0 ? (
           <View style={styles.emptyLogs}>
-            <Feather name="activity" size={24} color="#C7CBD3" />
+            <Feather name="activity" size={24} color={theme.disabled} />
             <Text style={styles.emptyLogsText}>
               No AI actions logged yet today
             </Text>
@@ -9202,7 +9259,7 @@ export default function Home({ navigation }) {
             return (
               <View key={i} style={styles.logRow}>
                 <View style={styles.logIconWrap}>
-                  <Feather name="check" size={14} color="#1F7A54" />
+                  <Feather name="check" size={14} color={theme.accent} />
                 </View>
                 <View style={styles.logTextWrap}>
                   <Text style={styles.logTitle} numberOfLines={1}>
@@ -9239,7 +9296,7 @@ export default function Home({ navigation }) {
       >
         <View style={styles.voiceOrbGlow} />
         <View style={styles.voiceOrbInner}>
-          <Feather name="mic" size={22} color="#1F9A5A" />
+          <Feather name="mic" size={22} color={theme.accent} />
         </View>
       </TouchableOpacity>
 
@@ -9247,6 +9304,8 @@ export default function Home({ navigation }) {
         visible={orbVisible}
         onClose={() => setOrbVisible(false)}
         navigation={navigation}
+        theme={theme}
+        styles={styles}
       />
 
       <QuickCaptureSheet
@@ -9254,6 +9313,8 @@ export default function Home({ navigation }) {
         onClose={() => setCaptureVisible(false)}
         onSubmit={handleAddPriority}
         bottomInset={insets.bottom}
+        theme={theme}
+        styles={styles}
       />
 
       {/* Logout Modal */}
@@ -9311,7 +9372,7 @@ export default function Home({ navigation }) {
       {/* Bottom tab bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="home" size={22} color="#1F7A54" />
+          <Ionicons name="home" size={22} color={theme.accent} />
           <Text style={[styles.tabLabel, styles.tabLabelActive]}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -9321,7 +9382,7 @@ export default function Home({ navigation }) {
             navigation?.navigate?.("Priorities");
           }}
         >
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -9331,7 +9392,7 @@ export default function Home({ navigation }) {
             navigation?.navigate?.("AskAI");
           }}
         >
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -9341,7 +9402,7 @@ export default function Home({ navigation }) {
             navigation?.navigate?.("Space");
           }}
         >
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -9351,7 +9412,7 @@ export default function Home({ navigation }) {
             navigation?.navigate?.("Profile");
           }}
         >
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -9359,11 +9420,11 @@ export default function Home({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   connectionBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FEF3C7",
+    backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : "#FEF3C7"),
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -9372,13 +9433,13 @@ const styles = StyleSheet.create({
   },
   connectionBannerText: {
     flex: 1,
-    color: "#92400E",
+    color: theme.warning,
     fontSize: 13,
     fontWeight: "600",
   },
   safe: {
     flex: 1,
-    backgroundColor: "#F9FAFC",
+    backgroundColor: theme.bg,
   },
   container: {
     flex: 1,
@@ -9399,13 +9460,13 @@ const styles = StyleSheet.create({
   greetingSmall: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#6B7280",
+    color: theme.muted,
     marginBottom: 2,
   },
   greetingName: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#14171F",
+    color: theme.text,
   },
   subGreetingRow: {
     flexDirection: "row",
@@ -9414,7 +9475,7 @@ const styles = StyleSheet.create({
   },
   subGreeting: {
     fontSize: 13,
-    color: "#6B7280",
+    color: theme.muted,
   },
   headerRight: {
     flexDirection: "row",
@@ -9436,7 +9497,7 @@ const styles = StyleSheet.create({
   },
   logoutSheet: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 32,
@@ -9463,12 +9524,12 @@ const styles = StyleSheet.create({
   logoutTitle: {
     fontSize: 22,
     fontWeight: "800",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 10,
   },
   logoutSubtitle: {
     fontSize: 14,
-    color: "#6B7280",
+    color: theme.muted,
     textAlign: "center",
     lineHeight: 21,
     marginBottom: 28,
@@ -9496,12 +9557,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     borderRadius: 16,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: theme.soft,
   },
   logoutCancelText: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#374151",
+    color: theme.textSecondary,
   },
   avatarWrapper: {
     position: "relative",
@@ -9529,7 +9590,7 @@ const styles = StyleSheet.create({
   },
   focusCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     alignItems: "center",
   },
   ringLabel: {
@@ -9544,25 +9605,25 @@ const styles = StyleSheet.create({
   ringPercent: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#14171F",
+    color: theme.text,
   },
   ringCaption: {
     fontSize: 9,
     fontWeight: "700",
-    color: "#9AA1AE",
+    color: theme.faint,
     letterSpacing: 0.5,
   },
   focusCaption: {
     marginTop: 10,
     fontSize: 13,
     fontWeight: "600",
-    color: "#374151",
+    color: theme.textSecondary,
   },
   focusProfileBadge: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 6,
-    backgroundColor: "#EEEDFE",
+    backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : "#EEEDFE"),
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -9570,11 +9631,11 @@ const styles = StyleSheet.create({
   focusProfileBadgeText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#615FF8",
+    color: theme.accentAlt,
   },
   weatherCard: {
     flex: 1,
-    backgroundColor: "#F0F5FE",
+    backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.14)' : "#F0F5FE"),
   },
   weatherHeaderRow: {
     flexDirection: "row",
@@ -9585,19 +9646,19 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     alignItems: "center",
     justifyContent: "center",
   },
   weatherTemp: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#14171F",
+    color: theme.text,
     lineHeight: 32,
   },
   weatherFeels: {
     fontSize: 11,
-    color: "#6B7280",
+    color: theme.muted,
     fontWeight: "500",
     marginTop: 1,
   },
@@ -9610,12 +9671,12 @@ const styles = StyleSheet.create({
   weatherLocation: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     flex: 1,
   },
   weatherDesc: {
     fontSize: 11,
-    color: "#6B7280",
+    color: theme.muted,
     marginTop: 3,
     lineHeight: 15,
   },
@@ -9629,7 +9690,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 8,
     paddingVertical: 5,
     paddingHorizontal: 5,
@@ -9637,7 +9698,7 @@ const styles = StyleSheet.create({
   weatherStatText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#374151",
+    color: theme.textSecondary,
   },
   briefingCard: {
     borderRadius: 24,
@@ -9769,7 +9830,7 @@ const styles = StyleSheet.create({
   briefingEmptyText: { color: "#FFFFFF", fontSize: 13, fontWeight: "500" },
   briefingButton: {
     marginTop: 14,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 14,
     paddingVertical: 13,
     paddingHorizontal: 16,
@@ -9778,12 +9839,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   briefingButtonLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-  briefingButtonText: { color: "#1F7A54", fontWeight: "700", fontSize: 14 },
+  briefingButtonText: { color: theme.accent, fontWeight: "700", fontSize: 14 },
   briefingButtonArrow: {
     width: 28,
     height: 28,
     borderRadius: 9,
-    backgroundColor: "#EFFDF6",
+    backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6"),
     alignItems: "center",
     justifyContent: "center",
   },
@@ -9793,7 +9854,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 8,
-    backgroundColor: "#EFFDF6",
+    backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6"),
     alignItems: "center",
     justifyContent: "center",
   },
@@ -9801,42 +9862,42 @@ const styles = StyleSheet.create({
     minWidth: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: "#E8F5EE",
+    backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : "#E8F5EE"),
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 5,
   },
-  phoneAlertsCountText: { color: "#1F7A54", fontSize: 10, fontWeight: "800" },
+  phoneAlertsCountText: { color: theme.accent, fontSize: 10, fontWeight: "800" },
   phoneAlertCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 14,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.border,
     gap: 10,
   },
   phoneAlertPriority: {
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: "#FFF7E6",
+    backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : "#FFF7E6"),
     alignItems: "center",
     justifyContent: "center",
   },
-  phoneAlertPriorityUrgent: { backgroundColor: "#FEF3F2" },
+  phoneAlertPriorityUrgent: { backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.14)' : "#FEF3F2") },
   phoneAlertTextWrap: { flex: 1 },
-  phoneAlertTitle: { color: "#14171F", fontSize: 13, fontWeight: "700" },
+  phoneAlertTitle: { color: theme.text, fontSize: 13, fontWeight: "700" },
   phoneAlertBody: {
-    color: "#6B7280",
+    color: theme.muted,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 2,
   },
   phoneAlertMeta: {
-    color: "#1F7A54",
+    color: theme.accent,
     fontSize: 10,
     fontWeight: "700",
     marginTop: 4,
@@ -9850,7 +9911,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#6B7280",
+    color: theme.muted,
     letterSpacing: 0.5,
   },
   viewAllRow: {
@@ -9858,21 +9919,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   viewAllText: {
-    color: "#4C3AED",
+    color: theme.accentAlt,
     fontWeight: "700",
     fontSize: 13,
     marginRight: 2,
   },
   dragHint: {
     fontSize: 12,
-    color: "#9AA1AE",
+    color: theme.faint,
     fontStyle: "italic",
     marginBottom: 12,
   },
   priorityRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 16,
     marginBottom: 10,
     overflow: "hidden",
@@ -9882,19 +9943,19 @@ const styles = StyleSheet.create({
   },
   prioritySkeletonRow: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 16,
     marginBottom: 10,
     overflow: "hidden",
   },
   prioritySkeletonStripe: {
     width: 4,
-    backgroundColor: "#E3E5EA",
+    backgroundColor: theme.borderStrong,
   },
   prioritySkeletonLine: {
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#F0F1F4",
+    backgroundColor: theme.border,
     width: "70%",
   },
   emptyPriorities: {
@@ -9904,7 +9965,7 @@ const styles = StyleSheet.create({
   },
   emptyPrioritiesText: {
     fontSize: 13,
-    color: "#9AA1AE",
+    color: theme.faint,
     fontWeight: "600",
   },
   priorityStripe: {
@@ -9919,28 +9980,28 @@ const styles = StyleSheet.create({
   priorityTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 3,
   },
   prioritySubtitle: {
     fontSize: 12,
-    color: "#9AA1AE",
+    color: theme.faint,
   },
   checkCircle: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: theme.soft,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
   },
   checkCircleActive: {
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
   },
   priorityTitleChecked: {
     textDecorationLine: "line-through",
-    color: "#9AA1AE",
+    color: theme.faint,
   },
   summaryRow: {
     flexDirection: "row",
@@ -9950,7 +10011,7 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
   },
   summaryLabelRow: {
     flexDirection: "row",
@@ -9960,28 +10021,28 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#374151",
+    color: theme.textSecondary,
   },
   summaryValue: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 4,
   },
   summaryDelta: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#1F9A5A",
+    color: theme.accent,
   },
   summarySub: {
     fontSize: 12,
-    color: "#9AA1AE",
+    color: theme.faint,
   },
   logRow: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 12,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -9990,7 +10051,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#EFFDF6",
+    backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6"),
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -10001,15 +10062,15 @@ const styles = StyleSheet.create({
   logTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 2,
   },
   logSubtitle: {
     fontSize: 12,
-    color: "#9AA1AE",
+    color: theme.faint,
   },
   logBadge: {
-    backgroundColor: "#EFFDF6",
+    backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6"),
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 3,
@@ -10018,13 +10079,13 @@ const styles = StyleSheet.create({
   logBadgeText: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#1F9A5A",
+    color: theme.accent,
     letterSpacing: 0.3,
   },
   logSkeletonRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -10034,13 +10095,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#F0F1F4",
+    backgroundColor: theme.border,
     marginRight: 12,
   },
   logSkeletonLine: {
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#F0F1F4",
+    backgroundColor: theme.border,
     width: "70%",
   },
   emptyLogs: {
@@ -10050,7 +10111,7 @@ const styles = StyleSheet.create({
   },
   emptyLogsText: {
     fontSize: 13,
-    color: "#9AA1AE",
+    color: theme.faint,
     fontWeight: "600",
   },
   // Recent Inbox
@@ -10058,26 +10119,26 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: "#615FF8",
+    backgroundColor: theme.accentAlt,
   },
   inboxCountBadge: {
-    backgroundColor: "#EEEDFE",
+    backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : "#EEEDFE"),
     borderRadius: 8,
     paddingHorizontal: 7,
     paddingVertical: 2,
   },
-  inboxCountText: { fontSize: 11, fontWeight: "800", color: "#615FF8" },
-  markAllReadText: { fontSize: 12, fontWeight: "700", color: "#615FF8" },
+  inboxCountText: { fontSize: 11, fontWeight: "800", color: theme.accentAlt },
+  markAllReadText: { fontSize: 12, fontWeight: "700", color: theme.accentAlt },
   notifCard: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 16,
     padding: 14,
     marginBottom: 10,
     gap: 12,
     borderLeftWidth: 3,
-    borderLeftColor: "#EEEDFE",
+    borderLeftColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : "#EEEDFE"),
   },
   notifIconWrap: {
     width: 38,
@@ -10097,17 +10158,17 @@ const styles = StyleSheet.create({
   notifTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     flex: 1,
     marginRight: 8,
   },
-  notifTime: { fontSize: 11, color: "#9AA1AE", fontWeight: "500" },
-  notifBody: { fontSize: 12, color: "#6B7280", lineHeight: 17 },
+  notifTime: { fontSize: 11, color: theme.faint, fontWeight: "500" },
+  notifBody: { fontSize: 12, color: theme.muted, lineHeight: 17 },
   notifReadBtn: {
     width: 24,
     height: 24,
     borderRadius: 8,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: theme.soft,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -10118,16 +10179,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 7,
-    backgroundColor: "#EEEDFE",
+    backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : "#EEEDFE"),
     borderRadius: 14,
     paddingVertical: 13,
     marginBottom: 20,
   },
-  inboxViewAllText: { fontSize: 13, fontWeight: "700", color: "#615FF8" },
+  inboxViewAllText: { fontSize: 13, fontWeight: "700", color: theme.accentAlt },
   meetCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 16,
     marginBottom: 10,
     overflow: "hidden",
@@ -10135,22 +10196,22 @@ const styles = StyleSheet.create({
   meetAccentBar: {
     width: 4,
     alignSelf: "stretch",
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
   },
   meetTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 3,
   },
-  meetMeta: { fontSize: 12, color: "#6B7280", marginBottom: 3 },
-  meetAttendees: { fontSize: 12, color: "#9AA1AE", marginBottom: 2 },
-  meetDesc: { fontSize: 12, color: "#9AA1AE", marginTop: 2, lineHeight: 17 },
+  meetMeta: { fontSize: 12, color: theme.muted, marginBottom: 3 },
+  meetAttendees: { fontSize: 12, color: theme.faint, marginBottom: 2 },
+  meetDesc: { fontSize: 12, color: theme.faint, marginTop: 2, lineHeight: 17 },
   meetJoinBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -10161,10 +10222,10 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
   },
   pendingBadge: {
-    backgroundColor: "#FFF3E0",
+    backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : "#FFF3E0"),
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -10172,25 +10233,25 @@ const styles = StyleSheet.create({
   pendingBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#F5A623",
+    color: theme.warning,
   },
   actionCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 16,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#F0F1F4",
+    borderColor: theme.border,
   },
   actionCardApproved: {
     opacity: 0.5,
-    borderColor: "#1F9A5A",
+    borderColor: theme.accent,
   },
   actionCardDenied: {
     opacity: 0.5,
-    borderColor: "#E0546E",
+    borderColor: theme.danger,
   },
   actionIconWrap: {
     width: 40,
@@ -10206,12 +10267,12 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 2,
   },
   actionMeta: {
     fontSize: 12,
-    color: "#9AA1AE",
+    color: theme.faint,
   },
   actionBtns: {
     flexDirection: "row",
@@ -10221,7 +10282,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: "#FFF0F3",
+    backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.14)' : "#FFF0F3"),
     alignItems: "center",
     justifyContent: "center",
   },
@@ -10229,7 +10290,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -10241,17 +10302,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   actedApprove: {
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
   },
   actedDeny: {
-    backgroundColor: "#E0546E",
+    backgroundColor: theme.danger,
   },
   fab: {
     position: "absolute",
     width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -10283,12 +10344,12 @@ const styles = StyleSheet.create({
     width: ORB_SIZE,
     height: ORB_SIZE,
     borderRadius: ORB_SIZE / 2,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderWidth: 1.5,
     borderColor: "rgba(31,154,90,0.4)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#1F9A5A",
+    shadowColor: theme.accent,
     shadowOpacity: 0.25,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 4 },
@@ -10297,7 +10358,7 @@ const styles = StyleSheet.create({
   // ── Voice Orb full-screen overlay ───────────────────────────────────────
   orbOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#F7F8FA",
+    backgroundColor: theme.surfaceAlt,
     alignItems: "center",
     justifyContent: "space-between",
     paddingTop: 56,
@@ -10324,14 +10385,14 @@ const styles = StyleSheet.create({
   orbBrandText: {
     fontSize: 12,
     fontWeight: "800",
-    color: "#9AA1AE",
+    color: theme.faint,
     letterSpacing: 2,
   },
   orbCloseBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#ECEEF2",
+    backgroundColor: theme.border,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -10375,7 +10436,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     opacity: 0.9,
   },
   orbStatusBlock: {
@@ -10389,7 +10450,7 @@ const styles = StyleSheet.create({
   },
   orbPhaseSub: {
     fontSize: 15,
-    color: "#9AA1AE",
+    color: theme.faint,
     fontWeight: "500",
     textAlign: "center",
   },
@@ -10398,7 +10459,7 @@ const styles = StyleSheet.create({
   },
   orbConvoCard: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 24,
     padding: 20,
     shadowColor: "#000",
@@ -10411,7 +10472,7 @@ const styles = StyleSheet.create({
   orbDivider: {
     width: "100%",
     height: 1,
-    backgroundColor: "#F0F1F4",
+    backgroundColor: theme.border,
     marginVertical: 12,
   },
   orbConvoRow: {
@@ -10423,20 +10484,20 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: "#C7CBD3",
+    backgroundColor: theme.disabled,
     marginTop: 6,
     flexShrink: 0,
   },
   orbConvoWho: {
     fontSize: 9,
     fontWeight: "800",
-    color: "#B0B5BF",
+    color: theme.faint,
     letterSpacing: 1.8,
     marginBottom: 4,
   },
   orbConvoText: {
     fontSize: 14,
-    color: "#14171F",
+    color: theme.text,
     lineHeight: 21,
     fontWeight: "500",
   },
@@ -10450,10 +10511,10 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     paddingHorizontal: 22,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#ECEEF2",
+    borderColor: theme.border,
     shadowColor: "#000",
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -10464,13 +10525,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: "600",
-    color: "#9AA1AE",
+    color: theme.faint,
   },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderTopWidth: 1,
-    borderTopColor: "#EEF0F3",
+    borderTopColor: theme.border,
     paddingTop: 10,
   },
   tabItem: {
@@ -10480,12 +10541,12 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#9AA1AE",
+    color: theme.faint,
     marginTop: 4,
     letterSpacing: 0.3,
   },
   tabLabelActive: {
-    color: "#1F7A54",
+    color: theme.accent,
   },
   sheetOverlay: {
     flex: 1,
@@ -10493,7 +10554,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheetContainer: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
@@ -10504,28 +10565,28 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#E3E5EA",
+    backgroundColor: theme.borderStrong,
     marginBottom: 20,
   },
   sheetTitle: {
     fontSize: 22,
     fontWeight: "800",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 6,
   },
   sheetSubtitle: {
     fontSize: 14,
-    color: "#9AA1AE",
+    color: theme.faint,
     lineHeight: 19,
     marginBottom: 20,
   },
   sheetInput: {
-    backgroundColor: "#F5F6F8",
+    backgroundColor: theme.surfaceAlt,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
-    color: "#14171F",
+    color: theme.text,
     minHeight: 52,
     maxHeight: 120,
     marginBottom: 16,
@@ -10541,26 +10602,26 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E3E5EA",
-    backgroundColor: "#FFFFFF",
+    borderColor: theme.borderStrong,
+    backgroundColor: theme.card,
   },
   sheetChipText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#374151",
+    color: theme.textSecondary,
   },
   sheetChipTextActive: {
     color: "#FFFFFF",
   },
   sheetSubmitButton: {
-    backgroundColor: "#14171F",
+    backgroundColor: theme.text,
     borderRadius: 16,
     paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
   },
   sheetSubmitButtonDisabled: {
-    backgroundColor: "#D1D3D9",
+    backgroundColor: theme.disabled,
   },
   sheetSubmitText: {
     color: "#FFFFFF",

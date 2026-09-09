@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_H = 50;
 const INBOX_TABS = ['All', 'Unread', 'Flagged'];
 const PALETTE = ['#1F9A5A', '#9B72FF', '#F5A623', '#E0546E', '#4FA6E8'];
@@ -15,7 +16,7 @@ const avatarColor = (str = '') => PALETTE[(str.charCodeAt(0) || 0) % PALETTE.len
 const initials = (str = '') => str.trim().slice(0, 2).toUpperCase();
 
 // ─── Skeleton row ───────────────────────────────────────────────────────────
-function SkeletonRow() {
+function SkeletonRow({ styles }) {
   const op = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
     Animated.loop(
@@ -37,12 +38,12 @@ function SkeletonRow() {
 }
 
 // ─── Inbox row ───────────────────────────────────────────────────────────────
-function EmailRow({ email, unread, onPress }) {
+function EmailRow({ email, unread, onPress, styles, theme }) {
   const color = avatarColor(email.from);
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
       {/* Unread bar */}
-      <View style={[styles.unreadBar, { backgroundColor: unread ? '#1F9A5A' : 'transparent' }]} />
+      <View style={[styles.unreadBar, { backgroundColor: unread ? theme.accent : 'transparent' }]} />
 
       {/* Avatar */}
       <View style={[styles.rowAvatar, { backgroundColor: color + '20' }]}>
@@ -59,7 +60,7 @@ function EmailRow({ email, unread, onPress }) {
         <Text style={styles.rowPreview} numberOfLines={1}>{email.preview}</Text>
       </View>
 
-      <Feather name="chevron-right" size={15} color="#D1D5DB" />
+      <Feather name="chevron-right" size={15} color={theme.disabled} />
     </TouchableOpacity>
   );
 }
@@ -68,6 +69,8 @@ function EmailRow({ email, unread, onPress }) {
 export default function Communications({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const hPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_H + insets.bottom;
 
@@ -196,14 +199,14 @@ export default function Communications({ navigation }) {
               style={styles.threadBack}
               onPress={() => { setThread(null); setDraftReady(false); setDraft(''); }}
             >
-              <Feather name="arrow-left" size={20} color="#14171F" />
+              <Feather name="arrow-left" size={20} color={theme.text} />
             </TouchableOpacity>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.threadHeaderFrom} numberOfLines={1}>{thread.from}</Text>
               <Text style={styles.threadHeaderTime}>{thread.date} {thread.time}</Text>
             </View>
             <TouchableOpacity style={styles.threadMoreBtn}>
-              <Feather name="more-horizontal" size={20} color="#6B7280" />
+              <Feather name="more-horizontal" size={20} color={theme.muted} />
             </TouchableOpacity>
           </View>
 
@@ -235,7 +238,7 @@ export default function Communications({ navigation }) {
                   {/* Body */}
                   {threadLoading ? (
                     <View style={styles.threadBodyLoading}>
-                      <ActivityIndicator color="#1F9A5A" size="small" />
+                      <ActivityIndicator color={theme.accent} size="small" />
                       <Text style={styles.threadBodyLoadingText}>Loading…</Text>
                     </View>
                   ) : (
@@ -247,7 +250,7 @@ export default function Communications({ navigation }) {
                     {/* Top row */}
                     <View style={styles.replyBoxTop}>
                       <View style={styles.replyAIBadge}>
-                        <Feather name="zap" size={11} color="#1F9A5A" />
+                        <Feather name="zap" size={11} color={theme.accent} />
                         <Text style={styles.replyAIBadgeText}>Mneva AI</Text>
                       </View>
                       {!draftReady && !draftLoading && (
@@ -276,7 +279,7 @@ export default function Communications({ navigation }) {
                           multiline
                           editable={editing}
                           placeholder="Your reply…"
-                          placeholderTextColor="#C7CBD3"
+                          placeholderTextColor={theme.disabled}
                         />
                         <View style={styles.replyActions}>
                           <TouchableOpacity
@@ -291,7 +294,7 @@ export default function Communications({ navigation }) {
                             style={styles.editToggleBtn}
                             onPress={() => setEditing(e => !e)}
                           >
-                            <Feather name={editing ? 'check' : 'edit-2'} size={14} color="#1F9A5A" />
+                            <Feather name={editing ? 'check' : 'edit-2'} size={14} color={theme.accent} />
                             <Text style={styles.editToggleText}>{editing ? 'Lock' : 'Edit'}</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
@@ -316,8 +319,8 @@ export default function Communications({ navigation }) {
           {NAV_TABS.map(({ name, icon, lib }) => (
             <TouchableOpacity key={name} style={styles.navTabItem} onPress={() => navigation?.navigate?.(name)}>
               {lib === 'Ionicons'
-                ? <Ionicons name={icon} size={22} color="#9AA1AE" />
-                : <Feather name={icon} size={22} color="#9AA1AE" />}
+                ? <Ionicons name={icon} size={22} color={theme.faint} />
+                : <Feather name={icon} size={22} color={theme.faint} />}
               <Text style={styles.navTabLabel}>{name.toUpperCase()}</Text>
             </TouchableOpacity>
           ))}
@@ -339,7 +342,7 @@ export default function Communications({ navigation }) {
             : <Text style={styles.headerSub}>All caught up · Gmail</Text>}
         </View>
         <TouchableOpacity style={styles.composeBtn}>
-          <Feather name="edit" size={17} color="#1F9A5A" />
+          <Feather name="edit" size={17} color={theme.accent} />
         </TouchableOpacity>
       </View>
 
@@ -379,7 +382,7 @@ export default function Communications({ navigation }) {
       {/* Error */}
       {gmailError && (
         <View style={[styles.errorBanner, { marginHorizontal: hPad }]}>
-          <Feather name="alert-circle" size={14} color="#D97706" />
+          <Feather name="alert-circle" size={14} color={theme.warning} />
           <Text style={styles.errorText}>
             {gmailError.includes('not connected') || gmailError.includes('token expired') || gmailError.includes('reconnect')
               ? 'Connect Gmail in Settings → Integrations'
@@ -391,7 +394,7 @@ export default function Communications({ navigation }) {
       {/* List */}
       {loading ? (
         <View style={{ paddingHorizontal: hPad, paddingTop: 8 }}>
-          {[1, 2, 3, 4, 5].map(i => <SkeletonRow key={i} />)}
+          {[1, 2, 3, 4, 5].map(i => <SkeletonRow key={i} styles={styles} />)}
         </View>
       ) : (
         <FlatList
@@ -403,15 +406,15 @@ export default function Communications({ navigation }) {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); loadEmails(filter, true); }}
-              tintColor="#1F9A5A"
-              colors={['#1F9A5A']}
+              tintColor={theme.accent}
+              colors={[theme.accent]}
             />
           }
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <View style={styles.emptyCircle}>
-                <Feather name="inbox" size={26} color="#C7CBD3" />
+                <Feather name="inbox" size={26} color={theme.disabled} />
               </View>
               <Text style={styles.emptyTitle}>
                 {inboxTab === 1 ? 'No unread mail' : inboxTab === 2 ? 'Nothing flagged' : 'Inbox is empty'}
@@ -426,6 +429,8 @@ export default function Communications({ navigation }) {
               email={item}
               unread={item.unread && !readIds.has(item.id)}
               onPress={() => openThread(item)}
+              styles={styles}
+              theme={theme}
             />
           )}
         />
@@ -435,8 +440,8 @@ export default function Communications({ navigation }) {
         {NAV_TABS.map(({ name, icon, lib }) => (
           <TouchableOpacity key={name} style={styles.navTabItem} onPress={() => navigation?.navigate?.(name)}>
             {lib === 'Ionicons'
-              ? <Ionicons name={icon} size={22} color="#9AA1AE" />
-              : <Feather name={icon} size={22} color="#9AA1AE" />}
+              ? <Ionicons name={icon} size={22} color={theme.faint} />
+              : <Feather name={icon} size={22} color={theme.faint} />}
             <Text style={styles.navTabLabel}>{name.toUpperCase()}</Text>
           </TouchableOpacity>
         ))}
@@ -453,104 +458,104 @@ const NAV_TABS = [
   { name: 'Profile', icon: 'user', lib: 'Feather' },
 ];
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
 
   // Header
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: 16, paddingBottom: 10 },
-  headerTitle: { fontSize: 34, fontWeight: '800', color: '#14171F', letterSpacing: -1 },
-  headerSub: { fontSize: 13, color: '#9AA1AE', marginTop: 1 },
-  headerUnread: { color: '#1F9A5A', fontWeight: '700' },
-  composeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E8F5EE', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 34, fontWeight: '800', color: theme.text, letterSpacing: -1 },
+  headerSub: { fontSize: 13, color: theme.faint, marginTop: 1 },
+  headerUnread: { color: theme.accent, fontWeight: '700' },
+  composeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', alignItems: 'center', justifyContent: 'center' },
 
   // Inbox tabs
   inboxTabRow: { flexDirection: 'row', gap: 6, marginBottom: 12, marginTop: 4 },
-  inboxTab: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F3F4F6' },
-  inboxTabActive: { backgroundColor: '#14171F' },
-  inboxTabText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  inboxTab: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.soft },
+  inboxTabActive: { backgroundColor: theme.text },
+  inboxTabText: { fontSize: 13, fontWeight: '600', color: theme.muted },
   inboxTabTextActive: { color: '#FFFFFF', fontWeight: '700' },
-  inboxTabBadge: { backgroundColor: '#1F9A5A', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  inboxTabBadge: { backgroundColor: theme.accent, borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   inboxTabBadgeText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF' },
 
   // Filter pills
   filterRow: { flexDirection: 'row', gap: 6, marginBottom: 8 },
-  filterPill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: '#F3F4F6' },
-  filterPillActive: { backgroundColor: '#E8F5EE' },
-  filterPillText: { fontSize: 11, fontWeight: '600', color: '#9AA1AE' },
-  filterPillTextActive: { color: '#1F9A5A', fontWeight: '700' },
+  filterPill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: theme.soft },
+  filterPillActive: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE' },
+  filterPillText: { fontSize: 11, fontWeight: '600', color: theme.faint },
+  filterPillTextActive: { color: theme.accent, fontWeight: '700' },
 
   // Error
-  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10, marginBottom: 8 },
-  errorText: { fontSize: 12, color: '#D97706', fontWeight: '600', flex: 1 },
+  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderRadius: 10, padding: 10, marginBottom: 8 },
+  errorText: { fontSize: 12, color: theme.warning, fontWeight: '600', flex: 1 },
 
   // Skeleton
   skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 0 },
-  skeletonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F0F1F4' },
-  skeletonLine: { height: 12, backgroundColor: '#F0F1F4', borderRadius: 6, width: '80%' },
+  skeletonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.border },
+  skeletonLine: { height: 12, backgroundColor: theme.border, borderRadius: 6, width: '80%' },
 
   // Email row
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingRight: 16, backgroundColor: '#FFFFFF' },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingRight: 16, backgroundColor: theme.card },
   unreadBar: { width: 3, height: 44, borderRadius: 2, marginRight: 12 },
   rowAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowAvatarText: { fontSize: 16, fontWeight: '800' },
   rowBody: { flex: 1 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
-  rowFrom: { fontSize: 14, color: '#6B7280', flex: 1 },
-  rowTime: { fontSize: 11, color: '#C7CBD3', marginLeft: 8 },
-  rowSubject: { fontSize: 13, color: '#9AA1AE', marginBottom: 2 },
-  rowPreview: { fontSize: 12, color: '#C7CBD3' },
-  bold: { fontWeight: '800', color: '#14171F' },
-  separator: { height: 1, backgroundColor: '#F3F4F6', marginLeft: 71 },
+  rowFrom: { fontSize: 14, color: theme.muted, flex: 1 },
+  rowTime: { fontSize: 11, color: theme.disabled, marginLeft: 8 },
+  rowSubject: { fontSize: 13, color: theme.faint, marginBottom: 2 },
+  rowPreview: { fontSize: 12, color: theme.disabled },
+  bold: { fontWeight: '800', color: theme.text },
+  separator: { height: 1, backgroundColor: theme.border, marginLeft: 71 },
 
   // Empty
   emptyWrap: { alignItems: 'center', paddingTop: 80, gap: 10 },
-  emptyCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#14171F' },
-  emptySub: { fontSize: 13, color: '#9AA1AE' },
+  emptyCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: theme.text },
+  emptySub: { fontSize: 13, color: theme.faint },
 
   // Thread
-  threadHeader: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  threadBack: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  threadHeaderFrom: { fontSize: 15, fontWeight: '700', color: '#14171F' },
-  threadHeaderTime: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
-  threadMoreBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  threadHeader: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border },
+  threadBack: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
+  threadHeaderFrom: { fontSize: 15, fontWeight: '700', color: theme.text },
+  threadHeaderTime: { fontSize: 12, color: theme.faint, marginTop: 1 },
+  threadMoreBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
 
-  threadSubject: { fontSize: 22, fontWeight: '800', color: '#14171F', letterSpacing: -0.4, marginTop: 20, marginBottom: 16, lineHeight: 28 },
+  threadSubject: { fontSize: 22, fontWeight: '800', color: theme.text, letterSpacing: -0.4, marginTop: 20, marginBottom: 16, lineHeight: 28 },
   threadSenderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   threadAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   threadAvatarText: { fontSize: 14, fontWeight: '800' },
-  threadSenderName: { fontSize: 14, fontWeight: '700', color: '#14171F' },
-  threadSenderSub: { fontSize: 12, color: '#9AA1AE' },
-  threadDivider: { height: 1, backgroundColor: '#F3F4F6', marginBottom: 18 },
+  threadSenderName: { fontSize: 14, fontWeight: '700', color: theme.text },
+  threadSenderSub: { fontSize: 12, color: theme.faint },
+  threadDivider: { height: 1, backgroundColor: theme.border, marginBottom: 18 },
   threadBodyLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 20 },
-  threadBodyLoadingText: { fontSize: 13, color: '#9AA1AE' },
-  threadBody: { fontSize: 15, color: '#374151', lineHeight: 25, marginBottom: 32 },
+  threadBodyLoadingText: { fontSize: 13, color: theme.faint },
+  threadBody: { fontSize: 15, color: theme.textSecondary, lineHeight: 25, marginBottom: 32 },
 
   // Reply box
-  replyBox: { borderWidth: 1.5, borderColor: '#E8F5EE', borderRadius: 20, padding: 16, backgroundColor: '#FAFFFE' },
+  replyBox: { borderWidth: 1.5, borderColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 20, padding: 16, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.06)' : '#FAFFFE' },
   replyBoxTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  replyAIBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#E8F5EE', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
-  replyAIBadgeText: { fontSize: 12, fontWeight: '700', color: '#1F9A5A' },
-  generateBtn: { backgroundColor: '#1F9A5A', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 },
+  replyAIBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
+  replyAIBadgeText: { fontSize: 12, fontWeight: '700', color: theme.accent },
+  generateBtn: { backgroundColor: theme.accent, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 },
   generateBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
-  replyPlaceholder: { fontSize: 13, color: '#C7CBD3', lineHeight: 20, paddingBottom: 4 },
+  replyPlaceholder: { fontSize: 13, color: theme.disabled, lineHeight: 20, paddingBottom: 4 },
 
   draftLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   dotRow: { flexDirection: 'row', gap: 4 },
-  bounceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#1F9A5A' },
-  draftLoadingText: { fontSize: 13, color: '#9AA1AE' },
+  bounceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: theme.accent },
+  draftLoadingText: { fontSize: 13, color: theme.faint },
 
-  draftInput: { fontSize: 14, color: '#14171F', lineHeight: 22, minHeight: 90, marginBottom: 12, padding: 0 },
+  draftInput: { fontSize: 14, color: theme.text, lineHeight: 22, minHeight: 90, marginBottom: 12, padding: 0 },
   replyActions: { flexDirection: 'row', gap: 8 },
-  sendBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#1F9A5A', borderRadius: 12, paddingVertical: 12 },
+  sendBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 12 },
   sendBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-  editToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#E8F5EE', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
-  editToggleText: { fontSize: 13, fontWeight: '700', color: '#1F9A5A' },
-  discardBtn: { backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
-  discardText: { fontSize: 13, fontWeight: '600', color: '#9AA1AE' },
+  editToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  editToggleText: { fontSize: 13, fontWeight: '700', color: theme.accent },
+  discardBtn: { backgroundColor: theme.soft, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  discardText: { fontSize: 13, fontWeight: '600', color: theme.faint },
 
   // Nav tab bar
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 10 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   navTabItem: { flex: 1, alignItems: 'center' },
-  navTabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  navTabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

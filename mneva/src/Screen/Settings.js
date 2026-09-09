@@ -14,6 +14,7 @@ import {
   isNotificationCaptureEnabled,
   notificationCaptureAvailable,
 } from '../services/notificationCapture';
+import { useTheme } from '../context/ThemeContext';
 
 const TABS = ['Trust', 'Privacy', 'Notifications', 'Account'];
 
@@ -47,10 +48,19 @@ const NOTIF_TOGGLES = [
 ];
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
+const DEFAULT_LEAD_TIMES = [30, 5];
+
+function formatLeadTime(minutes) {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes % 60 === 0) return `${minutes / 60} hr${minutes / 60 !== 1 ? 's' : ''}`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
 
 const LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner Circle' };
 
 function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [phoneModal, setPhoneModal] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
   const [phoneSaving, setPhoneSaving] = useState(false);
@@ -137,10 +147,10 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
             activeOpacity={action ? 0.7 : 1}
             disabled={!action}
           >
-            <Feather name={icon} size={15} color="#9AA1AE" />
+            <Feather name={icon} size={15} color={theme.faint} />
             <Text style={styles.infoLabel}>{label}</Text>
-            <Text style={[styles.infoValue, !user?.phone && label === 'Phone' && { color: '#E0546E' }]} numberOfLines={1}>{value}</Text>
-            {action && <Feather name="edit-2" size={13} color="#9AA1AE" style={{ marginLeft: 6 }} />}
+            <Text style={[styles.infoValue, !user?.phone && label === 'Phone' && { color: theme.danger }]} numberOfLines={1}>{value}</Text>
+            {action && <Feather name="edit-2" size={13} color={theme.faint} style={{ marginLeft: 6 }} />}
           </TouchableOpacity>
         ))}
       </View>
@@ -159,14 +169,14 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
       <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Data & Account</Text>
       <View style={styles.card}>
         <TouchableOpacity style={[styles.dangerRow, styles.divider]} onPress={handleExport} activeOpacity={0.7}>
-          <Feather name="download" size={16} color="#1F9A5A" />
-          <Text style={[styles.dangerLabel, { color: '#1F9A5A' }]}>Export My Data (DPDP)</Text>
-          <Feather name="chevron-right" size={16} color="#C7CBD3" />
+          <Feather name="download" size={16} color={theme.accent} />
+          <Text style={[styles.dangerLabel, { color: theme.accent }]}>Export My Data (DPDP)</Text>
+          <Feather name="chevron-right" size={16} color={theme.disabled} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.dangerRow} onPress={handleDelete} activeOpacity={0.7}>
-          <Feather name="trash-2" size={16} color="#E0546E" />
-          <Text style={[styles.dangerLabel, { color: '#E0546E' }]}>Delete Account</Text>
-          <Feather name="chevron-right" size={16} color="#C7CBD3" />
+          <Feather name="trash-2" size={16} color={theme.danger} />
+          <Text style={[styles.dangerLabel, { color: theme.danger }]}>Delete Account</Text>
+          <Feather name="chevron-right" size={16} color={theme.disabled} />
         </TouchableOpacity>
       </View>
       {/* Phone update modal */}
@@ -180,7 +190,7 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
               <TextInput
                 style={styles.phoneModalInput}
                 placeholder="10-digit mobile number"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={theme.placeholder}
                 value={phoneInput}
                 onChangeText={setPhoneInput}
                 keyboardType="phone-pad"
@@ -207,6 +217,8 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
 export default function Settings({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [activeTab, setActiveTab] = useState(route?.params?.tab ?? 0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -217,6 +229,8 @@ export default function Settings({ navigation, route }) {
   const [autonomy, setAutonomy] = useState({});
   const [privacy, setPrivacy] = useState({ biometricGate: true, e2eEncryption: true, signedLedger: true, dataSharing: false });
   const [notifications, setNotifications] = useState({ email: true, payments: true, rides: true, aiInsights: true, system: true });
+  const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
+  const [newLeadTime, setNewLeadTime] = useState('');
   const [user, setUser] = useState(null);
   const [phoneCaptureEnabled, setPhoneCaptureEnabled] = useState(false);
   const [phoneCaptureBusy, setPhoneCaptureBusy] = useState(false);
@@ -235,6 +249,9 @@ export default function Settings({ navigation, route }) {
       if (prefs.autonomy)      setAutonomy(prefs.autonomy);
       if (prefs.privacy)       setPrivacy(p => ({ ...p, ...prefs.privacy }));
       if (prefs.notifications) setNotifications(n => ({ ...n, ...prefs.notifications }));
+      if (Array.isArray(prefs.notificationLeadTimes) && prefs.notificationLeadTimes.length) {
+        setLeadTimes(prefs.notificationLeadTimes);
+      }
     }
     if (me) setUser(me);
   };
@@ -312,6 +329,21 @@ export default function Settings({ navigation, route }) {
     save({ notifications: next });
   };
 
+  const addLeadTime = () => {
+    const mins = parseInt(newLeadTime, 10);
+    if (!mins || mins <= 0 || mins > 10080 || leadTimes.includes(mins)) { setNewLeadTime(''); return; }
+    const next = [...leadTimes, mins].sort((a, b) => b - a).slice(0, 5);
+    setLeadTimes(next);
+    setNewLeadTime('');
+    save({ notificationLeadTimes: next });
+  };
+
+  const removeLeadTime = (mins) => {
+    const next = leadTimes.filter(m => m !== mins);
+    setLeadTimes(next);
+    save({ notificationLeadTimes: next });
+  };
+
   const togglePhoneCapture = async (enabled) => {
     if (!enabled) {
       setPhoneCaptureBusy(true);
@@ -345,7 +377,7 @@ export default function Settings({ navigation, route }) {
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <ActivityIndicator style={{ flex: 1 }} color="#1F9A5A" />
+        <ActivityIndicator style={{ flex: 1 }} color={theme.accent} />
       </SafeAreaView>
     );
   }
@@ -355,11 +387,11 @@ export default function Settings({ navigation, route }) {
       {/* Header */}
       <View style={[styles.header, { paddingHorizontal: hPad }]}>
         <TouchableOpacity onPress={() => navigation?.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Feather name="arrow-left" size={22} color="#14171F" />
+          <Feather name="arrow-left" size={22} color={theme.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         {saving
-          ? <ActivityIndicator size="small" color="#1F9A5A" />
+          ? <ActivityIndicator size="small" color={theme.accent} />
           : <View style={{ width: 22 }} />}
       </View>
 
@@ -407,7 +439,7 @@ export default function Settings({ navigation, route }) {
                   <Text style={[styles.levelName, currentLevel === level && styles.levelNameActive]}>{name}</Text>
                   <Text style={styles.levelDesc}>{desc}</Text>
                 </View>
-                {currentLevel === level && <Feather name="check-circle" size={18} color="#1F9A5A" />}
+                {currentLevel === level && <Feather name="check-circle" size={18} color={theme.accent} />}
               </TouchableOpacity>
             ))}
 
@@ -416,12 +448,12 @@ export default function Settings({ navigation, route }) {
             <View style={styles.card}>
               {AUTONOMY_TOGGLES.map(({ key, label, icon }, i) => (
                 <View key={key} style={[styles.toggleRow, i !== AUTONOMY_TOGGLES.length - 1 && styles.divider]}>
-                  <Feather name={icon} size={16} color="#1F9A5A" />
+                  <Feather name={icon} size={16} color={theme.accent} />
                   <Text style={styles.toggleLabel}>{label}</Text>
                   <Switch
                     value={!!autonomy[key]}
                     onValueChange={v => toggleAutonomy(key, v)}
-                    trackColor={{ false: '#E3E5EA', true: '#1F9A5A' }}
+                    trackColor={{ false: theme.borderStrong, true: theme.accent }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
@@ -437,12 +469,12 @@ export default function Settings({ navigation, route }) {
             <View style={styles.card}>
               {PRIVACY_TOGGLES.map(({ key, label, icon }, i) => (
                 <View key={key} style={[styles.toggleRow, i !== PRIVACY_TOGGLES.length - 1 && styles.divider]}>
-                  <Feather name={icon} size={16} color="#374151" />
+                  <Feather name={icon} size={16} color={theme.textSecondary} />
                   <Text style={styles.toggleLabel}>{label}</Text>
                   <Switch
                     value={!!privacy[key]}
                     onValueChange={v => togglePrivacy(key, v)}
-                    trackColor={{ false: '#E3E5EA', true: '#1F9A5A' }}
+                    trackColor={{ false: theme.borderStrong, true: theme.accent }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
@@ -455,32 +487,72 @@ export default function Settings({ navigation, route }) {
         {activeTab === 2 && (
           <>
             <Text style={styles.sectionLabel}>Notification Preferences</Text>
-            <View style={[styles.card, { marginBottom: 12 }]}> 
+            <View style={[styles.card, { marginBottom: 12 }]}>
               <View style={styles.captureRow}>
-                <View style={styles.captureIcon}><Feather name="smartphone" size={18} color="#1F9A5A" /></View>
+                <View style={styles.captureIcon}><Feather name="smartphone" size={18} color={theme.accent} /></View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.captureTitle}>Analyse phone notifications</Text>
                   <Text style={styles.captureDesc}>Important alerts go to Morning Briefing. Urgent ones also become Priorities.</Text>
                   {Platform.OS === 'ios' && <Text style={styles.captureUnavailable}>Available on Android only</Text>}
                 </View>
                 {phoneCaptureBusy
-                  ? <ActivityIndicator size="small" color="#1F9A5A" />
-                  : <Switch value={phoneCaptureEnabled} onValueChange={togglePhoneCapture} trackColor={{ false: '#E3E5EA', true: '#1F9A5A' }} thumbColor="#FFFFFF" />}
+                  ? <ActivityIndicator size="small" color={theme.accent} />
+                  : <Switch value={phoneCaptureEnabled} onValueChange={togglePhoneCapture} trackColor={{ false: theme.borderStrong, true: theme.accent }} thumbColor="#FFFFFF" />}
               </View>
             </View>
             <View style={styles.card}>
               {NOTIF_TOGGLES.map(({ key, label, icon }, i) => (
                 <View key={key} style={[styles.toggleRow, i !== NOTIF_TOGGLES.length - 1 && styles.divider]}>
-                  <Feather name={icon} size={16} color="#1F9A5A" />
+                  <Feather name={icon} size={16} color={theme.accent} />
                   <Text style={styles.toggleLabel}>{label}</Text>
                   <Switch
                     value={!!notifications[key]}
                     onValueChange={v => toggleNotif(key, v)}
-                    trackColor={{ false: '#E3E5EA', true: '#1F9A5A' }}
+                    trackColor={{ false: theme.borderStrong, true: theme.accent }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
               ))}
+            </View>
+
+            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Reminder Timing</Text>
+            <View style={[styles.card, { paddingVertical: 14 }]}>
+              <Text style={styles.leadTimeHint}>
+                For important items Mneva detects (bills, EMIs, subscriptions, medication refills and more), how many advance alerts do you want, and how many minutes before?
+              </Text>
+
+              {leadTimes.length === 0 ? (
+                <Text style={styles.leadTimeEmpty}>No advance alerts set — you'll only be notified when something is due.</Text>
+              ) : (
+                leadTimes.map((mins, i) => (
+                  <View key={`${mins}-${i}`} style={[styles.leadTimeRow, i !== leadTimes.length - 1 && styles.divider]}>
+                    <View style={styles.leadTimeIconWrap}>
+                      <Feather name="clock" size={14} color={theme.accentAlt} />
+                    </View>
+                    <Text style={styles.leadTimeText}>{formatLeadTime(mins)} before</Text>
+                    <TouchableOpacity onPress={() => removeLeadTime(mins)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Feather name="x" size={16} color={theme.faint} />
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+
+              <View style={styles.leadTimeAddRow}>
+                <TextInput
+                  style={styles.leadTimeInput}
+                  placeholder="e.g. 15"
+                  placeholderTextColor={theme.placeholder}
+                  value={newLeadTime}
+                  onChangeText={setNewLeadTime}
+                  keyboardType="number-pad"
+                  maxLength={5}
+                  onSubmitEditing={addLeadTime}
+                />
+                <Text style={styles.leadTimeInputSuffix}>min before</Text>
+                <TouchableOpacity style={styles.leadTimeAddBtn} onPress={addLeadTime} disabled={!newLeadTime}>
+                  <Feather name="plus" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </View>
           </>
         )}
@@ -507,8 +579,8 @@ export default function Settings({ navigation, route }) {
         ].map(({ name, icon, lib }) => (
           <TouchableOpacity key={name} style={styles.tabItem} onPress={() => navigation?.navigate?.(name)}>
             {lib === 'Ionicons'
-              ? <Ionicons name={icon} size={22} color="#9AA1AE" />
-              : <Feather name={icon} size={22} color="#9AA1AE" />}
+              ? <Ionicons name={icon} size={22} color={theme.faint} />
+              : <Feather name={icon} size={22} color={theme.faint} />}
             <Text style={styles.tabLabel}>{name.toUpperCase()}</Text>
           </TouchableOpacity>
         ))}
@@ -517,68 +589,78 @@ export default function Settings({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe:            { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe:            { flex: 1, backgroundColor: theme.bg },
   header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16 },
-  headerTitle:     { fontSize: 18, fontWeight: '800', color: '#14171F' },
+  headerTitle:     { fontSize: 18, fontWeight: '800', color: theme.text },
   tabRow:          { flexDirection: 'row', marginBottom: 4 },
   tabBtn:          { flex: 1, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabBtnActive:    { borderBottomColor: '#1F9A5A' },
-  tabBtnText:      { fontSize: 13, fontWeight: '700', color: '#9AA1AE' },
-  tabBtnTextActive:{ color: '#1F9A5A' },
-  card:            { backgroundColor: '#FFFFFF', borderRadius: 18, paddingHorizontal: 18, marginBottom: 16 },
-  sectionLabel:    { fontSize: 12, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 },
+  tabBtnActive:    { borderBottomColor: theme.accent },
+  tabBtnText:      { fontSize: 13, fontWeight: '700', color: theme.faint },
+  tabBtnTextActive:{ color: theme.accent },
+  card:            { backgroundColor: theme.card, borderRadius: 18, paddingHorizontal: 18, marginBottom: 16 },
+  sectionLabel:    { fontSize: 12, fontWeight: '700', color: theme.faint, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 },
   scoreRow:        { flexDirection: 'row', alignItems: 'baseline', marginBottom: 10 },
-  scoreNum:        { fontSize: 32, fontWeight: '800', color: '#1F9A5A', marginRight: 10 },
-  scoreHint:       { fontSize: 13, color: '#9AA1AE' },
-  barBg:           { height: 8, backgroundColor: '#E8F5EE', borderRadius: 4, overflow: 'hidden' },
-  barFill:         { height: 8, backgroundColor: '#1F9A5A', borderRadius: 4 },
-  levelCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: '#F0F1F4' },
-  levelCardActive: { borderColor: '#1F9A5A', backgroundColor: '#F5FBF8' },
-  levelBadge:      { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F0F1F4', alignItems: 'center', justifyContent: 'center' },
-  levelBadgeActive:{ backgroundColor: '#E8F5EE' },
-  levelBadgeText:  { fontSize: 12, fontWeight: '800', color: '#9AA1AE' },
-  levelBadgeTextActive: { color: '#1F9A5A' },
-  levelName:       { fontSize: 15, fontWeight: '700', color: '#14171F' },
-  levelNameActive: { color: '#1F9A5A' },
-  levelDesc:       { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  scoreNum:        { fontSize: 32, fontWeight: '800', color: theme.accent, marginRight: 10 },
+  scoreHint:       { fontSize: 13, color: theme.faint },
+  barBg:           { height: 8, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 4, overflow: 'hidden' },
+  barFill:         { height: 8, backgroundColor: theme.accent, borderRadius: 4 },
+  levelCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: theme.border },
+  levelCardActive: { borderColor: theme.accent, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.10)' : '#F5FBF8' },
+  levelBadge:      { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.border, alignItems: 'center', justifyContent: 'center' },
+  levelBadgeActive:{ backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE' },
+  levelBadgeText:  { fontSize: 12, fontWeight: '800', color: theme.faint },
+  levelBadgeTextActive: { color: theme.accent },
+  levelName:       { fontSize: 15, fontWeight: '700', color: theme.text },
+  levelNameActive: { color: theme.accent },
+  levelDesc:       { fontSize: 12, color: theme.faint, marginTop: 2 },
   toggleRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
-  toggleLabel:     { flex: 1, fontSize: 14, fontWeight: '600', color: '#14171F', marginLeft: 12 },
+  toggleLabel:     { flex: 1, fontSize: 14, fontWeight: '600', color: theme.text, marginLeft: 12 },
   captureRow:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
-  captureIcon:     { width: 36, height: 36, borderRadius: 10, backgroundColor: '#E8F5EE', alignItems: 'center', justifyContent: 'center' },
-  captureTitle:    { fontSize: 14, fontWeight: '700', color: '#14171F' },
-  captureDesc:     { fontSize: 12, lineHeight: 17, color: '#6B7280', marginTop: 3, paddingRight: 8 },
-  captureUnavailable: { fontSize: 11, color: '#9AA1AE', marginTop: 5 },
-  divider:         { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  bottomBar:       { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  captureIcon:     { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', alignItems: 'center', justifyContent: 'center' },
+  captureTitle:    { fontSize: 14, fontWeight: '700', color: theme.text },
+  captureDesc:     { fontSize: 12, lineHeight: 17, color: theme.muted, marginTop: 3, paddingRight: 8 },
+  captureUnavailable: { fontSize: 11, color: theme.faint, marginTop: 5 },
+  divider:         { borderBottomWidth: 1, borderBottomColor: theme.border },
+
+  leadTimeHint:      { fontSize: 12, color: theme.muted, lineHeight: 17, marginBottom: 12 },
+  leadTimeEmpty:     { fontSize: 12, color: theme.faint, fontStyle: 'italic', marginBottom: 8 },
+  leadTimeRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  leadTimeIconWrap:  { width: 30, height: 30, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.18)' : '#EEEDFE', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  leadTimeText:      { flex: 1, fontSize: 14, fontWeight: '600', color: theme.text },
+  leadTimeAddRow:    { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 8 },
+  leadTimeInput:     { width: 64, backgroundColor: theme.surfaceAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9, fontSize: 14, color: theme.text, textAlign: 'center' },
+  leadTimeInputSuffix: { flex: 1, fontSize: 12, color: theme.faint },
+  leadTimeAddBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.accentAlt, alignItems: 'center', justifyContent: 'center' },
+  bottomBar:       { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem:         { flex: 1, alignItems: 'center' },
-  tabLabel:        { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel:        { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
   // Account tab
-  acctHeader:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 18, marginBottom: 20 },
+  acctHeader:      { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 18, padding: 18, marginBottom: 20 },
   acctAvatar:      { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1F9A5A', alignItems: 'center', justifyContent: 'center' },
   acctAvatarText:  { color: '#FFFFFF', fontWeight: '800', fontSize: 20 },
-  acctName:        { fontSize: 18, fontWeight: '800', color: '#14171F', marginBottom: 3 },
-  acctSub:         { fontSize: 13, color: '#9AA1AE' },
+  acctName:        { fontSize: 18, fontWeight: '800', color: theme.text, marginBottom: 3 },
+  acctSub:         { fontSize: 13, color: theme.faint },
   infoRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  infoLabel:       { flex: 1, fontSize: 14, fontWeight: '600', color: '#374151', marginLeft: 12 },
-  infoValue:       { fontSize: 13, color: '#9AA1AE', maxWidth: '45%', textAlign: 'right' },
-  upgradeBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1F9A5A', borderRadius: 16, paddingVertical: 16, marginBottom: 4 },
+  infoLabel:       { flex: 1, fontSize: 14, fontWeight: '600', color: theme.textSecondary, marginLeft: 12 },
+  infoValue:       { fontSize: 13, color: theme.faint, maxWidth: '45%', textAlign: 'right' },
+  upgradeBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent, borderRadius: 16, paddingVertical: 16, marginBottom: 4 },
   upgradeBtnText:  { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   dangerRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   dangerLabel:     { flex: 1, fontSize: 14, fontWeight: '600', marginLeft: 12 },
   // Phone modal
-  phoneModalOverlay:   { flex: 1, backgroundColor: 'rgba(14,17,26,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  phoneModalBox:       { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24, width: '100%' },
-  phoneModalTitle:     { fontSize: 17, fontWeight: '800', color: '#14171F', marginBottom: 4 },
-  phoneModalSub:       { fontSize: 12, color: '#9AA1AE', marginBottom: 18 },
-  phoneModalRow:       { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E4E7EF', borderRadius: 12, overflow: 'hidden', marginBottom: 10 },
-  phoneModalPrefix:    { paddingHorizontal: 12, paddingVertical: 13, backgroundColor: '#F3F4F6', borderRightWidth: 1, borderRightColor: '#E4E7EF' },
-  phoneModalPrefixText:{ fontSize: 13, fontWeight: '600', color: '#374151' },
-  phoneModalInput:     { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: '#14171F' },
-  phoneModalError:     { fontSize: 12, color: '#E0546E', marginBottom: 10 },
+  phoneModalOverlay:   { flex: 1, backgroundColor: theme.overlay, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  phoneModalBox:       { backgroundColor: theme.card, borderRadius: 20, padding: 24, width: '100%' },
+  phoneModalTitle:     { fontSize: 17, fontWeight: '800', color: theme.text, marginBottom: 4 },
+  phoneModalSub:       { fontSize: 12, color: theme.faint, marginBottom: 18 },
+  phoneModalRow:       { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.border, borderRadius: 12, overflow: 'hidden', marginBottom: 10 },
+  phoneModalPrefix:    { paddingHorizontal: 12, paddingVertical: 13, backgroundColor: theme.soft, borderRightWidth: 1, borderRightColor: theme.border },
+  phoneModalPrefixText:{ fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  phoneModalInput:     { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: theme.text },
+  phoneModalError:     { fontSize: 12, color: theme.danger, marginBottom: 10 },
   phoneModalBtns:      { flexDirection: 'row', gap: 10, marginTop: 6 },
-  phoneModalCancel:    { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center' },
-  phoneModalCancelText:{ fontSize: 14, fontWeight: '700', color: '#6B7280' },
-  phoneModalSave:      { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: '#1F9A5A', alignItems: 'center' },
+  phoneModalCancel:    { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center' },
+  phoneModalCancelText:{ fontSize: 14, fontWeight: '700', color: theme.muted },
+  phoneModalSave:      { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: theme.accent, alignItems: 'center' },
   phoneModalSaveText:  { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
 });

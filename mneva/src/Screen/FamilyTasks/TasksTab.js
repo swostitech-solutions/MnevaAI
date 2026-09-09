@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../context/ThemeContext';
 import { useFamilyTask, TASK_STATUSES, PRIORITIES, CATEGORIES, RECURRENCES } from './FamilyTaskContext';
 
 const FILTERS = ['All', 'Draft', 'Pending', 'In Progress', 'Completed'];
@@ -18,6 +19,8 @@ const PRIORITY_COLOR = { Low: '#1F9A5A', Medium: '#D97706', High: '#E0546E', Urg
 const PRIORITY_BG    = { Low: '#EFFDF6', Medium: '#FEF3C7', High: '#FCEAED', Urgent: '#F3EFFE' };
 
 export default function TasksTab({ horizontalPad, insets }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { tasks, connections } = useFamilyTask();
   const [filter, setFilter] = useState('All');
   const [createModal, setCreateModal] = useState(false);
@@ -58,13 +61,13 @@ export default function TasksTab({ horizontalPad, insets }) {
         {filtered.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={styles.emptyIconWrap}>
-              <Feather name="inbox" size={36} color="#1F9A5A" />
+              <Feather name="inbox" size={36} color={theme.accent} />
             </View>
             <Text style={styles.emptyTitle}>No tasks yet</Text>
             <Text style={styles.emptySubtitle}>Tap the button below to create{'\n'}your first family task</Text>
           </View>
         ) : (
-          filtered.map(task => <TaskCard key={task.id} task={task} myId={myId} />)
+          filtered.map(task => <TaskCard key={task.id} task={task} myId={myId} theme={theme} styles={styles} />)
         )}
       </ScrollView>
 
@@ -73,7 +76,7 @@ export default function TasksTab({ horizontalPad, insets }) {
         <TouchableOpacity style={styles.createBar} activeOpacity={0.88} onPress={() => setCreateModal(true)}>
           <LinearGradient colors={['#0F5132', '#1F9A5A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.createBarGrad}>
             <View style={styles.createBarIcon}>
-              <Feather name="plus" size={18} color="#1F9A5A" />
+              <Feather name="plus" size={18} color={theme.accent} />
             </View>
             <Text style={styles.createBarText}>Create New Task</Text>
             <Feather name="arrow-right" size={16} color="rgba(255,255,255,0.7)" />
@@ -86,17 +89,19 @@ export default function TasksTab({ horizontalPad, insets }) {
         onClose={() => setCreateModal(false)}
         insets={insets}
         connections={connections}
+        theme={theme}
+        styles={styles}
       />
     </View>
   );
 }
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
-function TaskCard({ task, myId }) {
+function TaskCard({ task, myId, theme, styles }) {
   const { updateTaskStatus } = useFamilyTask();
   const s = TASK_STATUSES[task.status] || TASK_STATUSES.DRAFT;
-  const pc = PRIORITY_COLOR[task.priority] || '#9AA1AE';
-  const pb = PRIORITY_BG[task.priority]   || '#F5F6F8';
+  const pc = PRIORITY_COLOR[task.priority] || theme.faint;
+  const pb = PRIORITY_BG[task.priority]   || theme.surfaceAlt;
   const doneItems  = task.checklist?.filter(i => i.done).length || 0;
   const totalItems = task.checklist?.length || 0;
   const progress   = totalItems > 0 ? doneItems / totalItems : 0;
@@ -135,25 +140,25 @@ function TaskCard({ task, myId }) {
           </View>
         ) : (
           <View style={styles.unassignedChip}>
-            <Feather name="user" size={11} color="#9AA1AE" />
+            <Feather name="user" size={11} color={theme.faint} />
             <Text style={styles.unassignedText}>Unassigned</Text>
           </View>
         )}
         {creatorName ? (
           <View style={styles.metaChip}>
-            <Feather name="user" size={11} color="#6B7280" />
+            <Feather name="user" size={11} color={theme.muted} />
             <Text style={styles.metaChipText}>by {creatorName}</Text>
           </View>
         ) : null}
         {task.dueDate ? (
           <View style={styles.metaChip}>
-            <Feather name="calendar" size={11} color="#6B7280" />
+            <Feather name="calendar" size={11} color={theme.muted} />
             <Text style={styles.metaChipText}>{task.dueDate}</Text>
           </View>
         ) : null}
         {task.category ? (
           <View style={styles.metaChip}>
-            <Feather name="tag" size={11} color="#6B7280" />
+            <Feather name="tag" size={11} color={theme.muted} />
             <Text style={styles.metaChipText}>{task.category}</Text>
           </View>
         ) : null}
@@ -177,32 +182,32 @@ function TaskCard({ task, myId }) {
       {isAssignee && task.status === 'PENDING_ACCEPTANCE' && (
         <View style={styles.actionRow}>
           <TouchableOpacity style={[styles.actionBtn, styles.actionAccept]} onPress={() => doStatus('ACCEPTED')}>
-            <Feather name="check" size={13} color="#1F9A5A" />
-            <Text style={[styles.actionBtnText, { color: '#1F9A5A' }]}>Accept</Text>
+            <Feather name="check" size={13} color={theme.accent} />
+            <Text style={[styles.actionBtnText, { color: theme.accent }]}>Accept</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={() => doStatus('REJECTED')}>
-            <Feather name="x" size={13} color="#E0546E" />
-            <Text style={[styles.actionBtnText, { color: '#E0546E' }]}>Reject</Text>
+            <Feather name="x" size={13} color={theme.danger} />
+            <Text style={[styles.actionBtnText, { color: theme.danger }]}>Reject</Text>
           </TouchableOpacity>
         </View>
       )}
       {(isAssignee || isCreator) && task.status === 'ACCEPTED' && (
         <View style={styles.actionRow}>
           <TouchableOpacity style={[styles.actionBtn, styles.actionProgress]} onPress={() => doStatus('IN_PROGRESS')}>
-            <Feather name="play" size={13} color="#9B72FF" />
-            <Text style={[styles.actionBtnText, { color: '#9B72FF' }]}>Start</Text>
+            <Feather name="play" size={13} color={theme.accentAlt} />
+            <Text style={[styles.actionBtnText, { color: theme.accentAlt }]}>Start</Text>
           </TouchableOpacity>
         </View>
       )}
       {(isAssignee || isCreator) && task.status === 'IN_PROGRESS' && (
         <View style={styles.actionRow}>
           <TouchableOpacity style={[styles.actionBtn, styles.actionAccept]} onPress={() => doStatus('COMPLETED')}>
-            <Feather name="check-circle" size={13} color="#1F9A5A" />
-            <Text style={[styles.actionBtnText, { color: '#1F9A5A' }]}>Complete</Text>
+            <Feather name="check-circle" size={13} color={theme.accent} />
+            <Text style={[styles.actionBtnText, { color: theme.accent }]}>Complete</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={() => doStatus('CANCELLED')}>
-            <Feather name="slash" size={13} color="#6B7280" />
-            <Text style={[styles.actionBtnText, { color: '#6B7280' }]}>Cancel</Text>
+            <Feather name="slash" size={13} color={theme.muted} />
+            <Text style={[styles.actionBtnText, { color: theme.muted }]}>Cancel</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -211,7 +216,7 @@ function TaskCard({ task, myId }) {
 }
 
 // ─── Create Task Modal ────────────────────────────────────────────────────────
-function CreateTaskModal({ visible, onClose, insets, connections }) {
+function CreateTaskModal({ visible, onClose, insets, connections, theme, styles }) {
   const { createTask } = useFamilyTask();
   const accepted = connections.filter(c => c.status === 'ACCEPTED');
 
@@ -274,17 +279,17 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ paddingHorizontal: 20 }}>
             {/* Title */}
             <Text style={styles.label}>Task Title <Text style={styles.req}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. Buy groceries" placeholderTextColor="#9AA1AE" value={title} onChangeText={setTitle} />
+            <TextInput style={styles.input} placeholder="e.g. Buy groceries" placeholderTextColor={theme.placeholder} value={title} onChangeText={setTitle} />
 
             {/* Description */}
             <Text style={styles.label}>Description</Text>
-            <TextInput style={[styles.input, styles.inputMulti]} placeholder="Optional details…" placeholderTextColor="#9AA1AE" value={description} onChangeText={setDesc} multiline />
+            <TextInput style={[styles.input, styles.inputMulti]} placeholder="Optional details…" placeholderTextColor={theme.placeholder} value={description} onChangeText={setDesc} multiline />
 
             {/* Assign to */}
             <Text style={styles.label}>Assign To</Text>
             {accepted.length === 0 ? (
               <View style={styles.hintBox}>
-                <Feather name="info" size={13} color="#9AA1AE" />
+                <Feather name="info" size={13} color={theme.faint} />
                 <Text style={styles.hintText}>Add family members from the People tab first.</Text>
               </View>
             ) : (
@@ -293,8 +298,8 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
                   style={[styles.avatarOption, assignee === null && styles.avatarOptionActive]}
                   onPress={() => setAssignee(null)}
                 >
-                  <View style={[styles.avatarCircle, { backgroundColor: '#F0F1F4' }]}>
-                    <Feather name="slash" size={14} color="#9AA1AE" />
+                  <View style={[styles.avatarCircle, { backgroundColor: theme.border }]}>
+                    <Feather name="slash" size={14} color={theme.faint} />
                   </View>
                   <Text style={[styles.avatarLabel, assignee === null && styles.avatarLabelActive]}>None</Text>
                 </TouchableOpacity>
@@ -305,10 +310,10 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
                     onPress={() => setAssignee({ id: c.otherId, name: c.name, connectionId: c.id })}
                   >
                     <LinearGradient
-                      colors={assignee?.id === c.otherId ? ['#0F5132', '#1F9A5A'] : ['#E8EAF0', '#DDE0E8']}
+                      colors={assignee?.id === c.otherId ? ['#0F5132', '#1F9A5A'] : (theme.isDark ? ['#2A2F3B', '#333947'] : ['#E8EAF0', '#DDE0E8'])}
                       style={styles.avatarCircle}
                     >
-                      <Text style={[styles.avatarInitial, { color: assignee?.id === c.otherId ? '#FFFFFF' : '#6B7280' }]}>
+                      <Text style={[styles.avatarInitial, { color: assignee?.id === c.otherId ? '#FFFFFF' : theme.muted }]}>
                         {c.name.charAt(0).toUpperCase()}
                       </Text>
                     </LinearGradient>
@@ -329,7 +334,7 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
                   style={[styles.chip, priority === p && { backgroundColor: PRIORITY_BG[p], borderColor: PRIORITY_COLOR[p] }]}
                   onPress={() => setPriority(p)}
                 >
-                  <Feather name="flag" size={11} color={priority === p ? PRIORITY_COLOR[p] : '#9AA1AE'} />
+                  <Feather name="flag" size={11} color={priority === p ? PRIORITY_COLOR[p] : theme.faint} />
                   <Text style={[styles.chipText, priority === p && { color: PRIORITY_COLOR[p] }]}>{p}</Text>
                 </TouchableOpacity>
               ))}
@@ -353,7 +358,7 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
             <View style={styles.twoCol}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Due Date</Text>
-                <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor="#9AA1AE" value={dueDate} onChangeText={setDueDate} />
+                <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor={theme.placeholder} value={dueDate} onChangeText={setDueDate} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Repeat</Text>
@@ -377,14 +382,14 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
               <TextInput
                 style={[styles.input, { flex: 1, marginBottom: 0 }]}
                 placeholder="Add item…"
-                placeholderTextColor="#9AA1AE"
+                placeholderTextColor={theme.placeholder}
                 value={checklistInput}
                 onChangeText={setCLInput}
                 onSubmitEditing={addItem}
                 returnKeyType="done"
               />
               <TouchableOpacity style={styles.clAddBtn} onPress={addItem}>
-                <Feather name="plus" size={18} color="#1F9A5A" />
+                <Feather name="plus" size={18} color={theme.accent} />
               </TouchableOpacity>
             </View>
             {checklist.map((item, idx) => (
@@ -392,7 +397,7 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
                 <Text style={styles.clItemNum}>{idx + 1}</Text>
                 <Text style={styles.clItemText}>{item.text}</Text>
                 <TouchableOpacity onPress={() => setChecklist(p => p.filter(i => i.id !== item.id))}>
-                  <Feather name="x" size={14} color="#9AA1AE" />
+                  <Feather name="x" size={14} color={theme.faint} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -418,83 +423,83 @@ function CreateTaskModal({ visible, onClose, insets, connections }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   // Filter bar
   filterBar: { paddingVertical: 12, gap: 8 },
-  filterChip: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: 'transparent' },
-  filterChipActive: { backgroundColor: '#EFFDF6', borderColor: '#1F9A5A' },
-  filterChipText: { fontSize: 12, fontWeight: '700', color: '#9AA1AE' },
-  filterChipTextActive: { color: '#1F9A5A' },
+  filterChip: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: theme.card, borderWidth: 1.5, borderColor: 'transparent' },
+  filterChipActive: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderColor: theme.accent },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: theme.faint },
+  filterChipTextActive: { color: theme.accent },
 
   // Empty
   emptyWrap: { alignItems: 'center', paddingTop: 70, gap: 12 },
-  emptyIconWrap: { width: 80, height: 80, borderRadius: 28, backgroundColor: '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  emptySubtitle: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 20 },
+  emptyIconWrap: { width: 80, height: 80, borderRadius: 28, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  emptySubtitle: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 20 },
 
   // Task card
-  card: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16, marginBottom: 10, borderLeftWidth: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  card: { backgroundColor: theme.card, borderRadius: 18, padding: 16, marginBottom: 10, borderLeftWidth: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: '#14171F', marginBottom: 3 },
-  cardDesc: { fontSize: 12, color: '#6B7280', lineHeight: 17 },
+  cardTitle: { fontSize: 15, fontWeight: '800', color: theme.text, marginBottom: 3 },
+  cardDesc: { fontSize: 12, color: theme.muted, lineHeight: 17 },
   statusBadge: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start' },
   statusBadgeText: { fontSize: 10, fontWeight: '800' },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  assigneeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EFFDF6', borderRadius: 20, paddingRight: 10, paddingVertical: 3 },
-  assigneeAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#1F9A5A', alignItems: 'center', justifyContent: 'center' },
+  assigneeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderRadius: 20, paddingRight: 10, paddingVertical: 3 },
+  assigneeAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center' },
   assigneeAvatarText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF' },
-  assigneeText: { fontSize: 11, fontWeight: '700', color: '#1F9A5A' },
-  unassignedChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F5F6F8', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4 },
-  unassignedText: { fontSize: 11, fontWeight: '600', color: '#9AA1AE' },
-  metaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F5F6F8', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  metaChipText: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+  assigneeText: { fontSize: 11, fontWeight: '700', color: theme.accent },
+  unassignedChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4 },
+  unassignedText: { fontSize: 11, fontWeight: '600', color: theme.faint },
+  metaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  metaChipText: { fontSize: 11, fontWeight: '600', color: theme.muted },
   priorityChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   priorityChipText: { fontSize: 11, fontWeight: '700' },
   progressWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  progressTrack: { flex: 1, height: 5, backgroundColor: '#F0F1F4', borderRadius: 3, overflow: 'hidden' },
+  progressTrack: { flex: 1, height: 5, backgroundColor: theme.border, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: 5, borderRadius: 3 },
-  progressText: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', minWidth: 28, textAlign: 'right' },
+  progressText: { fontSize: 11, fontWeight: '700', color: theme.faint, minWidth: 28, textAlign: 'right' },
 
   // Create bar
-  createBarWrap: { backgroundColor: '#F2F4F7', paddingTop: 8 },
+  createBarWrap: { backgroundColor: theme.isDark ? theme.bg : '#F2F4F7', paddingTop: 8 },
   createBar: { borderRadius: 18, overflow: 'hidden' },
   createBarGrad: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, gap: 12 },
-  createBarIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  createBarIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
   createBarText: { flex: 1, fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
 
   // Modal
-  overlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.6)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#F2F4F7', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '95%' },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginTop: 10, marginBottom: 0 },
+  overlay: { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: theme.isDark ? theme.bg : '#F2F4F7', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '95%' },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, marginTop: 10, marginBottom: 0 },
   sheetHero: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18, marginBottom: 4 },
   sheetHeroTitle: { fontSize: 20, fontWeight: '800', color: '#FFFFFF' },
   sheetHeroSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
   sheetCloseBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 12, fontWeight: '700', color: '#374151', marginBottom: 8, marginTop: 14, letterSpacing: 0.3 },
-  req: { color: '#E0546E' },
-  input: { backgroundColor: '#FFFFFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 0 },
+  label: { fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginBottom: 8, marginTop: 14, letterSpacing: 0.3 },
+  req: { color: theme.danger },
+  input: { backgroundColor: theme.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 0 },
   inputMulti: { height: 76, textAlignVertical: 'top' },
-  hintBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12 },
-  hintText: { fontSize: 12, color: '#9AA1AE', flex: 1 },
+  hintBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.card, borderRadius: 12, padding: 12 },
+  hintText: { fontSize: 12, color: theme.faint, flex: 1 },
   avatarRow: { gap: 12, paddingVertical: 4 },
   avatarOption: { alignItems: 'center', gap: 6, opacity: 0.6 },
   avatarOptionActive: { opacity: 1 },
   avatarCircle: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   avatarInitial: { fontSize: 18, fontWeight: '800' },
-  avatarLabel: { fontSize: 11, fontWeight: '600', color: '#9AA1AE', maxWidth: 56, textAlign: 'center' },
-  avatarLabelActive: { color: '#0F5132', fontWeight: '800' },
+  avatarLabel: { fontSize: 11, fontWeight: '600', color: theme.faint, maxWidth: 56, textAlign: 'center' },
+  avatarLabelActive: { color: theme.isDark ? theme.accent : '#0F5132', fontWeight: '800' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chipCol: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: 'transparent' },
-  chipActive: { backgroundColor: '#EFFDF6', borderColor: '#1F9A5A' },
-  chipText: { fontSize: 12, fontWeight: '600', color: '#374151' },
-  chipTextActive: { color: '#1F9A5A' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: theme.card, borderWidth: 1.5, borderColor: 'transparent' },
+  chipActive: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderColor: theme.accent },
+  chipText: { fontSize: 12, fontWeight: '600', color: theme.textSecondary },
+  chipTextActive: { color: theme.accent },
   twoCol: { flexDirection: 'row', gap: 12 },
   clInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  clAddBtn: { width: 46, height: 46, borderRadius: 14, backgroundColor: '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
-  clItem: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 },
-  clItemNum: { fontSize: 11, fontWeight: '800', color: '#1F9A5A', minWidth: 16 },
-  clItemText: { flex: 1, fontSize: 13, color: '#374151' },
+  clAddBtn: { width: 46, height: 46, borderRadius: 14, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
+  clItem: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: theme.card, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 },
+  clItemNum: { fontSize: 11, fontWeight: '800', color: theme.accent, minWidth: 16 },
+  clItemText: { flex: 1, fontSize: 13, color: theme.textSecondary },
   submitBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 20, marginBottom: 8 },
   submitBtnDisabled: { opacity: 0.4 },
   submitGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
@@ -502,8 +507,8 @@ const styles = StyleSheet.create({
   // Action buttons
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingVertical: 8, borderWidth: 1.5 },
-  actionAccept: { backgroundColor: '#EFFDF6', borderColor: '#1F9A5A' },
-  actionReject: { backgroundColor: '#FCEAED', borderColor: '#E0546E' },
-  actionProgress: { backgroundColor: '#F3EFFE', borderColor: '#9B72FF' },
+  actionAccept: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderColor: theme.accent },
+  actionReject: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderColor: theme.danger },
+  actionProgress: { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', borderColor: theme.accentAlt },
   actionBtnText: { fontSize: 12, fontWeight: '700' },
 });

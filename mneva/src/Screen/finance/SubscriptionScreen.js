@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
+import { useTheme } from '../../context/ThemeContext';
 import DateField from './DateField';
 
 const CATEGORIES = ['Streaming', 'Software', 'Cloud', 'Gaming', 'News', 'Fitness', 'Education', 'Other'];
@@ -40,6 +41,8 @@ const ACCENT = ['#9B72FF', '#7C5CE8'];
 export default function SubscriptionScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { on } = useSocket();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -123,7 +126,7 @@ export default function SubscriptionScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>{showForm ? (isEditing ? 'Edit Subscription' : 'Add Subscription') : 'Subscriptions'}</Text>
@@ -131,7 +134,7 @@ export default function SubscriptionScreen({ navigation }) {
         </View>
         {showForm && isEditing ? (
           <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-            <Feather name="trash-2" size={18} color="#E0546E" />
+            <Feather name="trash-2" size={18} color={theme.danger} />
           </TouchableOpacity>
         ) : !showForm ? (
           <TouchableOpacity onPress={openAdd}>
@@ -147,7 +150,7 @@ export default function SubscriptionScreen({ navigation }) {
           <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>Subscription Name <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. Netflix" placeholderTextColor="#9AA1AE" value={form.name} onChangeText={v => setField('name', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Netflix" placeholderTextColor={theme.placeholder} value={form.name} onChangeText={v => setField('name', v)} />
 
             <Text style={styles.fieldLabel}>Category <Text style={styles.required}>*</Text></Text>
             <View style={styles.chipRow}>
@@ -159,21 +162,21 @@ export default function SubscriptionScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Provider</Text>
-            <TextInput style={styles.input} placeholder="e.g. Netflix Inc." placeholderTextColor="#9AA1AE" value={form.provider} onChangeText={v => setField('provider', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Netflix Inc." placeholderTextColor={theme.placeholder} value={form.provider} onChangeText={v => setField('provider', v)} />
 
             <Text style={styles.fieldLabel}>Description</Text>
-            <TextInput style={styles.input} placeholder="e.g. Premium 4K plan" placeholderTextColor="#9AA1AE" value={form.description} onChangeText={v => setField('description', v)} />
+            <TextInput style={styles.input} placeholder="e.g. Premium 4K plan" placeholderTextColor={theme.placeholder} value={form.description} onChangeText={v => setField('description', v)} />
 
             <Text style={styles.sectionLabel}>PAYMENT</Text>
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Amount <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.amount} onChangeText={v => setField('amount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.amount} onChangeText={v => setField('amount', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Currency</Text>
-                <TextInput style={styles.input} placeholder="INR" placeholderTextColor="#9AA1AE" value={form.currency} onChangeText={v => setField('currency', v)} />
+                <TextInput style={styles.input} placeholder="INR" placeholderTextColor={theme.placeholder} value={form.currency} onChangeText={v => setField('currency', v)} />
               </View>
             </View>
 
@@ -189,12 +192,12 @@ export default function SubscriptionScreen({ navigation }) {
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Tax / GST (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.tax} onChangeText={v => setField('tax', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.tax} onChangeText={v => setField('tax', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Total Charged (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.totalCharged} onChangeText={v => setField('totalCharged', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.totalCharged} onChangeText={v => setField('totalCharged', v)} />
               </View>
             </View>
 
@@ -215,7 +218,7 @@ export default function SubscriptionScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Payment Account</Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor="#9AA1AE" value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor={theme.placeholder} value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
 
             <Text style={styles.fieldLabel}>Auto Renewal</Text>
             <View style={styles.chipRow}>
@@ -248,10 +251,10 @@ export default function SubscriptionScreen({ navigation }) {
             {form.trialPeriod ? <DateField label="Trial End Date" value={form.trialEndDate} onChange={v => setField('trialEndDate', v)} /> : null}
 
             <Text style={styles.fieldLabel}>Reminder Before Renewal (days)</Text>
-            <TextInput style={styles.input} placeholder="e.g. 3" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.reminderBeforeRenewal} onChangeText={v => setField('reminderBeforeRenewal', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 3" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.reminderBeforeRenewal} onChangeText={v => setField('reminderBeforeRenewal', v)} />
 
             <Text style={styles.fieldLabel}>Notes</Text>
-            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
+            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
 
             <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={handleSave}>
               <LinearGradient colors={ACCENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
@@ -271,7 +274,7 @@ export default function SubscriptionScreen({ navigation }) {
             [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
           ) : subscriptions.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="repeat" size={32} color="#C7CBD3" />
+              <Feather name="repeat" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>No subscriptions added yet. Tap + to add one.</Text>
             </View>
           ) : (
@@ -291,7 +294,7 @@ export default function SubscriptionScreen({ navigation }) {
                     <Text style={styles.rowAmount}>₹{(sub.amount || 0).toLocaleString('en-IN')}</Text>
                     <Text style={styles.rowMeta}>{fmtShortDate(sub.nextBillingDate)}</Text>
                   </View>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" style={{ marginLeft: 8 }} />
+                  <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -302,43 +305,43 @@ export default function SubscriptionScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   addBtnGrad: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
   scrollContent: { paddingHorizontal: 20 },
-  skeleton: { height: 60, backgroundColor: '#F0F1F4', borderRadius: 14, marginBottom: 10 },
+  skeleton: { height: 60, backgroundColor: theme.border, borderRadius: 14, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
+  emptyText: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 19 },
 
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  sectionCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowTextWrap: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowSub: { fontSize: 12, color: '#9AA1AE' },
+  rowName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowSub: { fontSize: 12, color: theme.faint },
   rowRight: { alignItems: 'flex-end', gap: 4 },
-  rowAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
-  rowMeta: { fontSize: 11, color: '#9AA1AE' },
+  rowAmount: { fontSize: 15, fontWeight: '800', color: theme.text },
+  rowMeta: { fontSize: 11, color: theme.faint },
 
   formScroll: { paddingHorizontal: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#E0546E' },
-  input: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  required: { color: theme.danger },
+  input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  selectChipActive: { backgroundColor: '#F3EFFE', borderColor: '#9B72FF' },
-  selectChipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  selectChipTextActive: { color: '#7C3AED' },
+  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  selectChipActive: { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', borderColor: '#9B72FF' },
+  selectChipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  selectChipTextActive: { color: theme.isDark ? '#A78BFA' : '#7C3AED' },
 
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },

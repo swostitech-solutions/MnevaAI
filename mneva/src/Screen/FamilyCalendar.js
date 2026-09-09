@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
+import { useTheme } from '../context/ThemeContext';
 
 const EVENT_TYPES = ['Birthday', 'Anniversary', 'School', 'Medical', 'Travel', 'Festival', 'Meeting', 'Other'];
 const MEMBERS     = ['Dad', 'Mom', 'Self', 'Spouse', 'Child', 'All'];
@@ -19,6 +20,8 @@ const tIcon  = (t) => ({ Birthday: 'gift', Anniversary: 'heart', School: 'book',
 export default function FamilyCalendar({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const pad = width < 360 ? 16 : 20;
   const { items, loading, saving, create, remove } = useFamilyItems('calendar');
   const { on } = useSocket();
@@ -70,7 +73,7 @@ export default function FamilyCalendar({ navigation }) {
 
       <View style={[styles.header, { paddingHorizontal: pad }]}>
         <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>Family Calendar</Text>
@@ -84,14 +87,14 @@ export default function FamilyCalendar({ navigation }) {
       </View>
 
       {loading ? (
-        <View style={styles.loadingWrap}><ActivityIndicator size="large" color="#F5A623" /></View>
+        <View style={styles.loadingWrap}><ActivityIndicator size="large" color={theme.warning} /></View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
-          {saving && <SavingBar />}
+          {saving && <SavingBar theme={theme} styles={styles} />}
 
           {items.length > 0 && (
             <View style={styles.memoryBadge}>
-              <Feather name="cpu" size={12} color="#9B72FF" />
+              <Feather name="cpu" size={12} color={theme.accentAlt} />
               <Text style={styles.memoryText}>Mneva AI has memorized {items.length} family event{items.length !== 1 ? 's' : ''}</Text>
             </View>
           )}
@@ -99,7 +102,7 @@ export default function FamilyCalendar({ navigation }) {
           {items.length === 0 ? (
             <View style={styles.emptyWrap}>
               <LinearGradient colors={['#FEF3C7', '#FDE68A']} style={styles.emptyIcon}>
-                <Feather name="calendar" size={32} color="#F5A623" />
+                <Feather name="calendar" size={32} color={theme.warning} />
               </LinearGradient>
               <Text style={styles.emptyTitle}>No events yet</Text>
               <Text style={styles.emptySubtitle}>Tap + to add family events, birthdays & more</Text>
@@ -121,8 +124,8 @@ export default function FamilyCalendar({ navigation }) {
                       <View style={[styles.tag, { backgroundColor: tBg(e.data?.type) }]}>
                         <Text style={[styles.tagText, { color: tColor(e.data?.type) }]}>{e.data?.type}</Text>
                       </View>
-                      {e.remindAt && <View style={styles.remindDot}><Feather name="bell" size={10} color="#F5A623" /></View>}
-                      <TouchableOpacity onPress={() => remove(e.id)} style={{ padding: 4, marginLeft: 4 }}><Feather name="x" size={14} color="#9AA1AE" /></TouchableOpacity>
+                      {e.remindAt && <View style={styles.remindDot}><Feather name="bell" size={10} color={theme.warning} /></View>}
+                      <TouchableOpacity onPress={() => remove(e.id)} style={{ padding: 4, marginLeft: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
                     </View>
                   ))}
                 </View>
@@ -154,7 +157,7 @@ export default function FamilyCalendar({ navigation }) {
                 ))}
               </View>
               <Text style={styles.fieldLabel}>Title *</Text>
-              <TextInput style={styles.input} placeholder="e.g. Dad's Birthday" placeholderTextColor="#9AA1AE" value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
+              <TextInput style={styles.input} placeholder="e.g. Dad's Birthday" placeholderTextColor={theme.placeholder} value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
               <Text style={styles.fieldLabel}>For Member</Text>
               <View style={styles.chipRow}>
                 {MEMBERS.map(m => (
@@ -166,16 +169,16 @@ export default function FamilyCalendar({ navigation }) {
               <View style={styles.rowFields}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>Date * (YYYY-MM-DD)</Text>
-                  <TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor="#9AA1AE" value={form.date} onChangeText={v => setForm(f => ({ ...f, date: v }))} keyboardType="numeric" />
+                  <TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor={theme.placeholder} value={form.date} onChangeText={v => setForm(f => ({ ...f, date: v }))} keyboardType="numeric" />
                 </View>
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>Time (HH:MM)</Text>
-                  <TextInput style={styles.input} placeholder="09:00" placeholderTextColor="#9AA1AE" value={form.time} onChangeText={v => setForm(f => ({ ...f, time: v }))} keyboardType="numeric" />
+                  <TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={form.time} onChangeText={v => setForm(f => ({ ...f, time: v }))} keyboardType="numeric" />
                 </View>
               </View>
               <Text style={styles.fieldLabel}>Notes</Text>
-              <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setForm(f => ({ ...f, notes: v }))} />
+              <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setForm(f => ({ ...f, notes: v }))} />
               <TouchableOpacity
                 style={[styles.saveBtn, (!form.title.trim() || !form.type || !form.date.trim()) && styles.saveBtnDisabled]}
                 disabled={!form.title.trim() || !form.type || !form.date.trim()}
@@ -194,61 +197,61 @@ export default function FamilyCalendar({ navigation }) {
   );
 }
 
-function SavingBar() {
+function SavingBar({ theme, styles }) {
   return (
     <View style={styles.savingBar}>
-      <ActivityIndicator size="small" color="#F5A623" />
+      <ActivityIndicator size="small" color={theme.warning} />
       <Text style={styles.savingText}>Saving & updating Mneva AI memory...</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   alertBanner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999 },
   alertGrad: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   alertEmoji: { fontSize: 20 },
   alertTitle: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
   alertBody: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 16 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSub: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSub: { fontSize: 12, color: theme.faint, marginTop: 1 },
   addFab: { borderRadius: 14, overflow: 'hidden' },
   addFabGrad: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  savingBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10, marginBottom: 12 },
-  savingText: { fontSize: 12, color: '#D97706', fontWeight: '600' },
-  memoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F3EFFE', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16 },
-  memoryText: { fontSize: 12, color: '#7C3AED', fontWeight: '600', flex: 1 },
+  savingBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderRadius: 10, padding: 10, marginBottom: 12 },
+  savingText: { fontSize: 12, color: theme.warning, fontWeight: '600' },
+  memoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.12)' : '#F3EFFE', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16 },
+  memoryText: { fontSize: 12, color: theme.accentAlt, fontWeight: '600', flex: 1 },
   emptyWrap: { alignItems: 'center', paddingTop: 60, gap: 14 },
   emptyIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#14171F' },
-  emptySubtitle: { fontSize: 13, color: '#9AA1AE', textAlign: 'center' },
-  monthLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginBottom: 10 },
-  card: { backgroundColor: '#FFFFFF', borderRadius: 18, paddingHorizontal: 14, marginBottom: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: theme.text },
+  emptySubtitle: { fontSize: 13, color: theme.faint, textAlign: 'center' },
+  monthLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginBottom: 10 },
+  card: { backgroundColor: theme.card, borderRadius: 18, paddingHorizontal: 14, marginBottom: 20 },
   listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, gap: 10 },
-  divider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  divider: { borderBottomWidth: 1, borderBottomColor: theme.border },
   rowIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowMeta: { fontSize: 12, color: '#9AA1AE' },
+  rowTitle: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowMeta: { fontSize: 12, color: theme.faint },
   tag: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   tagText: { fontSize: 10, fontWeight: '800' },
-  remindDot: { width: 22, height: 22, borderRadius: 7, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
-  overlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.55)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginBottom: 20 },
+  remindDot: { width: 22, height: 22, borderRadius: 7, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
+  overlay: { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, marginBottom: 20 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   sheetIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  input: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  chip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  chipActive: { backgroundColor: '#FEF3C7', borderColor: '#F5A623' },
-  chipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  chipTextActive: { color: '#F5A623' },
+  chip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  chipActive: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderColor: theme.warning },
+  chipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  chipTextActive: { color: theme.warning },
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },

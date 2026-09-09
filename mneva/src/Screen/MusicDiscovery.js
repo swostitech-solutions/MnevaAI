@@ -18,6 +18,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { AudioModule, createAudioPlayer } from "expo-audio";
 import { apiFetch } from "../api/client";
+import { useTheme } from "../context/ThemeContext";
 
 // Module-level registry — all active SongRow stop functions
 const _activeStopFns = new Set();
@@ -75,7 +76,7 @@ const FALLBACK_SONGS = [
 const COVER_COLORS = ["#E9C6A6","#9CB4B4","#8FA7CA","#B9A18B","#E6B17C","#BD9172","#C09099","#6D93AB","#BD9A77","#8EA373"];
 
 // ── SongRow — each song has its own player instance ─────────────────────────
-function SongRow({ title, artist, album, color, index, isSaved, onToggleSaved }) {
+function SongRow({ title, artist, album, color, index, isSaved, onToggleSaved, theme, styles }) {
   const [fetching, setFetching] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [active, setActive] = useState(false);
@@ -175,7 +176,7 @@ function SongRow({ title, artist, album, color, index, isSaved, onToggleSaved })
           <Feather name="youtube" size={17} color="#FF0000" />
         </TouchableOpacity>
         <TouchableOpacity onPress={onToggleSaved} style={styles.rowAction}>
-          <Feather name="heart" size={17} color={isSaved ? "#E44B6A" : "#8E96A3"} />
+          <Feather name="heart" size={17} color={isSaved ? theme.danger : theme.faint} />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={handlePlay}
@@ -238,6 +239,8 @@ function parseSongsFromAI(text) {
 
 // ── AI Chat Panel ────────────────────────────────────────────────────────────
 function AIChatPanel({ onSongsUpdate, currentContext }) {
+  const { theme } = useTheme();
+  const panelStyles = createPanelStyles(theme);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([
@@ -318,11 +321,11 @@ Keep it concise. User request: ${content}`;
             <Feather name="cpu" size={12} color="#fff" />
           </LinearGradient>
           <Text style={panelStyles.toggleTitle}>Mneva AI</Text>
-          {loading && <ActivityIndicator size="small" color="#1DB954" style={{ marginLeft: 8 }} />}
+          {loading && <ActivityIndicator size="small" color={theme.accent} style={{ marginLeft: 8 }} />}
         </View>
         <View style={panelStyles.toggleRight}>
           <Text style={panelStyles.toggleHint}>{open ? "Close" : "Ask AI for music"}</Text>
-          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color="#158A3E" />
+          <Feather name={open ? "chevron-down" : "chevron-up"} size={16} color={theme.accent} />
         </View>
       </TouchableOpacity>
 
@@ -343,7 +346,7 @@ Keep it concise. User request: ${content}`;
           ))}
           {loading && (
             <View style={[panelStyles.bubble, panelStyles.bubbleAi]}>
-              <ActivityIndicator size="small" color="#1DB954" />
+              <ActivityIndicator size="small" color={theme.accent} />
             </View>
           )}
         </ScrollView>
@@ -353,7 +356,7 @@ Keep it concise. User request: ${content}`;
           <TextInput
             style={panelStyles.input}
             placeholder="Ask for songs, artists, moods…"
-            placeholderTextColor="#9AA1AE"
+            placeholderTextColor={theme.placeholder}
             value={input}
             onChangeText={setInput}
             onSubmitEditing={() => sendMessage()}
@@ -375,6 +378,8 @@ Keep it concise. User request: ${content}`;
 // ── Main Screen ──────────────────────────────────────────────────────────────
 export default function MusicDiscovery({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [section, setSection] = useState("trending");
   const [selection, setSelection] = useState("India");
   const [saved, setSaved] = useState([]);
@@ -535,6 +540,8 @@ export default function MusicDiscovery({ navigation }) {
                   index={index}
                   isSaved={saved.includes(title)}
                   onToggleSaved={() => toggleSaved(title)}
+                  theme={theme}
+                  styles={styles}
                 />
               ))}
             </View>
@@ -547,23 +554,23 @@ export default function MusicDiscovery({ navigation }) {
         {/* Bottom tab bar */}
         <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
-            <Ionicons name="home" size={22} color="#9AA1AE" />
+            <Ionicons name="home" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>HOME</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Priorities")}>
-            <Feather name="calendar" size={22} color="#9AA1AE" />
+            <Feather name="calendar" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>PRIORITIES</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("AskAI")}>
-            <Feather name="mic" size={22} color="#9AA1AE" />
+            <Feather name="mic" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>ASK AI</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Space")}>
-            <Feather name="folder" size={22} color="#158A3E" />
-            <Text style={[styles.tabLabel, { color: "#158A3E" }]}>SPACE</Text>
+            <Feather name="folder" size={22} color={theme.accent} />
+            <Text style={[styles.tabLabel, { color: theme.accent }]}>SPACE</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
-            <Feather name="user" size={22} color="#9AA1AE" />
+            <Feather name="user" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>PROFILE</Text>
           </TouchableOpacity>
         </View>
@@ -572,89 +579,89 @@ export default function MusicDiscovery({ navigation }) {
   );
 }
 
-const panelStyles = StyleSheet.create({
-  wrapper: { backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#E5EBE7" },
+const createPanelStyles = (theme) => StyleSheet.create({
+  wrapper: { backgroundColor: theme.card, borderTopWidth: 1, borderTopColor: theme.border },
   toggleBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 16, paddingVertical: 11,
   },
   toggleLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   aiDot: { width: 26, height: 26, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  toggleTitle: { fontSize: 13, fontWeight: "800", color: "#14241B" },
+  toggleTitle: { fontSize: 13, fontWeight: "800", color: theme.text },
   toggleRight: { flexDirection: "row", alignItems: "center", gap: 5 },
-  toggleHint: { fontSize: 11, color: "#158A3E", fontWeight: "600" },
-  panel: { backgroundColor: "#F5FCF7" },
+  toggleHint: { fontSize: 11, color: theme.accent, fontWeight: "600" },
+  panel: { backgroundColor: theme.isDark ? "rgba(52,199,123,0.10)" : "#F5FCF7" },
   msgScroll: { flex: 1 },
   bubble: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 8, maxWidth: "88%" },
-  bubbleAi: { backgroundColor: "#FFFFFF", alignSelf: "flex-start", borderBottomLeftRadius: 4 },
-  bubbleUser: { backgroundColor: "#1DB954", alignSelf: "flex-end", borderBottomRightRadius: 4 },
-  bubbleTextAi: { fontSize: 12.5, color: "#374151", lineHeight: 18 },
+  bubbleAi: { backgroundColor: theme.card, alignSelf: "flex-start", borderBottomLeftRadius: 4 },
+  bubbleUser: { backgroundColor: theme.accent, alignSelf: "flex-end", borderBottomRightRadius: 4 },
+  bubbleTextAi: { fontSize: 12.5, color: theme.textSecondary, lineHeight: 18 },
   bubbleTextUser: { fontSize: 12.5, color: "#FFFFFF", lineHeight: 18 },
   inputRow: {
     flexDirection: "row", alignItems: "center", gap: 8,
     paddingHorizontal: 12, paddingVertical: 8,
-    borderTopWidth: 1, borderTopColor: "#E5EBE7",
+    borderTopWidth: 1, borderTopColor: theme.border,
   },
   input: {
-    flex: 1, backgroundColor: "#FFFFFF", borderRadius: 18,
+    flex: 1, backgroundColor: theme.card, borderRadius: 18,
     paddingHorizontal: 14, paddingVertical: 8,
-    fontSize: 13, color: "#14171F",
+    fontSize: 13, color: theme.text,
   },
   sendBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: "#1DB954", alignItems: "center", justifyContent: "center",
+    backgroundColor: theme.accent, alignItems: "center", justifyContent: "center",
   },
 });
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F3F6F4" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   content: { paddingHorizontal: 20, paddingTop: 14 },
   browseHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
-  sectionLabel: { fontSize: 10, fontWeight: "800", color: "#78877F", letterSpacing: 1.15, textTransform: "uppercase" },
-  browseHeading: { fontSize: 25, lineHeight: 30, fontWeight: "800", letterSpacing: -0.5, color: "#14241B", marginTop: 3 },
-  livePill: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#E0F7E8" },
-  liveDot: { height: 6, width: 6, borderRadius: 3, backgroundColor: "#1DB954" },
-  liveText: { fontSize: 9, fontWeight: "800", color: "#158A3E", letterSpacing: 0.7 },
+  sectionLabel: { fontSize: 10, fontWeight: "800", color: theme.faint, letterSpacing: 1.15, textTransform: "uppercase" },
+  browseHeading: { fontSize: 25, lineHeight: 30, fontWeight: "800", letterSpacing: -0.5, color: theme.text, marginTop: 3 },
+  livePill: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.isDark ? "rgba(52,199,123,0.16)" : "#E0F7E8" },
+  liveDot: { height: 6, width: 6, borderRadius: 3, backgroundColor: theme.accent },
+  liveText: { fontSize: 9, fontWeight: "800", color: theme.accent, letterSpacing: 0.7 },
   browseGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 9, marginTop: 18 },
-  browseCard: { width: "31.8%", height: 104, backgroundColor: "#FFFFFF", borderRadius: 18, padding: 10, justifyContent: "space-between", borderWidth: 1, borderColor: "#E9EFEB", overflow: "hidden" },
-  browseCardActive: { borderColor: "#8CDEAA", backgroundColor: "#F5FCF7", shadowColor: "#1DB954", shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  browseCard: { width: "31.8%", height: 104, backgroundColor: theme.card, borderRadius: 18, padding: 10, justifyContent: "space-between", borderWidth: 1, borderColor: theme.border, overflow: "hidden" },
+  browseCardActive: { borderColor: theme.isDark ? "rgba(52,199,123,0.5)" : "#8CDEAA", backgroundColor: theme.isDark ? "rgba(52,199,123,0.12)" : "#F5FCF7", shadowColor: "#1DB954", shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   browseIcon: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  selectedMark: { position: "absolute", top: 10, right: 9, backgroundColor: "#1DB954", width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  browseTitle: { fontSize: 10, fontWeight: "800", color: "#435049" },
-  browseTitleActive: { color: "#158A3E" },
-  agentStrip: { marginTop: 17, borderRadius: 15, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: "#158A3E", flexDirection: "row", alignItems: "center" },
-  agentIcon: { width: 25, height: 25, borderRadius: 9, backgroundColor: "#1DB954", alignItems: "center", justifyContent: "center", marginRight: 9 },
-  agentText: { color: "#D8F5E1", fontSize: 11, fontWeight: "600" },
+  selectedMark: { position: "absolute", top: 10, right: 9, backgroundColor: theme.accent, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  browseTitle: { fontSize: 10, fontWeight: "800", color: theme.textSecondary },
+  browseTitleActive: { color: theme.accent },
+  agentStrip: { marginTop: 17, borderRadius: 15, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: theme.accent, flexDirection: "row", alignItems: "center" },
+  agentIcon: { width: 25, height: 25, borderRadius: 9, backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center", marginRight: 9 },
+  agentText: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: "600" },
   agentHighlight: { color: "#FFFFFF", fontWeight: "800" },
   headingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginTop: 28 },
-  sectionHeading: { fontSize: 19, letterSpacing: -0.3, fontWeight: "800", color: "#14241B", marginTop: 4 },
-  topCount: { color: "#158A3E", fontSize: 10, fontWeight: "800", paddingBottom: 2, letterSpacing: 0.6 },
+  sectionHeading: { fontSize: 19, letterSpacing: -0.3, fontWeight: "800", color: theme.text, marginTop: 4 },
+  topCount: { color: theme.accent, fontSize: 10, fontWeight: "800", paddingBottom: 2, letterSpacing: 0.6 },
   chips: { gap: 8, paddingTop: 14, paddingBottom: 3 },
-  chip: { borderRadius: 20, backgroundColor: "#E5EBE7", paddingHorizontal: 14, paddingVertical: 9 },
-  chipActive: { backgroundColor: "#158A3E" },
-  chipText: { fontSize: 12, color: "#5D6B63", fontWeight: "700" },
+  chip: { borderRadius: 20, backgroundColor: theme.soft, paddingHorizontal: 14, paddingVertical: 9 },
+  chipActive: { backgroundColor: theme.accent },
+  chipText: { fontSize: 12, color: theme.textSecondary, fontWeight: "700" },
   chipTextActive: { color: "#FFFFFF" },
   listHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 25, marginBottom: 11 },
-  listTitle: { fontSize: 18, letterSpacing: -0.3, fontWeight: "800", color: "#14241B" },
-  listSub: { fontSize: 11, color: "#77857D", marginTop: 3 },
-  seeAll: { fontSize: 12, color: "#158A3E", fontWeight: "800" },
-  songList: { backgroundColor: "#FFFFFF", borderRadius: 20, paddingVertical: 5, shadowColor: "#243A2D", shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 2, marginBottom: 16 },
+  listTitle: { fontSize: 18, letterSpacing: -0.3, fontWeight: "800", color: theme.text },
+  listSub: { fontSize: 11, color: theme.faint, marginTop: 3 },
+  seeAll: { fontSize: 12, color: theme.accent, fontWeight: "800" },
+  songList: { backgroundColor: theme.card, borderRadius: 20, paddingVertical: 5, shadowColor: "#243A2D", shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 2, marginBottom: 16 },
   songRow: { minHeight: 70, flexDirection: "row", alignItems: "center", paddingHorizontal: 10 },
-  trackNumber: { width: 19, textAlign: "center", fontSize: 12, color: "#96A19A", fontWeight: "700" },
-  trackNumberActive: { color: "#158A3E", fontSize: 19 },
+  trackNumber: { width: 19, textAlign: "center", fontSize: 12, color: theme.faint, fontWeight: "700" },
+  trackNumberActive: { color: theme.accent, fontSize: 19 },
   cover: { width: 44, height: 44, borderRadius: 13, marginLeft: 7, alignItems: "center", justifyContent: "center" },
   songMeta: { flex: 1, marginLeft: 10, marginRight: 4 },
-  songTitle: { fontSize: 13, fontWeight: "800", color: "#1B2921" },
-  songDetails: { fontSize: 10, color: "#7D8982", marginTop: 3 },
+  songTitle: { fontSize: 13, fontWeight: "800", color: theme.text },
+  songDetails: { fontSize: 10, color: theme.muted, marginTop: 3 },
   rowAction: { padding: 5 },
-  playBtn: { backgroundColor: "#1DB954", width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginLeft: 2 },
-  playBtnActive: { backgroundColor: "#158A3E" },
+  playBtn: { backgroundColor: theme.accent, width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginLeft: 2 },
+  playBtnActive: { backgroundColor: theme.accent },
   progressWrap: { paddingHorizontal: 16, paddingBottom: 10, marginTop: -2 },
-  progressTrack: { height: 3, backgroundColor: "#E5EBE7", borderRadius: 2 },
-  progressFill: { height: 3, backgroundColor: "#1DB954", borderRadius: 2 },
-  progressTime: { fontSize: 9, color: "#9AA1AE", marginTop: 4, textAlign: "right" },
-  notFoundText: { fontSize: 10, color: "#E44B6A", marginHorizontal: 16, marginBottom: 8, marginTop: -2 },
-  tabBar: { flexDirection: "row", backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#E5EBE7", paddingTop: 10 },
+  progressTrack: { height: 3, backgroundColor: theme.border, borderRadius: 2 },
+  progressFill: { height: 3, backgroundColor: theme.accent, borderRadius: 2 },
+  progressTime: { fontSize: 9, color: theme.faint, marginTop: 4, textAlign: "right" },
+  notFoundText: { fontSize: 10, color: theme.danger, marginHorizontal: 16, marginBottom: 8, marginTop: -2 },
+  tabBar: { flexDirection: "row", backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: "center" },
-  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

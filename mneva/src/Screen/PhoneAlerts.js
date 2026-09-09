@@ -4,6 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
+import { useTheme } from '../context/ThemeContext';
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -17,6 +18,8 @@ function formatTime(iso) {
 
 export default function PhoneAlerts({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { on } = useSocket();
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +68,7 @@ export default function PhoneAlerts({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation?.goBack()} accessibilityLabel="Go back">
-          <Feather name="arrow-left" size={21} color="#14171F" />
+          <Feather name="arrow-left" size={21} color={theme.text} />
         </TouchableOpacity>
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Phone alerts</Text>
@@ -80,18 +83,18 @@ export default function PhoneAlerts({ navigation }) {
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.list, !alerts.length && styles.emptyList, { paddingBottom: insets.bottom + 28 }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAlerts(true); }} tintColor="#1F9A5A" colors={['#1F9A5A']} />}
-          ListEmptyComponent={<View style={styles.empty}><View style={styles.emptyIcon}><Feather name="smartphone" size={30} color="#9AA1AE" /></View><Text style={styles.emptyTitle}>No phone alerts yet</Text><Text style={styles.emptyText}>When Mneva captures a useful Android notification, it will appear here with guidance on what to do next.</Text></View>}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAlerts(true); }} tintColor={theme.accent} colors={[theme.accent]} />}
+          ListEmptyComponent={<View style={styles.empty}><View style={styles.emptyIcon}><Feather name="smartphone" size={30} color={theme.faint} /></View><Text style={styles.emptyTitle}>No phone alerts yet</Text><Text style={styles.emptyText}>When Mneva captures a useful Android notification, it will appear here with guidance on what to do next.</Text></View>}
           renderItem={({ item }) => (
             <TouchableOpacity style={[styles.alertCard, item.read && styles.alertCardRead]} onPress={() => openAlert(item)} activeOpacity={0.75}>
-              <View style={[styles.alertIcon, item.priority >= 85 && styles.alertIconUrgent]}><Feather name={item.priority >= 85 ? 'alert-circle' : 'bell'} size={19} color={item.priority >= 85 ? '#B42318' : '#9A6700'} /></View>
+              <View style={[styles.alertIcon, item.priority >= 85 && styles.alertIconUrgent]}><Feather name={item.priority >= 85 ? 'alert-circle' : 'bell'} size={19} color={item.priority >= 85 ? theme.danger : theme.warning} /></View>
               <View style={styles.alertCopy}>
                 <View style={styles.alertTop}><Text style={styles.appName}>{item.appName || 'Android app'}</Text><Text style={styles.time}>{formatTime(item.ts)}</Text></View>
                 <Text style={styles.alertTitle} numberOfLines={2}>{item.title || 'Phone alert'}</Text>
                 {!!item.body && <Text style={styles.alertBody} numberOfLines={2}>{item.body}</Text>}
                 <View style={styles.metaRow}><View style={[styles.priorityBadge, item.priority >= 85 && styles.priorityBadgeUrgent]}><Text style={[styles.priorityText, item.priority >= 85 && styles.priorityTextUrgent]}>{item.priority >= 85 ? 'Urgent' : item.priority >= 60 ? 'Important' : 'Review'}{item.priority ? ` · ${item.priority}` : ''}</Text></View>{!item.read && <View style={styles.newDot} />}</View>
               </View>
-              <Feather name="chevron-right" size={18} color="#9AA1AE" />
+              <Feather name="chevron-right" size={18} color={theme.faint} />
             </TouchableOpacity>
           )}
         />

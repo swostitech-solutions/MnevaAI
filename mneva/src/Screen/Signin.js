@@ -18,8 +18,11 @@ import { apiFetch, BASE_URL } from '../api/client';
 import { saveAuth } from '../storage/auth';
 import { resetSocket, getSocket } from '../services/socket';
 import { registerForPushNotifications } from '../services/pushNotifications';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Signin({ navigation }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -77,7 +80,7 @@ export default function Signin({ navigation }) {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <StatusBar style="dark" />
+        <StatusBar style={theme.statusBarStyle} />
 
         <Image
           source={require('../../assets/mneva-m-icon.png')}
@@ -95,7 +98,7 @@ export default function Signin({ navigation }) {
           <TextInput
             style={styles.input}
             placeholder="you@example.com"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={theme.placeholder}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -110,7 +113,7 @@ export default function Signin({ navigation }) {
             <TextInput
               style={styles.passwordInput}
               placeholder="••••••••"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.placeholder}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
@@ -122,7 +125,7 @@ export default function Signin({ navigation }) {
               <Ionicons
                 name={showPassword ? 'eye' : 'eye-off'}
                 size={20}
-                color="#9AA1AE"
+                color={theme.faint}
               />
             </TouchableOpacity>
           </View>
@@ -158,10 +161,10 @@ export default function Signin({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: '#FAFAFC',
+    backgroundColor: theme.bg,
   },
   container: {
     flexGrow: 1,
@@ -178,16 +181,16 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#14171F',
+    color: theme.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: theme.muted,
     marginBottom: 28,
   },
   errorText: {
-    color: '#DC2626',
+    color: theme.danger,
     fontSize: 13,
     marginBottom: 16,
     textAlign: 'center',
@@ -197,27 +200,27 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    color: '#374151',
+    color: theme.textSecondary,
     fontSize: 13,
     marginBottom: 8,
     fontWeight: '600',
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: '#E4E7EF',
+    borderColor: theme.borderStrong,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: '#14171F',
+    color: theme.text,
     fontSize: 15,
   },
   passwordRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: '#E4E7EF',
+    borderColor: theme.borderStrong,
     borderRadius: 12,
     paddingRight: 8,
   },
@@ -225,7 +228,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: '#14171F',
+    color: theme.text,
     fontSize: 15,
   },
   eyeButton: {
@@ -255,11 +258,11 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   signupText: {
-    color: '#6B7280',
+    color: theme.muted,
     fontSize: 14,
   },
   signupLink: {
-    color: '#7B5FE8',
+    color: theme.accentAlt,
     fontSize: 14,
     fontWeight: '700',
   },

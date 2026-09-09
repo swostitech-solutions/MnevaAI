@@ -12,6 +12,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from '../context/ThemeContext';
 
 const { width } = Dimensions.get("window");
 
@@ -37,6 +38,8 @@ const SLIDES = [
 ];
 
 export default function Onboarding({ navigation }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [index, setIndex] = useState(0);
   const listRef = useRef(null);
 
@@ -57,7 +60,7 @@ export default function Onboarding({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar style="dark" />
+      <StatusBar style={theme.statusBarStyle} />
 
       <TouchableOpacity style={styles.skip} onPress={handleSkip}>
         <Text style={styles.skipText}>Skip</Text>
@@ -107,10 +110,10 @@ export default function Onboarding({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FAFAFC",
+    backgroundColor: theme.bg,
   },
   skip: {
     position: "absolute",
@@ -119,7 +122,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   skipText: {
-    color: "#6B7280",
+    color: theme.muted,
     fontSize: 15,
     fontWeight: "600",
   },
@@ -137,13 +140,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     textAlign: "center",
     marginBottom: 14,
   },
   description: {
     fontSize: 15,
-    color: "#6B7280",
+    color: theme.muted,
     textAlign: "center",
     lineHeight: 22,
   },
@@ -156,11 +159,11 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#E4E7EF",
+    backgroundColor: theme.borderStrong,
     marginHorizontal: 4,
   },
   dotActive: {
-    backgroundColor: "#7B5FE8",
+    backgroundColor: theme.accentAlt,
     width: 20,
   },
   nextButton: {

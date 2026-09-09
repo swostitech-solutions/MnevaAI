@@ -11,6 +11,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
+import { useTheme } from '../../context/ThemeContext';
 import DateField from './DateField';
 
 const CATEGORIES = ['Electricity', 'Water', 'Internet', 'Mobile', 'Gas', 'Rent', 'Maintenance', 'Insurance', 'Other'];
@@ -62,6 +63,8 @@ const billDisplay = (bill) => ({
 export default function BillScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { on } = useSocket();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -186,7 +189,7 @@ export default function BillScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>{showForm ? (isEditing ? 'Edit Bill' : 'Add Bill') : 'Bills'}</Text>
@@ -194,7 +197,7 @@ export default function BillScreen({ navigation }) {
         </View>
         {showForm && isEditing ? (
           <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-            <Feather name="trash-2" size={18} color="#E0546E" />
+            <Feather name="trash-2" size={18} color={theme.danger} />
           </TouchableOpacity>
         ) : !showForm ? (
           <TouchableOpacity onPress={openAdd}>
@@ -210,7 +213,7 @@ export default function BillScreen({ navigation }) {
           <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>Bill Name <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. BESCOM Electricity" placeholderTextColor="#9AA1AE" value={form.name} onChangeText={v => setField('name', v)} />
+            <TextInput style={styles.input} placeholder="e.g. BESCOM Electricity" placeholderTextColor={theme.placeholder} value={form.name} onChangeText={v => setField('name', v)} />
 
             <Text style={styles.fieldLabel}>Bill Category <Text style={styles.required}>*</Text></Text>
             <View style={styles.chipRow}>
@@ -222,36 +225,36 @@ export default function BillScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Provider</Text>
-            <TextInput style={styles.input} placeholder="e.g. BESCOM" placeholderTextColor="#9AA1AE" value={form.provider} onChangeText={v => setField('provider', v)} />
+            <TextInput style={styles.input} placeholder="e.g. BESCOM" placeholderTextColor={theme.placeholder} value={form.provider} onChangeText={v => setField('provider', v)} />
 
             <Text style={styles.fieldLabel}>Consumer / Account Number</Text>
-            <TextInput style={styles.input} placeholder="e.g. 123456789" placeholderTextColor="#9AA1AE" value={form.accountNumber} onChangeText={v => setField('accountNumber', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 123456789" placeholderTextColor={theme.placeholder} value={form.accountNumber} onChangeText={v => setField('accountNumber', v)} />
 
             <Text style={styles.fieldLabel}>Description</Text>
-            <TextInput style={styles.input} placeholder="Any other details" placeholderTextColor="#9AA1AE" value={form.description} onChangeText={v => setField('description', v)} />
+            <TextInput style={styles.input} placeholder="Any other details" placeholderTextColor={theme.placeholder} value={form.description} onChangeText={v => setField('description', v)} />
 
             <Text style={styles.sectionLabel}>AMOUNT</Text>
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Expected Amount (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.expectedAmount} onChangeText={v => setField('expectedAmount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.expectedAmount} onChangeText={v => setField('expectedAmount', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Last Bill Amount (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.lastBillAmount} onChangeText={v => setField('lastBillAmount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.lastBillAmount} onChangeText={v => setField('lastBillAmount', v)} />
               </View>
             </View>
 
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Minimum Amount (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.minAmount} onChangeText={v => setField('minAmount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.minAmount} onChangeText={v => setField('minAmount', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Maximum Amount (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.maxAmount} onChangeText={v => setField('maxAmount', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.maxAmount} onChangeText={v => setField('maxAmount', v)} />
               </View>
             </View>
 
@@ -270,14 +273,14 @@ export default function BillScreen({ navigation }) {
             <DateField label="Next Due Date" value={form.nextDueDate} onChange={v => setField('nextDueDate', v)} />
 
             <Text style={styles.fieldLabel}>Grace Period (days)</Text>
-            <TextInput style={styles.input} placeholder="e.g. 5" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.gracePeriod} onChangeText={v => setField('gracePeriod', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 5" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.gracePeriod} onChangeText={v => setField('gracePeriod', v)} />
 
             <Text style={styles.sectionLabel}>PAYMENT</Text>
             <Text style={styles.fieldLabel}>Payment Method</Text>
-            <TextInput style={styles.input} placeholder="e.g. UPI, Card, Bank" placeholderTextColor="#9AA1AE" value={form.paymentMethod} onChangeText={v => setField('paymentMethod', v)} />
+            <TextInput style={styles.input} placeholder="e.g. UPI, Card, Bank" placeholderTextColor={theme.placeholder} value={form.paymentMethod} onChangeText={v => setField('paymentMethod', v)} />
 
             <Text style={styles.fieldLabel}>Payment Account</Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor="#9AA1AE" value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC •••• 4521" placeholderTextColor={theme.placeholder} value={form.paymentAccount} onChangeText={v => setField('paymentAccount', v)} />
 
             <Text style={styles.fieldLabel}>Auto Pay</Text>
             <View style={styles.chipRow}>
@@ -303,24 +306,24 @@ export default function BillScreen({ navigation }) {
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Late Fee (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.lateFee} onChangeText={v => setField('lateFee', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.lateFee} onChangeText={v => setField('lateFee', v)} />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Tax (₹)</Text>
-                <TextInput style={styles.input} placeholder="0" placeholderTextColor="#9AA1AE" keyboardType="decimal-pad" value={form.tax} onChangeText={v => setField('tax', v)} />
+                <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.tax} onChangeText={v => setField('tax', v)} />
               </View>
             </View>
 
             <Text style={styles.fieldLabel}>Reminder (days before due)</Text>
-            <TextInput style={styles.input} placeholder="e.g. 3" placeholderTextColor="#9AA1AE" keyboardType="number-pad" value={form.reminderDays} onChangeText={v => setField('reminderDays', v)} />
+            <TextInput style={styles.input} placeholder="e.g. 3" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.reminderDays} onChangeText={v => setField('reminderDays', v)} />
 
             <Text style={styles.fieldLabel}>Notes</Text>
-            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
+            <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
 
             <Text style={styles.fieldLabel}>Attach Bill</Text>
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} disabled={uploading}>
-              {uploading ? <ActivityIndicator size="small" color="#E0546E" /> : <Feather name="paperclip" size={16} color="#E0546E" />}
+              {uploading ? <ActivityIndicator size="small" color={theme.danger} /> : <Feather name="paperclip" size={16} color={theme.danger} />}
               <Text style={styles.attachBtnText}>{form.attachmentName || 'Attach a bill copy'}</Text>
             </TouchableOpacity>
 
@@ -336,13 +339,13 @@ export default function BillScreen({ navigation }) {
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#E0546E" colors={['#E0546E']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.danger} colors={[theme.danger]} />}
         >
           {loading ? (
             [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
           ) : displayedBills.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="file-text" size={32} color="#C7CBD3" />
+              <Feather name="file-text" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>No bills added yet. Tap + to add one.</Text>
             </View>
           ) : (
@@ -363,14 +366,14 @@ export default function BillScreen({ navigation }) {
                   </View>
                   <View style={styles.rowRight}>
                     <Text style={styles.rowAmount}>₹{(bill.amount || 0).toLocaleString('en-IN')}</Text>
-                    <View style={[styles.badge, { backgroundColor: bill.uiStatus === 'pending' ? '#FEF3C7' : '#EFFDF6' }]}>
-                      <Text style={[styles.badgeText, { color: bill.uiStatus === 'pending' ? '#D97706' : '#1F9A5A' }]}>
+                    <View style={[styles.badge, { backgroundColor: bill.uiStatus === 'pending' ? (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7') : (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') }]}>
+                      <Text style={[styles.badgeText, { color: bill.uiStatus === 'pending' ? theme.warning : theme.accent }]}>
                         {bill.uiStatus === 'pending' ? 'Pay Now' : bill.uiStatus === 'auto' ? 'Auto' : 'Paid'}
                       </Text>
                     </View>
                   </View>
                   <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit(bill.raw)} hitSlop={8}>
-                    <Feather name="edit-2" size={14} color="#9AA1AE" />
+                    <Feather name="edit-2" size={14} color={theme.faint} />
                   </TouchableOpacity>
                 </TouchableOpacity>
               ))}
@@ -393,7 +396,7 @@ export default function BillScreen({ navigation }) {
                   </View>
                 ))}
                 <View style={styles.biometricNote}>
-                  <Feather name="lock" size={13} color="#D97706" />
+                  <Feather name="lock" size={13} color={theme.warning} />
                   <Text style={styles.biometricText}>  Biometric required for payments ≥ ₹1,000</Text>
                 </View>
                 <TouchableOpacity style={styles.payBtn} onPress={handlePay} disabled={paying}>
@@ -413,47 +416,47 @@ export default function BillScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   addBtnGrad: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
   scrollContent: { paddingHorizontal: 20 },
-  skeleton: { height: 60, backgroundColor: '#F0F1F4', borderRadius: 14, marginBottom: 10 },
+  skeleton: { height: 60, backgroundColor: theme.border, borderRadius: 14, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
+  emptyText: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 19 },
 
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  sectionCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowTextWrap: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  rowSub: { fontSize: 12, color: '#9AA1AE' },
+  rowName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowSub: { fontSize: 12, color: theme.faint },
   rowRight: { alignItems: 'flex-end', gap: 4 },
-  rowAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  rowAmount: { fontSize: 15, fontWeight: '800', color: theme.text },
   badge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 10, fontWeight: '800' },
 
   formScroll: { paddingHorizontal: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#E0546E' },
-  input: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: '#14171F', marginBottom: 16 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  required: { color: theme.danger },
+  input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F5F6F8', borderWidth: 1.5, borderColor: 'transparent' },
-  selectChipActive: { backgroundColor: '#FCEAED', borderColor: '#E0546E' },
-  selectChipText: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  selectChipTextActive: { color: '#E0546E' },
+  selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
+  selectChipActive: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderColor: theme.danger },
+  selectChipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  selectChipTextActive: { color: theme.danger },
 
-  attachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FCEAED', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
-  attachBtnText: { fontSize: 13, fontWeight: '600', color: '#E0546E', flex: 1 },
+  attachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
+  attachBtnText: { fontSize: 13, fontWeight: '600', color: theme.danger, flex: 1 },
 
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },
@@ -461,18 +464,18 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 
   editIconBtn: { padding: 6, marginLeft: 4 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.6)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
-  modalSheet: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 28, padding: 24 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#14171F', textAlign: 'center', marginBottom: 8 },
-  modalAmount: { fontSize: 36, fontWeight: '800', color: '#14171F', textAlign: 'center', marginBottom: 20 },
-  modalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  modalRowKey: { fontSize: 13, color: '#9AA1AE' },
-  modalRowVal: { fontSize: 13, fontWeight: '700', color: '#14171F' },
-  biometricNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12, marginVertical: 16 },
-  biometricText: { fontSize: 12, color: '#D97706', fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: theme.overlay, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
+  modalSheet: { width: '100%', backgroundColor: theme.card, borderRadius: 28, padding: 24 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: theme.text, textAlign: 'center', marginBottom: 8 },
+  modalAmount: { fontSize: 36, fontWeight: '800', color: theme.text, textAlign: 'center', marginBottom: 20 },
+  modalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border },
+  modalRowKey: { fontSize: 13, color: theme.faint },
+  modalRowVal: { fontSize: 13, fontWeight: '700', color: theme.text },
+  biometricNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderRadius: 10, padding: 12, marginVertical: 16 },
+  biometricText: { fontSize: 12, color: theme.warning, fontWeight: '600' },
   payBtn: { borderRadius: 16, overflow: 'hidden', marginBottom: 10 },
   payBtnGrad: { paddingVertical: 16, alignItems: 'center' },
   payBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  cancelBtn: { paddingVertical: 14, alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 16 },
-  cancelBtnText: { fontSize: 15, fontWeight: '700', color: '#374151' },
+  cancelBtn: { paddingVertical: 14, alignItems: 'center', backgroundColor: theme.soft, borderRadius: 16 },
+  cancelBtnText: { fontSize: 15, fontWeight: '700', color: theme.textSecondary },
 });

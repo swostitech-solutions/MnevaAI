@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { AppState, Linking } from "react-native";
+import { StatusBar } from "expo-status-bar";
 import NetInfo from "@react-native-community/netinfo";
-import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
+import { NavigationContainer, DefaultTheme, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
 
 import Splash from "./src/Screen/Splash";
 import Onboarding from "./src/Screen/Onboarding";
@@ -89,7 +91,7 @@ const DRIVE_CALLBACK_SCREENS = {
   Slides: "Slides",
 };
 
-const AppTheme = {
+const AppLightTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
@@ -98,7 +100,17 @@ const AppTheme = {
   },
 };
 
+const AppDarkTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: "#0C0E13",
+    card: "#161922",
+  },
+};
+
 function AppInner() {
+  const { theme, isDark } = useTheme();
   const [showSplash, setShowSplash] = useState(true);
   const [initialRoute, setInitialRoute] = useState(null);
   // Purely informational — never forces logout or navigation. Shown only
@@ -371,8 +383,9 @@ function AppInner() {
 
   return (
     <SafeAreaProvider>
+      <StatusBar style={theme.statusBarStyle} />
       <NavigationContainer
-        theme={AppTheme}
+        theme={isDark ? AppDarkTheme : AppLightTheme}
         ref={navigationRef}
         onStateChange={handleNavigationStateChange}
       >
@@ -380,7 +393,7 @@ function AppInner() {
           initialRouteName={initialRoute}
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: "#FAFAFC" },
+            contentStyle: { backgroundColor: theme.bg },
             animation: "fade",
           }}
         >
@@ -462,7 +475,9 @@ function AppInner() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AppInner />
+      <ThemeProvider>
+        <AppInner />
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

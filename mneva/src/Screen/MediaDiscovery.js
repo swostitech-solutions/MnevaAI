@@ -10,6 +10,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useTheme } from "../context/ThemeContext";
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -47,6 +48,8 @@ const MEDIA_APPS = [
 export default function MediaDiscovery({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const pad = 20;
   const cardWidth = (width - pad * 2 - 12) / 2;
@@ -56,7 +59,7 @@ export default function MediaDiscovery({ navigation }) {
       {/* Header */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Media & Discovery</Text>
         <View style={{ width: 40 }} />
@@ -103,23 +106,23 @@ export default function MediaDiscovery({ navigation }) {
       {/* Bottom tab bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Home")}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Priorities")}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("AskAI")}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Space")}>
-          <Feather name="folder" size={22} color="#1F7A54" />
-          <Text style={[styles.tabLabel, { color: "#1F7A54" }]}>SPACE</Text>
+          <Feather name="folder" size={22} color={theme.accent} />
+          <Text style={[styles.tabLabel, { color: theme.accent }]}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.("Profile")}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -127,36 +130,36 @@ export default function MediaDiscovery({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFC" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "#F9FAFC",
+    backgroundColor: theme.bg,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 13,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     alignItems: "center",
     justifyContent: "center",
   },
-  topBarTitle: { fontSize: 17, fontWeight: "800", color: "#14171F" },
+  topBarTitle: { fontSize: 17, fontWeight: "800", color: theme.text },
   sectionLabel: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#9AA1AE",
+    color: theme.faint,
     textTransform: "uppercase",
     letterSpacing: 0.6,
     marginBottom: 14,
   },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 20,
     paddingVertical: 20,
     paddingHorizontal: 14,
@@ -171,15 +174,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 12,
   },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: "#14171F", marginBottom: 3 },
-  cardSub: { fontSize: 11, color: "#9AA1AE", textAlign: "center" },
+  cardTitle: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 3 },
+  cardSub: { fontSize: 11, color: theme.faint, textAlign: "center" },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.tabBarBg,
     borderTopWidth: 1,
-    borderTopColor: "#EEF0F3",
+    borderTopColor: theme.border,
     paddingTop: 10,
   },
   tabItem: { flex: 1, alignItems: "center" },
-  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

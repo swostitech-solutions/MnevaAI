@@ -10,11 +10,14 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 export default function LifeOps({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const horizontalPad = width < 360 ? 16 : 20;
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
 
@@ -203,13 +206,13 @@ export default function LifeOps({ navigation }) {
   };
 
   const QUICK_ACTIONS = [
-    { icon: 'truck', label: 'Book Cab', color: '#1F9A5A', bg: '#EFFDF6', onPress: () => { setCabResult(null); setCabStep('input'); setCabEstimate(null); setSelectedCab(null); setPickup(''); setDestination(''); setCabModal(true); } },
-    { icon: 'shopping-bag', label: 'Order Food', color: '#F5A623', bg: '#FEF3C7', onPress: () => { setFoodResult(null); setFoodStep('input'); setFoodQuery(''); setFoodSuggestions([]); setSelectedRestaurant(null); setFoodModal(true); } },
-    { icon: 'film', label: 'Book Movie', color: '#6C47FF', bg: '#F3EFFE', onPress: () => { setMovieResult(null); setMovieCity(''); setMovieTitle(''); setMovieModal(true); } },
-    { icon: 'package', label: 'Deliveries', color: '#4FA6E8', bg: '#EAF3FD', onPress: () => {} },
-    { icon: 'send', label: 'Book Flight', color: '#9B72FF', bg: '#F3EFFE', onPress: () => { setFlightResult(null); setFlightStep('input'); setFlightFrom(''); setFlightTo(''); setFlightDate(''); setFlightClass('Economy'); setSelectedFlight(null); setSelectedSeat(null); setFlightModal(true); } },
-    { icon: 'coffee', label: 'Book Hotel', color: '#E0546E', bg: '#FCEAED', onPress: () => { setHotelResult(null); setHotelStep('input'); setHotelCity(''); setHotelCheckin(''); setHotelCheckout(''); setSelectedHotel(null); setSelectedRoom(null); setHotelSearchResults([]); setHotelSearchError(null); setHotelModal(true); } },
-    { icon: 'map-pin', label: 'Track Orders', color: '#F5A623', bg: '#FEF3C7', onPress: () => { setTrackResult(null); setTrackModal(true); } },
+    { icon: 'truck', label: 'Book Cab', color: theme.accent, bg: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), onPress: () => { setCabResult(null); setCabStep('input'); setCabEstimate(null); setSelectedCab(null); setPickup(''); setDestination(''); setCabModal(true); } },
+    { icon: 'shopping-bag', label: 'Order Food', color: theme.warning, bg: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), onPress: () => { setFoodResult(null); setFoodStep('input'); setFoodQuery(''); setFoodSuggestions([]); setSelectedRestaurant(null); setFoodModal(true); } },
+    { icon: 'film', label: 'Book Movie', color: theme.accentAlt, bg: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), onPress: () => { setMovieResult(null); setMovieCity(''); setMovieTitle(''); setMovieModal(true); } },
+    { icon: 'package', label: 'Deliveries', color: theme.info, bg: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'), onPress: () => {} },
+    { icon: 'send', label: 'Book Flight', color: theme.accentAlt, bg: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), onPress: () => { setFlightResult(null); setFlightStep('input'); setFlightFrom(''); setFlightTo(''); setFlightDate(''); setFlightClass('Economy'); setSelectedFlight(null); setSelectedSeat(null); setFlightModal(true); } },
+    { icon: 'coffee', label: 'Book Hotel', color: theme.danger, bg: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'), onPress: () => { setHotelResult(null); setHotelStep('input'); setHotelCity(''); setHotelCheckin(''); setHotelCheckout(''); setSelectedHotel(null); setSelectedRoom(null); setHotelSearchResults([]); setHotelSearchError(null); setHotelModal(true); } },
+    { icon: 'map-pin', label: 'Track Orders', color: theme.warning, bg: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), onPress: () => { setTrackResult(null); setTrackModal(true); } },
   ];
 
   return (
@@ -218,7 +221,7 @@ export default function LifeOps({ navigation }) {
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#1F9A5A" colors={['#1F9A5A']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.accent} colors={[theme.accent]} />}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -227,7 +230,7 @@ export default function LifeOps({ navigation }) {
             <Text style={styles.headerSubtitle}>Cabs, food & daily operations</Text>
           </View>
           <View style={styles.headerBadge}>
-            <Feather name="zap" size={18} color="#F5A623" />
+            <Feather name="zap" size={18} color={theme.warning} />
           </View>
         </View>
 
@@ -250,21 +253,21 @@ export default function LifeOps({ navigation }) {
             [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
           ) : rides.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="navigation" size={26} color="#C7CBD3" />
+              <Feather name="navigation" size={26} color={theme.disabled} />
               <Text style={styles.emptyText}>No rides yet. Book your first cab above.</Text>
             </View>
           ) : (
             rides.map((ride, i) => (
               <View key={ride.id || i} style={[styles.listRow, i !== rides.length - 1 && styles.listRowDivider]}>
                 <View style={styles.rideIconWrap}>
-                  <Feather name="navigation" size={16} color="#1F9A5A" />
+                  <Feather name="navigation" size={16} color={theme.accent} />
                 </View>
                 <View style={styles.listTextWrap}>
                   <Text style={styles.listTitle}>{ride.pickup} → {ride.destination}</Text>
                   <Text style={styles.listSubtitle}>{ride.status} {ride.fare ? `· ₹${ride.fare}` : ''}</Text>
                 </View>
-                <View style={[styles.rideBadge, { backgroundColor: ride.status === 'completed' ? '#EFFDF6' : '#FEF3C7' }]}>
-                  <Text style={[styles.rideBadgeText, { color: ride.status === 'completed' ? '#1F9A5A' : '#D97706' }]}>
+                <View style={[styles.rideBadge, { backgroundColor: ride.status === 'completed' ? (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') : (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7') }]}>
+                  <Text style={[styles.rideBadgeText, { color: ride.status === 'completed' ? theme.accent : theme.warning }]}>
                     {ride.status || 'Pending'}
                   </Text>
                 </View>
@@ -280,14 +283,14 @@ export default function LifeOps({ navigation }) {
             [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
           ) : foodOrders.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="shopping-bag" size={26} color="#C7CBD3" />
+              <Feather name="shopping-bag" size={26} color={theme.disabled} />
               <Text style={styles.emptyText}>No orders yet. Order food above.</Text>
             </View>
           ) : (
             foodOrders.map((order, i) => (
               <View key={order.id || i} style={[styles.listRow, i !== foodOrders.length - 1 && styles.listRowDivider]}>
                 <View style={styles.foodIconWrap}>
-                  <Feather name="shopping-bag" size={16} color="#F5A623" />
+                  <Feather name="shopping-bag" size={16} color={theme.warning} />
                 </View>
                 <View style={styles.listTextWrap}>
                   <Text style={styles.listTitle}>{order.restaurant}</Text>
@@ -297,8 +300,8 @@ export default function LifeOps({ navigation }) {
                   </Text>
                 </View>
                 {order.totalAmount ? (
-                  <View style={[styles.rideBadge, { backgroundColor: '#FEF3C7' }]}>
-                    <Text style={[styles.rideBadgeText, { color: '#D97706' }]}>₹{order.totalAmount}</Text>
+                  <View style={[styles.rideBadge, { backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7') }]}>
+                    <Text style={[styles.rideBadgeText, { color: theme.warning }]}>₹{order.totalAmount}</Text>
                   </View>
                 ) : null}
               </View>
@@ -314,14 +317,14 @@ export default function LifeOps({ navigation }) {
             activeOpacity={0.8}
             onPress={() => { setMovieResult(null); setMovieStep('input'); setMovieCity(''); setMovieTitle(''); setSelectedCinema(null); setSelectedShow(null); setSelectedSeats([]); setMovieModal(true); }}
           >
-            <LinearGradient colors={['#6C47FF', '#4A2FCC']} style={styles.movieBannerIcon}>
+            <LinearGradient colors={[theme.accentAlt, '#4A2FCC']} style={styles.movieBannerIcon}>
               <Feather name="film" size={22} color="#FFFFFF" />
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={styles.movieBannerTitle}>Book Cinema Tickets</Text>
               <Text style={styles.movieBannerSub}>PVR · INOX · Cinepolis</Text>
             </View>
-            <Feather name="chevron-right" size={18} color="#6C47FF" />
+            <Feather name="chevron-right" size={18} color={theme.accentAlt} />
           </TouchableOpacity>
           {bookedTickets.length === 0 ? (
             <View style={[styles.emptyWrap, { paddingVertical: 16 }]}>
@@ -331,14 +334,14 @@ export default function LifeOps({ navigation }) {
             bookedTickets.map((t, i) => (
               <View key={i} style={[styles.listRow, i !== bookedTickets.length - 1 && styles.listRowDivider]}>
                 <View style={styles.movieIconWrap}>
-                  <Feather name="film" size={15} color="#6C47FF" />
+                  <Feather name="film" size={15} color={theme.accentAlt} />
                 </View>
                 <View style={styles.listTextWrap}>
                   <Text style={styles.listTitle}>{t.movie}</Text>
                   <Text style={styles.listSubtitle}>{t.cinema} · {t.show} · {t.seats.join(', ')}</Text>
                 </View>
-                <View style={[styles.rideBadge, { backgroundColor: '#F3EFFE' }]}>
-                  <Text style={[styles.rideBadgeText, { color: '#6C47FF' }]}>₹{t.amount}</Text>
+                <View style={[styles.rideBadge, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') }]}>
+                  <Text style={[styles.rideBadgeText, { color: theme.accentAlt }]}>₹{t.amount}</Text>
                 </View>
               </View>
             ))
@@ -353,14 +356,14 @@ export default function LifeOps({ navigation }) {
             activeOpacity={0.8}
             onPress={() => { setFlightResult(null); setFlightStep('input'); setFlightFrom(''); setFlightTo(''); setFlightDate(''); setFlightClass('Economy'); setSelectedFlight(null); setSelectedSeat(null); setFlightModal(true); }}
           >
-            <LinearGradient colors={['#9B72FF', '#7C5CE8']} style={styles.movieBannerIcon}>
+            <LinearGradient colors={[theme.accentAlt, '#7C5CE8']} style={styles.movieBannerIcon}>
               <Feather name="send" size={22} color="#FFFFFF" />
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={styles.movieBannerTitle}>Book Flight Tickets</Text>
               <Text style={styles.movieBannerSub}>IndiGo · Air India · Vistara · SpiceJet</Text>
             </View>
-            <Feather name="chevron-right" size={18} color="#9B72FF" />
+            <Feather name="chevron-right" size={18} color={theme.accentAlt} />
           </TouchableOpacity>
           {bookedFlights.length === 0 ? (
             <View style={[styles.emptyWrap, { paddingVertical: 16 }]}>
@@ -369,15 +372,15 @@ export default function LifeOps({ navigation }) {
           ) : (
             bookedFlights.map((f, i) => (
               <View key={i} style={[styles.listRow, i !== bookedFlights.length - 1 && styles.listRowDivider]}>
-                <View style={[styles.movieIconWrap, { backgroundColor: '#F3EFFE' }]}>
-                  <Feather name="send" size={15} color="#9B72FF" />
+                <View style={[styles.movieIconWrap, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') }]}>
+                  <Feather name="send" size={15} color={theme.accentAlt} />
                 </View>
                 <View style={styles.listTextWrap}>
                   <Text style={styles.listTitle}>{f.airline} {f.flight} · Seat {f.seat}</Text>
                   <Text style={styles.listSubtitle}>{f.from} → {f.to} · {f.depart} · {f.class}</Text>
                 </View>
-                <View style={[styles.rideBadge, { backgroundColor: '#F3EFFE' }]}>
-                  <Text style={[styles.rideBadgeText, { color: '#9B72FF' }]}>₹{f.price.toLocaleString('en-IN')}</Text>
+                <View style={[styles.rideBadge, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') }]}>
+                  <Text style={[styles.rideBadgeText, { color: theme.accentAlt }]}>₹{f.price.toLocaleString('en-IN')}</Text>
                 </View>
               </View>
             ))
@@ -392,14 +395,14 @@ export default function LifeOps({ navigation }) {
             activeOpacity={0.8}
             onPress={() => { setHotelResult(null); setHotelStep('input'); setHotelCity(''); setHotelCheckin(''); setHotelCheckout(''); setSelectedHotel(null); setSelectedRoom(null); setHotelSearchResults([]); setHotelSearchError(null); setHotelModal(true); }}
           >
-            <LinearGradient colors={['#E0546E', '#C8405A']} style={styles.movieBannerIcon}>
+            <LinearGradient colors={[theme.danger, '#C8405A']} style={styles.movieBannerIcon}>
               <Feather name="home" size={22} color="#FFFFFF" />
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={styles.movieBannerTitle}>Book Hotel Stay</Text>
               <Text style={styles.movieBannerSub}>MakeMyTrip · Goibibo · OYO</Text>
             </View>
-            <Feather name="chevron-right" size={18} color="#E0546E" />
+            <Feather name="chevron-right" size={18} color={theme.danger} />
           </TouchableOpacity>
           {bookedHotels.length === 0 ? (
             <View style={[styles.emptyWrap, { paddingVertical: 16 }]}>
@@ -408,15 +411,15 @@ export default function LifeOps({ navigation }) {
           ) : (
             bookedHotels.map((h, i) => (
               <View key={i} style={[styles.listRow, i !== bookedHotels.length - 1 && styles.listRowDivider]}>
-                <View style={[styles.movieIconWrap, { backgroundColor: '#FCEAED' }]}>
-                  <Feather name="home" size={15} color="#E0546E" />
+                <View style={[styles.movieIconWrap, { backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]}>
+                  <Feather name="home" size={15} color={theme.danger} />
                 </View>
                 <View style={styles.listTextWrap}>
                   <Text style={styles.listTitle}>{h.hotel}</Text>
                   <Text style={styles.listSubtitle}>{h.room} · {h.city} · {h.checkin} → {h.checkout}</Text>
                 </View>
-                <View style={[styles.rideBadge, { backgroundColor: '#FCEAED' }]}>
-                  <Text style={[styles.rideBadgeText, { color: '#E0546E' }]}>₹{h.price.toLocaleString('en-IN')}</Text>
+                <View style={[styles.rideBadge, { backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]}>
+                  <Text style={[styles.rideBadgeText, { color: theme.danger }]}>₹{h.price.toLocaleString('en-IN')}</Text>
                 </View>
               </View>
             ))
@@ -433,7 +436,7 @@ export default function LifeOps({ navigation }) {
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.agentHeader}>
-              <LinearGradient colors={['#1F9A5A', '#3CB37A']} style={styles.agentIconGrad}>
+              <LinearGradient colors={[theme.accent, '#3CB37A']} style={styles.agentIconGrad}>
                 <Feather name="navigation" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
@@ -446,7 +449,7 @@ export default function LifeOps({ navigation }) {
               </View>
               {cabStep === 'options' && (
                 <TouchableOpacity onPress={() => setCabStep('input')} style={styles.backChip}>
-                  <Feather name="arrow-left" size={14} color="#1F9A5A" />
+                  <Feather name="arrow-left" size={14} color={theme.accent} />
                 </TouchableOpacity>
               )}
             </View>
@@ -456,21 +459,21 @@ export default function LifeOps({ navigation }) {
                 <View style={styles.routeInputBlock}>
                   <View style={styles.routeInputRow}>
                     <View style={styles.routeDotGreen} />
-                    <TextInput style={styles.routeInput} placeholder="Pickup — current location or address" placeholderTextColor="#9AA1AE" value={pickup} onChangeText={setPickup} />
+                    <TextInput style={styles.routeInput} placeholder="Pickup — current location or address" placeholderTextColor={theme.placeholder} value={pickup} onChangeText={setPickup} />
                   </View>
                   <View style={styles.routeInputDivider} />
                   <View style={styles.routeInputRow}>
-                    <Feather name="map-pin" size={13} color="#E0546E" />
-                    <TextInput style={styles.routeInput} placeholder="Destination — where to?" placeholderTextColor="#9AA1AE" value={destination} onChangeText={setDestination} />
+                    <Feather name="map-pin" size={13} color={theme.danger} />
+                    <TextInput style={styles.routeInput} placeholder="Destination — where to?" placeholderTextColor={theme.placeholder} value={destination} onChangeText={setDestination} />
                   </View>
                 </View>
                 <View style={styles.aiContextRow}>
-                  <Feather name="zap" size={12} color="#1F9A5A" />
+                  <Feather name="zap" size={12} color={theme.accent} />
                   <Text style={styles.aiContextText}>AI fetches live fare estimates across Ola, Rapido & Auto</Text>
                 </View>
                 {cabError ? (
                   <View style={styles.errorRow}>
-                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Feather name="alert-circle" size={13} color={theme.danger} />
                     <Text style={styles.errorText}>{cabError}</Text>
                   </View>
                 ) : null}
@@ -479,7 +482,7 @@ export default function LifeOps({ navigation }) {
                   onPress={fetchCabEstimate}
                   disabled={!pickup.trim() || !destination.trim() || fetchingCab}
                 >
-                  <LinearGradient colors={['#1F9A5A', '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.accent, '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="search" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{fetchingCab ? 'Fetching fares…' : 'See Fare Options'}</Text>
                   </LinearGradient>
@@ -508,7 +511,7 @@ export default function LifeOps({ navigation }) {
                       </View>
                       {selectedCab?.type === opt.type && (
                         <View style={styles.cabOptionCheck}>
-                          <Feather name="check-circle" size={18} color="#1F9A5A" />
+                          <Feather name="check-circle" size={18} color={theme.accent} />
                         </View>
                       )}
                     </TouchableOpacity>
@@ -519,7 +522,7 @@ export default function LifeOps({ navigation }) {
                   onPress={confirmCab}
                   disabled={!selectedCab || bookingCab}
                 >
-                  <LinearGradient colors={['#1F9A5A', '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.accent, '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="navigation" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{bookingCab ? 'Confirming…' : selectedCab ? `Confirm ${selectedCab.label} · ₹${selectedCab.fare}` : 'Select a ride'}</Text>
                   </LinearGradient>
@@ -529,18 +532,18 @@ export default function LifeOps({ navigation }) {
 
             {cabStep === 'confirmed' && cabResult && (
               <View style={styles.resultWrap}>
-                <LinearGradient colors={['#EFFDF6', '#D4F5E5']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#1F9A5A" />
+                <LinearGradient colors={theme.isDark ? ['rgba(52,199,123,0.22)', 'rgba(52,199,123,0.34)'] : [(theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), '#D4F5E5']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color={theme.accent} />
                 </LinearGradient>
                 <Text style={styles.resultTitle}>Ride Confirmed!</Text>
                 <Text style={styles.resultSub}>{cabResult.driver} is on the way</Text>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#EFFDF6', marginTop: 12 }]}>
-                  <Feather name="truck" size={13} color="#1F9A5A" />
-                  <Text style={[styles.resultInfoChipText, { color: '#1F5C3A' }]}>{cabResult.carModel} · ₹{cabResult.fare} · {cabResult.etaMin} min</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), marginTop: 12 }]}>
+                  <Feather name="truck" size={13} color={theme.accent} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.accent }]}>{cabResult.carModel} · ₹{cabResult.fare} · {cabResult.etaMin} min</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="hash" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{cabResult.bookingId}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{cabResult.bookingId}</Text>
                 </View>
                 <TouchableOpacity style={styles.resultDoneBtn} onPress={() => setCabModal(false)}>
                   <Text style={styles.resultDoneBtnText}>Done</Text>
@@ -560,7 +563,7 @@ export default function LifeOps({ navigation }) {
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.agentHeader}>
-              <LinearGradient colors={['#9B72FF', '#7C5CE8']} style={styles.agentIconGrad}>
+              <LinearGradient colors={[theme.accentAlt, '#7C5CE8']} style={styles.agentIconGrad}>
                 <Feather name="send" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
@@ -570,8 +573,8 @@ export default function LifeOps({ navigation }) {
                 <Text style={styles.agentSubtitle}>IndiGo · Air India · Vistara</Text>
               </View>
               {(flightStep === 'flights' || flightStep === 'seats') && (
-                <TouchableOpacity onPress={() => setFlightStep(flightStep === 'seats' ? 'flights' : 'input')} style={[styles.backChip, { borderColor: '#9B72FF' }]}>
-                  <Feather name="arrow-left" size={14} color="#9B72FF" />
+                <TouchableOpacity onPress={() => setFlightStep(flightStep === 'seats' ? 'flights' : 'input')} style={[styles.backChip, { borderColor: theme.accentAlt }]}>
+                  <Feather name="arrow-left" size={14} color={theme.accentAlt} />
                 </TouchableOpacity>
               )}
             </View>
@@ -581,18 +584,18 @@ export default function LifeOps({ navigation }) {
               <>
                 <View style={styles.routeInputBlock}>
                   <View style={styles.routeInputRow}>
-                    <View style={[styles.routeDotGreen, { backgroundColor: '#9B72FF' }]} />
-                    <TextInput style={styles.routeInput} placeholder="From — IATA code e.g. BLR" placeholderTextColor="#9AA1AE" value={flightFrom} onChangeText={t => setFlightFrom(t.toUpperCase())} autoCapitalize="characters" maxLength={3} />
+                    <View style={[styles.routeDotGreen, { backgroundColor: theme.accentAlt }]} />
+                    <TextInput style={styles.routeInput} placeholder="From — IATA code e.g. BLR" placeholderTextColor={theme.placeholder} value={flightFrom} onChangeText={t => setFlightFrom(t.toUpperCase())} autoCapitalize="characters" maxLength={3} />
                   </View>
                   <View style={styles.routeInputDivider} />
                   <View style={styles.routeInputRow}>
-                    <Feather name="map-pin" size={13} color="#E0546E" />
-                    <TextInput style={styles.routeInput} placeholder="To — IATA code e.g. BOM" placeholderTextColor="#9AA1AE" value={flightTo} onChangeText={t => setFlightTo(t.toUpperCase())} autoCapitalize="characters" maxLength={3} />
+                    <Feather name="map-pin" size={13} color={theme.danger} />
+                    <TextInput style={styles.routeInput} placeholder="To — IATA code e.g. BOM" placeholderTextColor={theme.placeholder} value={flightTo} onChangeText={t => setFlightTo(t.toUpperCase())} autoCapitalize="characters" maxLength={3} />
                   </View>
                 </View>
                 <Text style={styles.inputLabel}>Date</Text>
                 <TouchableOpacity style={styles.modalInput} onPress={() => setShowFlightDatePicker(true)}>
-                  <Text style={{ color: flightDate ? '#1A1D23' : '#9AA1AE', fontSize: 14 }}>{flightDate || 'Select date'}</Text>
+                  <Text style={{ color: flightDate ? theme.text : theme.faint, fontSize: 14 }}>{flightDate || 'Select date'}</Text>
                 </TouchableOpacity>
                 {showFlightDatePicker && (
                   <DateTimePicker
@@ -611,21 +614,21 @@ export default function LifeOps({ navigation }) {
                   {['Economy', 'Business', 'First'].map(c => (
                     <TouchableOpacity key={c} onPress={() => setFlightClass(c)}
                       style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
-                        backgroundColor: flightClass === c ? '#9B72FF' : '#F5F6F8',
-                        borderWidth: 1.5, borderColor: flightClass === c ? '#9B72FF' : 'transparent' }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: flightClass === c ? '#FFFFFF' : '#374151' }}>{c}</Text>
+                        backgroundColor: flightClass === c ? theme.accentAlt : theme.surfaceAlt,
+                        borderWidth: 1.5, borderColor: flightClass === c ? theme.accentAlt : 'transparent' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: flightClass === c ? '#FFFFFF' : theme.textSecondary }}>{c}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
                 {flightSearchError ? (
                   <View style={styles.errorRow}>
-                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Feather name="alert-circle" size={13} color={theme.danger} />
                     <Text style={styles.errorText}>{flightSearchError}</Text>
                   </View>
                 ) : null}
-                <View style={[styles.aiContextRow, { backgroundColor: '#F3EFFE' }]}>
-                  <Feather name="zap" size={12} color="#9B72FF" />
-                  <Text style={[styles.aiContextText, { color: '#7C5CE8' }]}>Live flight prices via Skyscanner — real availability</Text>
+                <View style={[styles.aiContextRow, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') }]}>
+                  <Feather name="zap" size={12} color={theme.accentAlt} />
+                  <Text style={[styles.aiContextText, { color: theme.accentAlt }]}>Live flight prices via Skyscanner — real availability</Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.actionBtn, (!flightFrom.trim() || !flightTo.trim() || !flightDate) && styles.actionBtnDisabled]}
@@ -645,7 +648,7 @@ export default function LifeOps({ navigation }) {
                     }
                   }}
                 >
-                  <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.accentAlt, '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="search" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{flightSearchLoading ? 'Searching live flights…' : 'Search Flights'}</Text>
                   </LinearGradient>
@@ -661,8 +664,8 @@ export default function LifeOps({ navigation }) {
                   {flightSearchResults.map((f) => (
                     <TouchableOpacity key={f.id}
                       style={[styles.cabOptionCard, selectedFlight?.id === f.id && styles.cabOptionCardSelected,
-                        { borderColor: selectedFlight?.id === f.id ? '#9B72FF' : 'transparent',
-                          backgroundColor: selectedFlight?.id === f.id ? '#F3EFFE' : '#F5F6F8' }]}
+                        { borderColor: selectedFlight?.id === f.id ? theme.accentAlt : 'transparent',
+                          backgroundColor: selectedFlight?.id === f.id ? (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') : theme.surfaceAlt }]}
                       onPress={() => { setSelectedFlight(f); setSelectedSeat(null); setFlightStep('seats'); }}
                       activeOpacity={0.8}>
                       <View style={styles.cabOptionLeft}>
@@ -671,7 +674,7 @@ export default function LifeOps({ navigation }) {
                         <Text style={styles.cabOptionDriver}>{f.duration} · {f.stops === 0 ? 'Non-stop' : f.stops + ' stop'}</Text>
                       </View>
                       <View style={styles.cabOptionRight}>
-                        <Text style={[styles.cabOptionFare, { color: '#9B72FF' }]}>{f.priceFormatted}</Text>
+                        <Text style={[styles.cabOptionFare, { color: theme.accentAlt }]}>{f.priceFormatted}</Text>
                         <Text style={styles.cabOptionEta}>{flightClass}</Text>
                       </View>
                     </TouchableOpacity>
@@ -693,9 +696,9 @@ export default function LifeOps({ navigation }) {
                       <TouchableOpacity key={seat} disabled={taken}
                         onPress={() => setSelectedSeat(seat)}
                         style={{ width: 52, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: taken ? '#E5E7EB' : picked ? '#9B72FF' : '#F3EFFE',
-                          borderWidth: 1.5, borderColor: taken ? '#D1D5DB' : picked ? '#7C5CE8' : '#C4B5FD' }}>
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: taken ? '#9CA3AF' : picked ? '#FFFFFF' : '#7C5CE8' }}>{seat}</Text>
+                          backgroundColor: taken ? theme.border : picked ? theme.accentAlt : (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'),
+                          borderWidth: 1.5, borderColor: taken ? theme.borderStrong : picked ? theme.accentAlt : (theme.isDark ? 'rgba(129,128,255,0.4)' : '#C4B5FD') }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: taken ? theme.disabled : picked ? '#FFFFFF' : theme.accentAlt }}>{seat}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -731,7 +734,7 @@ export default function LifeOps({ navigation }) {
                     }
                   }}
                 >
-                  <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.accentAlt, '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="credit-card" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{bookingFlight ? 'Booking…' : `Confirm — ${selectedFlight.priceFormatted}`}</Text>
                   </LinearGradient>
@@ -742,39 +745,39 @@ export default function LifeOps({ navigation }) {
             {/* Step 4 — Confirmed */}
             {flightStep === 'confirmed' && flightResult && (
               <View style={styles.resultWrap}>
-                <LinearGradient colors={['#F3EFFE', '#E9E0FF']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#9B72FF" />
+                <LinearGradient colors={theme.isDark ? ['rgba(129,128,255,0.22)', 'rgba(129,128,255,0.34)'] : [(theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), '#E9E0FF']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color={theme.accentAlt} />
                 </LinearGradient>
                 <Text style={styles.resultTitle}>Flight Booked!</Text>
                 <Text style={styles.resultSub}>Have a great flight ✈️</Text>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F3EFFE', marginTop: 12 }]}>
-                  <Feather name="send" size={13} color="#9B72FF" />
-                  <Text style={[styles.resultInfoChipText, { color: '#7C5CE8' }]}>{flightResult.airline} {flightResult.flightCode} · {flightResult.depart} → {flightResult.arrive}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), marginTop: 12 }]}>
+                  <Feather name="send" size={13} color={theme.accentAlt} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.accentAlt }]}>{flightResult.airline} {flightResult.flightCode} · {flightResult.depart} → {flightResult.arrive}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="map-pin" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{flightResult.from} → {flightResult.to} · {flightResult.date}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="map-pin" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{flightResult.from} → {flightResult.to} · {flightResult.date}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="tag" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>Seat {flightResult.seat} · {flightResult.cabinClass} · ₹{Number(flightResult.price).toLocaleString('en-IN')}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="tag" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>Seat {flightResult.seat} · {flightResult.cabinClass} · ₹{Number(flightResult.price).toLocaleString('en-IN')}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="hash" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{flightResult.bookingId}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{flightResult.bookingId}</Text>
                 </View>
                 <Text style={styles.resultSub}>Complete payment on Skyscanner ✈️</Text>
                 <TouchableOpacity
                   style={[styles.actionBtn, { marginTop: 8 }]}
                   onPress={() => Linking.openURL(flightResult.deepLink)}
                 >
-                  <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.accentAlt, '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="external-link" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>Complete on Skyscanner</Text>
                   </LinearGradient>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#F3EFFE' }]} onPress={() => setFlightModal(false)}>
-                  <Text style={[styles.resultDoneBtnText, { color: '#9B72FF' }]}>Done</Text>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') }]} onPress={() => setFlightModal(false)}>
+                  <Text style={[styles.resultDoneBtnText, { color: theme.accentAlt }]}>Done</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -791,7 +794,7 @@ export default function LifeOps({ navigation }) {
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.agentHeader}>
-              <LinearGradient colors={['#E0546E', '#C8405A']} style={styles.agentIconGrad}>
+              <LinearGradient colors={[theme.danger, '#C8405A']} style={styles.agentIconGrad}>
                 <Feather name="home" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
@@ -801,8 +804,8 @@ export default function LifeOps({ navigation }) {
                 <Text style={styles.agentSubtitle}>MakeMyTrip · Goibibo · OYO</Text>
               </View>
               {(hotelStep === 'options' || hotelStep === 'room') && (
-                <TouchableOpacity onPress={() => setHotelStep(hotelStep === 'room' ? 'options' : 'input')} style={[styles.backChip, { borderColor: '#E0546E' }]}>
-                  <Feather name="arrow-left" size={14} color="#E0546E" />
+                <TouchableOpacity onPress={() => setHotelStep(hotelStep === 'room' ? 'options' : 'input')} style={[styles.backChip, { borderColor: theme.danger }]}>
+                  <Feather name="arrow-left" size={14} color={theme.danger} />
                 </TouchableOpacity>
               )}
             </View>
@@ -812,12 +815,12 @@ export default function LifeOps({ navigation }) {
             {hotelStep === 'input' && (
               <>
                 <Text style={styles.inputLabel}>City</Text>
-                <TextInput style={styles.modalInput} placeholder="e.g. Goa, Delhi, Mumbai" placeholderTextColor="#9AA1AE" value={hotelCity} onChangeText={setHotelCity} />
+                <TextInput style={styles.modalInput} placeholder="e.g. Goa, Delhi, Mumbai" placeholderTextColor={theme.placeholder} value={hotelCity} onChangeText={setHotelCity} />
                 <View style={styles.dateRow}>
                   <View style={styles.dateCol}>
                     <Text style={styles.inputLabel}>Check-in</Text>
                     <TouchableOpacity style={styles.modalInput} onPress={() => setShowCheckinPicker(true)}>
-                      <Text style={{ color: hotelCheckin ? '#1A1D23' : '#9AA1AE', fontSize: 14 }}>
+                      <Text style={{ color: hotelCheckin ? theme.text : theme.faint, fontSize: 14 }}>
                         {hotelCheckin || 'Select date'}
                       </Text>
                     </TouchableOpacity>
@@ -837,7 +840,7 @@ export default function LifeOps({ navigation }) {
                   <View style={styles.dateCol}>
                     <Text style={styles.inputLabel}>Check-out</Text>
                     <TouchableOpacity style={styles.modalInput} onPress={() => setShowCheckoutPicker(true)}>
-                      <Text style={{ color: hotelCheckout ? '#1A1D23' : '#9AA1AE', fontSize: 14 }}>
+                      <Text style={{ color: hotelCheckout ? theme.text : theme.faint, fontSize: 14 }}>
                         {hotelCheckout || 'Select date'}
                       </Text>
                     </TouchableOpacity>
@@ -857,13 +860,13 @@ export default function LifeOps({ navigation }) {
                 </View>
                 {hotelSearchError ? (
                   <View style={styles.errorRow}>
-                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Feather name="alert-circle" size={13} color={theme.danger} />
                     <Text style={styles.errorText}>{hotelSearchError}</Text>
                   </View>
                 ) : null}
-                <View style={[styles.aiContextRow, { backgroundColor: '#FCEAED' }]}>
-                  <Feather name="zap" size={12} color="#E0546E" />
-                  <Text style={[styles.aiContextText, { color: '#7B1D2E' }]}>Live hotel inventory via Booking.com — real prices, real availability</Text>
+                <View style={[styles.aiContextRow, { backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]}>
+                  <Feather name="zap" size={12} color={theme.danger} />
+                  <Text style={[styles.aiContextText, { color: theme.danger }]}>Live hotel inventory via Booking.com — real prices, real availability</Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.actionBtn, (!hotelCity.trim() || !hotelCheckin.trim() || !hotelCheckout.trim()) && styles.actionBtnDisabled]}
@@ -883,7 +886,7 @@ export default function LifeOps({ navigation }) {
                     }
                   }}
                 >
-                  <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.danger, '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="search" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{hotelSearchLoading ? 'Searching live inventory…' : 'Search Hotels'}</Text>
                   </LinearGradient>
@@ -899,8 +902,8 @@ export default function LifeOps({ navigation }) {
                   {hotelSearchResults.map((h, i) => (
                     <TouchableOpacity key={h.offerId || i}
                       style={[styles.cabOptionCard, selectedHotel?.offerId === h.offerId && styles.cabOptionCardSelected,
-                        { borderColor: selectedHotel?.offerId === h.offerId ? '#E0546E' : 'transparent',
-                          backgroundColor: selectedHotel?.offerId === h.offerId ? '#FCEAED' : '#F5F6F8' }]}
+                        { borderColor: selectedHotel?.offerId === h.offerId ? theme.danger : 'transparent',
+                          backgroundColor: selectedHotel?.offerId === h.offerId ? (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') : theme.surfaceAlt }]}
                       onPress={() => { setSelectedHotel(h); setHotelStep('room'); }}
                       activeOpacity={0.8}>
                       <View style={styles.cabOptionLeft}>
@@ -909,7 +912,7 @@ export default function LifeOps({ navigation }) {
                         <Text style={styles.cabOptionDriver}>{h.checkIn} → {h.checkOut}</Text>
                       </View>
                       <View style={styles.cabOptionRight}>
-                        <Text style={[styles.cabOptionFare, { color: '#E0546E' }]}>₹{Math.round(h.price).toLocaleString('en-IN')}</Text>
+                        <Text style={[styles.cabOptionFare, { color: theme.danger }]}>₹{Math.round(h.price).toLocaleString('en-IN')}</Text>
                         <Text style={styles.cabOptionEta}>total</Text>
                       </View>
                     </TouchableOpacity>
@@ -923,20 +926,20 @@ export default function LifeOps({ navigation }) {
               <>
                 <Text style={[styles.inputLabel, { marginBottom: 4 }]}>{selectedHotel.name}</Text>
                 <Text style={[styles.listSubtitle, { marginBottom: 14 }]}>Confirm your room</Text>
-                <View style={[styles.cabOptionCard, { borderColor: '#E0546E', backgroundColor: '#FCEAED', borderWidth: 2 }]}>
+                <View style={[styles.cabOptionCard, { borderColor: theme.danger, backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'), borderWidth: 2 }]}>
                   <View style={styles.cabOptionLeft}>
                     <Text style={styles.cabOptionLabel}>{selectedHotel.roomType}</Text>
                     <Text style={styles.cabOptionMeta}>{selectedHotel.beds || 'Standard configuration'}</Text>
                     <Text style={styles.cabOptionDriver}>{selectedHotel.boardType || 'Room only'} · {selectedHotel.checkIn} → {selectedHotel.checkOut}</Text>
                   </View>
                   <View style={styles.cabOptionRight}>
-                    <Text style={[styles.cabOptionFare, { color: '#E0546E' }]}>₹{Math.round(selectedHotel.price).toLocaleString('en-IN')}</Text>
+                    <Text style={[styles.cabOptionFare, { color: theme.danger }]}>₹{Math.round(selectedHotel.price).toLocaleString('en-IN')}</Text>
                     <Text style={styles.cabOptionEta}>total</Text>
                   </View>
                 </View>
-                <View style={[styles.aiContextRow, { backgroundColor: '#FCEAED', marginTop: 12 }]}>
-                  <Feather name="shield" size={12} color="#E0546E" />
-                  <Text style={[styles.aiContextText, { color: '#7B1D2E' }]}>Real inventory via Booking.com. Payment is completed on their platform after confirmation.</Text>
+                <View style={[styles.aiContextRow, { backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'), marginTop: 12 }]}>
+                  <Feather name="shield" size={12} color={theme.danger} />
+                  <Text style={[styles.aiContextText, { color: theme.danger }]}>Real inventory via Booking.com. Payment is completed on their platform after confirmation.</Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.actionBtn, { marginTop: 12 }]}
@@ -978,7 +981,7 @@ export default function LifeOps({ navigation }) {
                     }
                   }}
                 >
-                  <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.danger, '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="credit-card" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{bookingHotel ? 'Reserving…' : `Confirm · ₹${Math.round(selectedHotel.price).toLocaleString('en-IN')}`}</Text>
                   </LinearGradient>
@@ -989,40 +992,40 @@ export default function LifeOps({ navigation }) {
             {/* Step 4 — Confirmed */}
             {hotelStep === 'confirmed' && hotelResult && (
               <View style={styles.resultWrap}>
-                <LinearGradient colors={['#FCEAED', '#FAD4DB']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#E0546E" />
+                <LinearGradient colors={theme.isDark ? ['rgba(241,113,134,0.22)', 'rgba(241,113,134,0.34)'] : [(theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'), '#FAD4DB']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color={theme.danger} />
                 </LinearGradient>
                 <Text style={styles.resultTitle}>Hotel Reserved!</Text>
                 <Text style={styles.resultSub}>Complete payment on Booking.com 🏨</Text>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#FCEAED', marginTop: 12 }]}>
-                  <Feather name="home" size={13} color="#E0546E" />
-                  <Text style={[styles.resultInfoChipText, { color: '#C8405A' }]}>{hotelResult.hotel} · {hotelResult.room}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'), marginTop: 12 }]}>
+                  <Feather name="home" size={13} color={theme.danger} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.danger }]}>{hotelResult.hotel} · {hotelResult.room}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="map-pin" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{hotelResult.city}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="map-pin" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{hotelResult.city}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="calendar" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{hotelResult.checkin} → {hotelResult.checkout} · ₹{hotelResult.price.toLocaleString('en-IN')}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="calendar" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{hotelResult.checkin} → {hotelResult.checkout} · ₹{hotelResult.price.toLocaleString('en-IN')}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="hash" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{hotelResult.bookingId}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{hotelResult.bookingId}</Text>
                 </View>
                 {hotelResult.deepLink && (
                   <TouchableOpacity
                     style={[styles.actionBtn, { marginTop: 16, width: '100%' }]}
                     onPress={() => Linking.openURL(hotelResult.deepLink)}
                   >
-                    <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                    <LinearGradient colors={[theme.danger, '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                       <Feather name="external-link" size={15} color="#FFFFFF" />
                       <Text style={styles.actionBtnText}>Complete on Booking.com</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#FCEAED' }]} onPress={() => setHotelModal(false)}>
-                  <Text style={[styles.resultDoneBtnText, { color: '#E0546E' }]}>Done</Text>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]} onPress={() => setHotelModal(false)}>
+                  <Text style={[styles.resultDoneBtnText, { color: theme.danger }]}>Done</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1039,39 +1042,39 @@ export default function LifeOps({ navigation }) {
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.agentHeader}>
-              <LinearGradient colors={['#4FA6E8', '#2E86C8']} style={styles.agentIconGrad}>
+              <LinearGradient colors={[theme.info, '#2E86C8']} style={styles.agentIconGrad}>
                 <Feather name="map-pin" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
                 <Text style={styles.agentTitle}>Track Order</Text>
                 <Text style={styles.agentSubtitle}>Amazon · Flipkart · Meesho</Text>
               </View>
-              <View style={[styles.agentPill, { backgroundColor: '#EAF3FD' }]}>
-                <View style={[styles.agentPillDot, { backgroundColor: '#4FA6E8' }]} />
-                <Text style={[styles.agentPillText, { color: '#2E86C8' }]}>AI Ready</Text>
+              <View style={[styles.agentPill, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD') }]}>
+                <View style={[styles.agentPillDot, { backgroundColor: theme.info }]} />
+                <Text style={[styles.agentPillText, { color: theme.info }]}>AI Ready</Text>
               </View>
             </View>
             {trackResult ? (
               <View style={styles.resultWrap}>
-                <LinearGradient colors={['#EAF3FD', '#C8E4F8']} style={styles.resultIconWrap}>
-                  <Feather name="package" size={28} color="#4FA6E8" />
+                <LinearGradient colors={theme.isDark ? ['rgba(107,184,240,0.22)', 'rgba(107,184,240,0.34)'] : [(theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'), '#C8E4F8']} style={styles.resultIconWrap}>
+                  <Feather name="package" size={28} color={theme.info} />
                 </LinearGradient>
                 <Text style={styles.resultTitle}>{trackResult.status || 'In Transit'}</Text>
                 <Text style={styles.resultSub}>Your AI twin fetched the latest update</Text>
                 {trackResult.location ? (
-                  <View style={[styles.resultInfoChip, { backgroundColor: '#EAF3FD', marginTop: 12 }]}>
-                    <Feather name="map-pin" size={13} color="#4FA6E8" />
-                    <Text style={[styles.resultInfoChipText, { color: '#2E86C8' }]}>{trackResult.location}</Text>
+                  <View style={[styles.resultInfoChip, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'), marginTop: 12 }]}>
+                    <Feather name="map-pin" size={13} color={theme.info} />
+                    <Text style={[styles.resultInfoChipText, { color: theme.info }]}>{trackResult.location}</Text>
                   </View>
                 ) : null}
                 {trackResult.eta ? (
-                  <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                    <Feather name="clock" size={13} color="#6B7280" />
-                    <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>ETA: {trackResult.eta}</Text>
+                  <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                    <Feather name="clock" size={13} color={theme.muted} />
+                    <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>ETA: {trackResult.eta}</Text>
                   </View>
                 ) : null}
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#EAF3FD' }]} onPress={() => { setTrackModal(false); setTrackId(''); setTrackResult(null); }}>
-                  <Text style={[styles.resultDoneBtnText, { color: '#4FA6E8' }]}>Done</Text>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD') }]} onPress={() => { setTrackModal(false); setTrackId(''); setTrackResult(null); }}>
+                  <Text style={[styles.resultDoneBtnText, { color: theme.info }]}>Done</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -1080,21 +1083,21 @@ export default function LifeOps({ navigation }) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="e.g. 408-1234567-8901234"
-                  placeholderTextColor="#9AA1AE"
+                  placeholderTextColor={theme.placeholder}
                   value={trackId}
                   onChangeText={setTrackId}
                   autoCapitalize="characters"
                 />
-                <View style={[styles.aiContextRow, { backgroundColor: '#EAF3FD' }]}>
-                  <Feather name="zap" size={12} color="#4FA6E8" />
-                  <Text style={[styles.aiContextText, { color: '#1A5276' }]}>AI will pull real-time status from Amazon, Flipkart, Delhivery & more</Text>
+                <View style={[styles.aiContextRow, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD') }]}>
+                  <Feather name="zap" size={12} color={theme.info} />
+                  <Text style={[styles.aiContextText, { color: theme.info }]}>AI will pull real-time status from Amazon, Flipkart, Delhivery & more</Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.actionBtn, !trackId.trim() && styles.actionBtnDisabled]}
                   onPress={trackOrder}
                   disabled={!trackId.trim() || tracking}
                 >
-                  <LinearGradient colors={['#4FA6E8', '#2E86C8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.info, '#2E86C8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="map-pin" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{tracking ? 'Fetching status…' : 'Track via AI'}</Text>
                   </LinearGradient>
@@ -1114,7 +1117,7 @@ export default function LifeOps({ navigation }) {
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.agentHeader}>
-              <LinearGradient colors={['#6C47FF', '#4A2FCC']} style={styles.agentIconGrad}>
+              <LinearGradient colors={[theme.accentAlt, '#4A2FCC']} style={styles.agentIconGrad}>
                 <Feather name="film" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
@@ -1124,8 +1127,8 @@ export default function LifeOps({ navigation }) {
                 <Text style={styles.agentSubtitle}>PVR · INOX · Cinepolis</Text>
               </View>
               {(movieStep === 'shows' || movieStep === 'seats') && (
-                <TouchableOpacity onPress={() => setMovieStep(movieStep === 'seats' ? 'shows' : 'input')} style={[styles.backChip, { borderColor: '#6C47FF' }]}>
-                  <Feather name="arrow-left" size={14} color="#6C47FF" />
+                <TouchableOpacity onPress={() => setMovieStep(movieStep === 'seats' ? 'shows' : 'input')} style={[styles.backChip, { borderColor: theme.accentAlt }]}>
+                  <Feather name="arrow-left" size={14} color={theme.accentAlt} />
                 </TouchableOpacity>
               )}
             </View>
@@ -1134,17 +1137,17 @@ export default function LifeOps({ navigation }) {
             {movieStep === 'input' && (
               <>
                 <Text style={styles.inputLabel}>Movie Name</Text>
-                <TextInput style={styles.modalInput} placeholder="e.g. Pushpa 2, Kalki 2898 AD" placeholderTextColor="#9AA1AE" value={movieTitle} onChangeText={setMovieTitle} />
+                <TextInput style={styles.modalInput} placeholder="e.g. Pushpa 2, Kalki 2898 AD" placeholderTextColor={theme.placeholder} value={movieTitle} onChangeText={setMovieTitle} />
                 <Text style={styles.inputLabel}>City</Text>
-                <TextInput style={styles.modalInput} placeholder="e.g. Bengaluru, Mumbai, Delhi" placeholderTextColor="#9AA1AE" value={movieCity} onChangeText={setMovieCity} />
+                <TextInput style={styles.modalInput} placeholder="e.g. Bengaluru, Mumbai, Delhi" placeholderTextColor={theme.placeholder} value={movieCity} onChangeText={setMovieCity} />
                 <Text style={styles.inputLabel}>Cinema</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
                   {['PVR', 'INOX', 'Cinepolis'].map(c => (
                     <TouchableOpacity key={c} onPress={() => setSelectedCinema(c)}
                       style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
-                        backgroundColor: selectedCinema === c ? '#6C47FF' : '#F5F6F8',
-                        borderWidth: 1.5, borderColor: selectedCinema === c ? '#6C47FF' : 'transparent' }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCinema === c ? '#FFFFFF' : '#374151' }}>{c}</Text>
+                        backgroundColor: selectedCinema === c ? theme.accentAlt : theme.surfaceAlt,
+                        borderWidth: 1.5, borderColor: selectedCinema === c ? theme.accentAlt : 'transparent' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCinema === c ? '#FFFFFF' : theme.textSecondary }}>{c}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -1153,7 +1156,7 @@ export default function LifeOps({ navigation }) {
                   disabled={!movieTitle.trim() || !movieCity.trim() || !selectedCinema}
                   onPress={() => setMovieStep('shows')}
                 >
-                  <LinearGradient colors={['#6C47FF', '#4A2FCC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.accentAlt, '#4A2FCC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="search" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>Find Shows</Text>
                   </LinearGradient>
@@ -1174,14 +1177,14 @@ export default function LifeOps({ navigation }) {
                     { time: '10:30 PM', format: '2D',      price: 260, seats: 55 },
                   ].map((show) => (
                     <TouchableOpacity key={show.time}
-                      style={[styles.cabOptionCard, selectedShow?.time === show.time && styles.cabOptionCardSelected, { borderColor: selectedShow?.time === show.time ? '#6C47FF' : 'transparent', backgroundColor: selectedShow?.time === show.time ? '#F3EFFE' : '#F5F6F8' }]}
+                      style={[styles.cabOptionCard, selectedShow?.time === show.time && styles.cabOptionCardSelected, { borderColor: selectedShow?.time === show.time ? theme.accentAlt : 'transparent', backgroundColor: selectedShow?.time === show.time ? (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') : theme.surfaceAlt }]}
                       onPress={() => { setSelectedShow(show); setMovieStep('seats'); }}
                       activeOpacity={0.8}>
                       <View style={styles.cabOptionLeft}>
                         <Text style={styles.cabOptionLabel}>{show.time}</Text>
                         <Text style={styles.cabOptionMeta}>{show.format} · {show.seats} seats left</Text>
                       </View>
-                      <Text style={[styles.cabOptionFare, { color: '#6C47FF' }]}>₹{show.price}</Text>
+                      <Text style={[styles.cabOptionFare, { color: theme.accentAlt }]}>₹{show.price}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -1201,9 +1204,9 @@ export default function LifeOps({ navigation }) {
                       <TouchableOpacity key={seat} disabled={taken}
                         onPress={() => setSelectedSeats(s => picked ? s.filter(x => x !== seat) : s.length < 4 ? [...s, seat] : s)}
                         style={{ width: 48, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: taken ? '#E5E7EB' : picked ? '#6C47FF' : '#F3EFFE',
-                          borderWidth: 1.5, borderColor: taken ? '#D1D5DB' : picked ? '#4A2FCC' : '#A78BFA' }}>
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: taken ? '#9CA3AF' : picked ? '#FFFFFF' : '#6C47FF' }}>{seat}</Text>
+                          backgroundColor: taken ? theme.border : picked ? theme.accentAlt : (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'),
+                          borderWidth: 1.5, borderColor: taken ? theme.borderStrong : picked ? theme.accentAlt : (theme.isDark ? 'rgba(129,128,255,0.4)' : '#A78BFA') }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: taken ? theme.disabled : picked ? '#FFFFFF' : theme.accentAlt }}>{seat}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -1225,7 +1228,7 @@ export default function LifeOps({ navigation }) {
                     setBookingMovie(false);
                   }}
                 >
-                  <LinearGradient colors={['#6C47FF', '#4A2FCC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.accentAlt, '#4A2FCC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="credit-card" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{bookingMovie ? 'Booking…' : `Pay ₹${selectedSeats.length * selectedShow.price}`}</Text>
                   </LinearGradient>
@@ -1236,29 +1239,29 @@ export default function LifeOps({ navigation }) {
             {/* Step 4 — Confirmed */}
             {movieStep === 'confirmed' && movieResult && (
               <View style={styles.resultWrap}>
-                <LinearGradient colors={['#F3EFFE', '#E9E0FF']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#6C47FF" />
+                <LinearGradient colors={theme.isDark ? ['rgba(129,128,255,0.22)', 'rgba(129,128,255,0.34)'] : [(theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), '#E9E0FF']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color={theme.accentAlt} />
                 </LinearGradient>
                 <Text style={styles.resultTitle}>Tickets Booked!</Text>
                 <Text style={styles.resultSub}>Enjoy the show 🎬</Text>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F3EFFE', marginTop: 12 }]}>
-                  <Feather name="film" size={13} color="#6C47FF" />
-                  <Text style={[styles.resultInfoChipText, { color: '#4A2FCC' }]}>{movieResult.movie} · {movieResult.show}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), marginTop: 12 }]}>
+                  <Feather name="film" size={13} color={theme.accentAlt} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.accentAlt }]}>{movieResult.movie} · {movieResult.show}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="map-pin" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{movieResult.cinema}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="map-pin" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{movieResult.cinema}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="tag" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>Seats: {movieResult.seats.join(', ')} · ₹{movieResult.amount}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="tag" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>Seats: {movieResult.seats.join(', ')} · ₹{movieResult.amount}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="hash" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{movieResult.bookingId}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{movieResult.bookingId}</Text>
                 </View>
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#F3EFFE' }]} onPress={() => setMovieModal(false)}>
-                  <Text style={[styles.resultDoneBtnText, { color: '#6C47FF' }]}>Done</Text>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE') }]} onPress={() => setMovieModal(false)}>
+                  <Text style={[styles.resultDoneBtnText, { color: theme.accentAlt }]}>Done</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1275,7 +1278,7 @@ export default function LifeOps({ navigation }) {
           <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.agentHeader}>
-              <LinearGradient colors={['#F5A623', '#E8943A']} style={styles.agentIconGrad}>
+              <LinearGradient colors={[theme.warning, '#E8943A']} style={styles.agentIconGrad}>
                 <Feather name="shopping-bag" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={styles.agentHeaderText}>
@@ -1285,8 +1288,8 @@ export default function LifeOps({ navigation }) {
                 <Text style={styles.agentSubtitle}>Swiggy · Zomato</Text>
               </View>
               {(foodStep === 'restaurants' || foodStep === 'cart') && (
-                <TouchableOpacity onPress={() => setFoodStep(foodStep === 'cart' ? 'restaurants' : 'input')} style={[styles.backChip, { borderColor: '#F5A623' }]}>
-                  <Feather name="arrow-left" size={14} color="#F5A623" />
+                <TouchableOpacity onPress={() => setFoodStep(foodStep === 'cart' ? 'restaurants' : 'input')} style={[styles.backChip, { borderColor: theme.warning }]}>
+                  <Feather name="arrow-left" size={14} color={theme.warning} />
                 </TouchableOpacity>
               )}
             </View>
@@ -1295,28 +1298,28 @@ export default function LifeOps({ navigation }) {
               <>
                 <View style={styles.routeInputBlock}>
                   <View style={styles.routeInputRow}>
-                    <Feather name="search" size={14} color="#9AA1AE" />
+                    <Feather name="search" size={14} color={theme.faint} />
                     <TextInput
                       style={styles.routeInput}
                       placeholder="What are you craving? e.g. biryani, pizza"
-                      placeholderTextColor="#9AA1AE"
+                      placeholderTextColor={theme.placeholder}
                       value={foodQuery}
                       onChangeText={setFoodQuery}
                     />
                   </View>
                 </View>
-                <View style={[styles.aiContextRow, { backgroundColor: '#FEF9EE' }]}>
-                  <Feather name="zap" size={12} color="#F5A623" />
-                  <Text style={[styles.aiContextText, { color: '#92400E' }]}>AI picks the best restaurants based on your preferences</Text>
+                <View style={[styles.aiContextRow, { backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.12)' : '#FEF9EE') }]}>
+                  <Feather name="zap" size={12} color={theme.warning} />
+                  <Text style={[styles.aiContextText, { color: theme.warning }]}>AI picks the best restaurants based on your preferences</Text>
                 </View>
                 {foodError ? (
                   <View style={styles.errorRow}>
-                    <Feather name="alert-circle" size={13} color="#E0546E" />
+                    <Feather name="alert-circle" size={13} color={theme.danger} />
                     <Text style={styles.errorText}>{foodError}</Text>
                   </View>
                 ) : null}
                 <TouchableOpacity style={styles.actionBtn} onPress={fetchFoodSuggestions} disabled={fetchingFood}>
-                  <LinearGradient colors={['#F5A623', '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.warning, '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="search" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{fetchingFood ? 'Finding restaurants…' : 'Find Restaurants'}</Text>
                   </LinearGradient>
@@ -1367,7 +1370,7 @@ export default function LifeOps({ navigation }) {
                   <Text style={styles.cartTotalAmount}>₹{selectedRestaurant.totalAmount}</Text>
                 </View>
                 <TouchableOpacity style={[styles.actionBtn, { marginTop: 12 }]} onPress={confirmFood} disabled={orderingFood}>
-                  <LinearGradient colors={['#F5A623', '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
+                  <LinearGradient colors={[theme.warning, '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
                     <Feather name="shopping-bag" size={16} color="#FFFFFF" />
                     <Text style={styles.actionBtnText}>{orderingFood ? 'Placing order…' : `Place Order · ₹${selectedRestaurant.totalAmount}`}</Text>
                   </LinearGradient>
@@ -1377,21 +1380,21 @@ export default function LifeOps({ navigation }) {
 
             {foodStep === 'confirmed' && foodResult && (
               <View style={styles.resultWrap}>
-                <LinearGradient colors={['#FEF3C7', '#FDE68A']} style={styles.resultIconWrap}>
-                  <Feather name="check" size={28} color="#D97706" />
+                <LinearGradient colors={theme.isDark ? ['rgba(255,184,77,0.22)', 'rgba(255,184,77,0.34)'] : [(theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), '#FDE68A']} style={styles.resultIconWrap}>
+                  <Feather name="check" size={28} color={theme.warning} />
                 </LinearGradient>
                 <Text style={styles.resultTitle}>Order Confirmed!</Text>
                 <Text style={styles.resultSub}>Arriving in {foodResult.deliveryTime || '35-45 mins'}</Text>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#FEF3C7', marginTop: 12 }]}>
-                  <Feather name="shopping-bag" size={13} color="#D97706" />
-                  <Text style={[styles.resultInfoChipText, { color: '#D97706' }]}>{foodResult.restaurant} · ₹{foodResult.totalAmount}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), marginTop: 12 }]}>
+                  <Feather name="shopping-bag" size={13} color={theme.warning} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.warning }]}>{foodResult.restaurant} · ₹{foodResult.totalAmount}</Text>
                 </View>
-                <View style={[styles.resultInfoChip, { backgroundColor: '#F5F6F8', marginTop: 8 }]}>
-                  <Feather name="hash" size={13} color="#6B7280" />
-                  <Text style={[styles.resultInfoChipText, { color: '#374151' }]}>{foodResult.orderId}</Text>
+                <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
+                  <Feather name="hash" size={13} color={theme.muted} />
+                  <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>{foodResult.orderId}</Text>
                 </View>
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: '#FEF3C7' }]} onPress={() => setFoodModal(false)}>
-                  <Text style={[styles.resultDoneBtnText, { color: '#D97706' }]}>Done</Text>
+                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7') }]} onPress={() => setFoodModal(false)}>
+                  <Text style={[styles.resultDoneBtnText, { color: theme.warning }]}>Done</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1402,23 +1405,23 @@ export default function LifeOps({ navigation }) {
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -1426,121 +1429,121 @@ export default function LifeOps({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: '#14171F' },
-  headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
-  headerBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 28, fontWeight: '800', color: theme.text },
+  headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
+  headerBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), alignItems: 'center', justifyContent: 'center' },
   quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
   quickCard: { width: '47.5%', borderRadius: 18, padding: 16, alignItems: 'center' },
   quickIconWrap: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   quickLabel: { fontSize: 13, fontWeight: '800' },
-  sectionHeader: { fontSize: 12, fontWeight: '700', color: '#6B7280', letterSpacing: 0.5, marginBottom: 12 },
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
-  listSkeleton: { height: 52, backgroundColor: '#F0F1F4', borderRadius: 12, marginBottom: 10 },
+  sectionHeader: { fontSize: 12, fontWeight: '700', color: theme.muted, letterSpacing: 0.5, marginBottom: 12 },
+  sectionCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
+  listSkeleton: { height: 52, backgroundColor: theme.border, borderRadius: 12, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 24, gap: 8 },
-  emptyText: { fontSize: 13, color: '#9AA1AE', fontWeight: '600', textAlign: 'center' },
+  emptyText: { fontSize: 13, color: theme.faint, fontWeight: '600', textAlign: 'center' },
   listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  listRowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  rideIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFFDF6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  movieIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F3EFFE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  movieBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F1F4', marginBottom: 4 },
+  listRowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  rideIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  movieIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  movieBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.border, marginBottom: 4 },
   movieBannerIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  movieBannerTitle: { fontSize: 14, fontWeight: '800', color: '#14171F' },
-  movieBannerSub: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
-  foodIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  movieBannerTitle: { fontSize: 14, fontWeight: '800', color: theme.text },
+  movieBannerSub: { fontSize: 12, color: theme.faint, marginTop: 2 },
+  foodIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   listTextWrap: { flex: 1 },
-  listTitle: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  listSubtitle: { fontSize: 12, color: '#9AA1AE' },
+  listTitle: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  listSubtitle: { fontSize: 12, color: theme.faint },
   rideBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   rideBadgeText: { fontSize: 10, fontWeight: '800' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.55)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12 },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginBottom: 20 },
+  modalOverlay: { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12 },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: theme.borderStrong, marginBottom: 20 },
   // AI Agent header
   agentHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
   agentIconGrad: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   agentHeaderText: { flex: 1 },
-  agentTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  agentSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
-  agentPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#EFFDF6', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  agentPillDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#1F9A5A' },
-  agentPillText: { fontSize: 11, fontWeight: '700', color: '#1F9A5A' },
+  agentTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  agentSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
+  agentPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  agentPillDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.accent },
+  agentPillText: { fontSize: 11, fontWeight: '700', color: theme.accent },
   // Route input block (cab)
-  routeInputBlock: { backgroundColor: '#F5F6F8', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 14 },
+  routeInputBlock: { backgroundColor: theme.surfaceAlt, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 14 },
   routeInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  routeDotGreen: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#1F9A5A' },
-  routeInput: { flex: 1, fontSize: 15, color: '#14171F' },
-  routeInputDivider: { height: 1, backgroundColor: '#E3E5EA', marginLeft: 20 },
+  routeDotGreen: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.accent },
+  routeInput: { flex: 1, fontSize: 15, color: theme.text },
+  routeInputDivider: { height: 1, backgroundColor: theme.borderStrong, marginLeft: 20 },
   // AI context hint
-  aiContextRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#EFFDF6', borderRadius: 12, padding: 12, marginBottom: 16 },
-  aiContextText: { flex: 1, fontSize: 12, color: '#1F5C3A', lineHeight: 17 },
-  optionalTag: { fontSize: 12, color: '#9AA1AE', fontWeight: '400' },
+  aiContextRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), borderRadius: 12, padding: 12, marginBottom: 16 },
+  aiContextText: { flex: 1, fontSize: 12, color: theme.accent, lineHeight: 17 },
+  optionalTag: { fontSize: 12, color: theme.faint, fontWeight: '400' },
   // Result state
   resultWrap: { alignItems: 'center', paddingVertical: 16, paddingBottom: 8 },
   resultIconWrap: { width: 68, height: 68, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  resultTitle: { fontSize: 20, fontWeight: '800', color: '#14171F', marginBottom: 6 },
-  resultSub: { fontSize: 13, color: '#6B7280', marginBottom: 4, textAlign: 'center' },
+  resultTitle: { fontSize: 20, fontWeight: '800', color: theme.text, marginBottom: 6 },
+  resultSub: { fontSize: 13, color: theme.muted, marginBottom: 4, textAlign: 'center' },
   resultRouteRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  resultRouteDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#1F9A5A' },
-  resultRouteText: { fontSize: 14, fontWeight: '600', color: '#14171F' },
-  resultRouteDivider: { width: 1, height: 16, backgroundColor: '#E3E5EA', marginLeft: 3, marginVertical: 2 },
+  resultRouteDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent },
+  resultRouteText: { fontSize: 14, fontWeight: '600', color: theme.text },
+  resultRouteDivider: { width: 1, height: 16, backgroundColor: theme.borderStrong, marginLeft: 3, marginVertical: 2 },
   resultInfoChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, marginTop: 12 },
   resultInfoChipText: { fontSize: 13, fontWeight: '700' },
-  resultDoneBtn: { marginTop: 20, backgroundColor: '#EFFDF6', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 48 },
-  resultDoneBtnText: { fontSize: 15, fontWeight: '700', color: '#1F9A5A' },
+  resultDoneBtn: { marginTop: 20, backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), borderRadius: 14, paddingVertical: 14, paddingHorizontal: 48 },
+  resultDoneBtnText: { fontSize: 15, fontWeight: '700', color: theme.accent },
   // Shared input styles (used by Flight, Hotel, Track modals)
-  modalTitle: { fontSize: 22, fontWeight: '800', color: '#14171F', marginBottom: 4 },
-  modalSubtitle: { fontSize: 13, color: '#9AA1AE', marginBottom: 20 },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  modalInput: { backgroundColor: '#F5F6F8', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: '#14171F', marginBottom: 16 },
+  modalTitle: { fontSize: 22, fontWeight: '800', color: theme.text, marginBottom: 4 },
+  modalSubtitle: { fontSize: 13, color: theme.faint, marginBottom: 20 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  modalInput: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: theme.text, marginBottom: 16 },
   actionBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4 },
   actionBtnDisabled: { opacity: 0.5 },
   actionBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
   actionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   dateRow: { flexDirection: 'row', gap: 10 },
   dateCol: { flex: 1 },
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.card, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
   // Back chip
-  backChip: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, borderColor: '#1F9A5A', alignItems: 'center', justifyContent: 'center' },
+  backChip: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, borderColor: theme.accent, alignItems: 'center', justifyContent: 'center' },
   // Cab option cards
-  cabOptionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F6F8', borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
-  cabOptionCardSelected: { borderColor: '#1F9A5A', backgroundColor: '#EFFDF6' },
+  cabOptionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surfaceAlt, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
+  cabOptionCardSelected: { borderColor: theme.accent, backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') },
   cabOptionLeft: { flex: 1 },
-  cabOptionLabel: { fontSize: 15, fontWeight: '800', color: '#14171F' },
-  cabOptionMeta: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  cabOptionDriver: { fontSize: 11, color: '#9AA1AE', marginTop: 2 },
+  cabOptionLabel: { fontSize: 15, fontWeight: '800', color: theme.text },
+  cabOptionMeta: { fontSize: 12, color: theme.muted, marginTop: 2 },
+  cabOptionDriver: { fontSize: 11, color: theme.faint, marginTop: 2 },
   cabOptionRight: { alignItems: 'flex-end', marginRight: 8 },
-  cabOptionFare: { fontSize: 18, fontWeight: '800', color: '#14171F' },
-  cabOptionEta: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  cabOptionFare: { fontSize: 18, fontWeight: '800', color: theme.text },
+  cabOptionEta: { fontSize: 12, color: theme.muted, marginTop: 2 },
   cabOptionCheck: { position: 'absolute', top: 10, right: 10 },
   // Food restaurant cards
-  foodRestCard: { backgroundColor: '#F5F6F8', borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
-  foodRestCardSelected: { borderColor: '#F5A623', backgroundColor: '#FEF9EE' },
+  foodRestCard: { backgroundColor: theme.surfaceAlt, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
+  foodRestCardSelected: { borderColor: theme.warning, backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.12)' : '#FEF9EE') },
   foodRestTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  foodRestName: { fontSize: 15, fontWeight: '800', color: '#14171F' },
-  foodRestRating: { backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  foodRestRatingText: { fontSize: 11, fontWeight: '700', color: '#D97706' },
-  foodRestMeta: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
-  foodRestItems: { fontSize: 12, color: '#9AA1AE', marginBottom: 6 },
-  foodRestTotal: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  foodRestName: { fontSize: 15, fontWeight: '800', color: theme.text },
+  foodRestRating: { backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  foodRestRatingText: { fontSize: 11, fontWeight: '700', color: theme.warning },
+  foodRestMeta: { fontSize: 12, color: theme.muted, marginBottom: 4 },
+  foodRestItems: { fontSize: 12, color: theme.faint, marginBottom: 6 },
+  foodRestTotal: { fontSize: 15, fontWeight: '800', color: theme.text },
   // Cart
-  cartRestHeader: { backgroundColor: '#FEF9EE', borderRadius: 14, padding: 14, marginBottom: 14 },
-  cartRestName: { fontSize: 16, fontWeight: '800', color: '#14171F' },
-  cartRestMeta: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
-  cartItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  cartItemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#F5A623', marginRight: 10 },
-  cartItemName: { flex: 1, fontSize: 14, color: '#14171F', fontWeight: '600' },
-  cartItemPrice: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  cartRestHeader: { backgroundColor: (theme.isDark ? 'rgba(255,184,77,0.12)' : '#FEF9EE'), borderRadius: 14, padding: 14, marginBottom: 14 },
+  cartRestName: { fontSize: 16, fontWeight: '800', color: theme.text },
+  cartRestMeta: { fontSize: 12, color: theme.faint, marginTop: 2 },
+  cartItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border },
+  cartItemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.warning, marginRight: 10 },
+  cartItemName: { flex: 1, fontSize: 14, color: theme.text, fontWeight: '600' },
+  cartItemPrice: { fontSize: 14, fontWeight: '700', color: theme.textSecondary },
   cartTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12 },
-  cartTotalLabel: { fontSize: 15, fontWeight: '700', color: '#374151' },
-  cartTotalAmount: { fontSize: 18, fontWeight: '800', color: '#14171F' },
+  cartTotalLabel: { fontSize: 15, fontWeight: '700', color: theme.textSecondary },
+  cartTotalAmount: { fontSize: 18, fontWeight: '800', color: theme.text },
   // Error
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#FCEAED', borderRadius: 10, padding: 10, marginBottom: 12 },
-  errorText: { flex: 1, fontSize: 12, color: '#C8405A', fontWeight: '600' },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'), borderRadius: 10, padding: 10, marginBottom: 12 },
+  errorText: { flex: 1, fontSize: 12, color: theme.danger, fontWeight: '600' },
 });

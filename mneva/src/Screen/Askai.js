@@ -29,6 +29,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket } from "../services/socket";
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const INITIAL_MESSAGES = [
@@ -47,15 +48,15 @@ const DURATIONS = [
   { label: "2 hr",   value: "120" },
 ];
 
-function AiAvatar() {
+function AiAvatar({ theme, styles }) {
   return (
     <View style={styles.aiAvatar}>
-      <Feather name="sun" size={14} color="#1F9A5A" />
+      <Feather name="sun" size={14} color={theme.accent} />
     </View>
   );
 }
 
-function DateSeparator({ ts }) {
+function DateSeparator({ ts, styles }) {
   if (!ts) return null;
   const d = new Date(ts);
   const today = new Date();
@@ -89,7 +90,7 @@ function normalizeSavedMessages(savedMessages) {
 
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
-function RichText({ text, isUser }) {
+function RichText({ text, isUser, styles }) {
   const parts = text.split(URL_REGEX);
   return (
     <Text style={isUser ? styles.bubbleTextUser : styles.bubbleTextAi}>
@@ -106,20 +107,20 @@ function RichText({ text, isUser }) {
   );
 }
 
-function MessageBubble({ message }) {
+function MessageBubble({ message, theme, styles }) {
   const isUser = message.sender === "user";
   return (
     <View style={[styles.bubbleRow, isUser ? styles.bubbleRowUser : styles.bubbleRowAi]}>
-      {!isUser && <AiAvatar />}
+      {!isUser && <AiAvatar theme={theme} styles={styles} />}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
-        <RichText text={message.text} isUser={isUser} />
+        <RichText text={message.text} isUser={isUser} styles={styles} />
       </View>
     </View>
   );
 }
 
 // ── Meeting Scheduler Modal ──────────────────────────────────────────────────
-function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
+function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [attendees, setAttendees] = useState("");
@@ -174,12 +175,12 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
               <Text style={styles.modalSubtitle}>Creates event + Google Meet link</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-              <Feather name="x" size={20} color="#6B7280" />
+              <Feather name="x" size={20} color={theme.muted} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.meetBadge}>
-            <Feather name="video" size={16} color="#1F9A5A" />
+            <Feather name="video" size={16} color={theme.accent} />
             <Text style={styles.meetBadgeText}>Google Meet link auto-generated</Text>
           </View>
 
@@ -188,7 +189,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
             <TextInput
               style={styles.fieldInput}
               placeholder="Team Standup, Client Call…"
-              placeholderTextColor="#9AA1AE"
+              placeholderTextColor={theme.placeholder}
               value={title}
               onChangeText={setTitle}
             />
@@ -196,9 +197,9 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
             {/* Date picker */}
             <Text style={styles.fieldLabel}>Date *</Text>
             <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowDatePicker(true)}>
-              <Feather name="calendar" size={16} color="#1F9A5A" />
+              <Feather name="calendar" size={16} color={theme.accent} />
               <Text style={styles.pickerBtnText}>{fmtDate(selectedDate)}</Text>
-              <Feather name="chevron-down" size={16} color="#9AA1AE" />
+              <Feather name="chevron-down" size={16} color={theme.faint} />
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
@@ -221,9 +222,9 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
             {/* Time picker */}
             <Text style={styles.fieldLabel}>Time *</Text>
             <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowTimePicker(true)}>
-              <Feather name="clock" size={16} color="#1F9A5A" />
+              <Feather name="clock" size={16} color={theme.accent} />
               <Text style={styles.pickerBtnText}>{fmtTime(selectedTime)}</Text>
-              <Feather name="chevron-down" size={16} color="#9AA1AE" />
+              <Feather name="chevron-down" size={16} color={theme.faint} />
             </TouchableOpacity>
             {showTimePicker && (
               <DateTimePicker
@@ -261,7 +262,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
             <TextInput
               style={styles.fieldInput}
               placeholder="alice@example.com, bob@example.com"
-              placeholderTextColor="#9AA1AE"
+              placeholderTextColor={theme.placeholder}
               value={attendees}
               onChangeText={setAttendees}
               keyboardType="email-address"
@@ -272,7 +273,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
             <TextInput
               style={[styles.fieldInput, { height: 64, textAlignVertical: "top" }]}
               placeholder="Optional agenda or notes…"
-              placeholderTextColor="#9AA1AE"
+              placeholderTextColor={theme.placeholder}
               value={description}
               onChangeText={setDescription}
               multiline
@@ -306,6 +307,8 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset }) {
 export default function AskAI({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const scrollRef = useRef(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -753,25 +756,25 @@ export default function AskAI({ navigation }) {
           {/* Stop speaking button — only visible while speaking */}
           {speaking && (
             <TouchableOpacity
-              style={[styles.scheduleBtn, { marginRight: 8, backgroundColor: 'rgba(224,84,110,0.1)', borderColor: 'rgba(224,84,110,0.3)' }]}
+              style={[styles.scheduleBtn, { marginRight: 8, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : 'rgba(224,84,110,0.1)', borderColor: theme.isDark ? 'rgba(241,113,134,0.4)' : 'rgba(224,84,110,0.3)' }]}
               onPress={stopSpeaking}
             >
-              <Feather name="square" size={13} color="#E0546E" />
-              <Text style={[styles.scheduleBtnText, { color: '#E0546E' }]}>Stop</Text>
+              <Feather name="square" size={13} color={theme.danger} />
+              <Text style={[styles.scheduleBtnText, { color: theme.danger }]}>Stop</Text>
             </TouchableOpacity>
           )}
           {/* Voice toggle */}
           <TouchableOpacity
-            style={[styles.scheduleBtn, { marginRight: 8, backgroundColor: voiceEnabled ? 'rgba(31,154,90,0.1)' : 'rgba(155,161,174,0.1)', borderColor: voiceEnabled ? 'rgba(31,154,90,0.3)' : 'rgba(155,161,174,0.3)' }]}
+            style={[styles.scheduleBtn, { marginRight: 8, backgroundColor: voiceEnabled ? (theme.isDark ? 'rgba(52,199,123,0.16)' : 'rgba(31,154,90,0.1)') : (theme.isDark ? 'rgba(154,161,174,0.16)' : 'rgba(155,161,174,0.1)'), borderColor: voiceEnabled ? (theme.isDark ? 'rgba(52,199,123,0.4)' : 'rgba(31,154,90,0.3)') : (theme.isDark ? 'rgba(154,161,174,0.4)' : 'rgba(155,161,174,0.3)') }]}
             onPress={() => { toggleVoice(); }}
           >
-            <Feather name={voiceEnabled ? "volume-2" : "volume-x"} size={13} color={voiceEnabled ? '#1F9A5A' : '#9AA1AE'} />
-            <Text style={[styles.scheduleBtnText, { color: voiceEnabled ? '#1F9A5A' : '#9AA1AE' }]}>
+            <Feather name={voiceEnabled ? "volume-2" : "volume-x"} size={13} color={voiceEnabled ? theme.accent : theme.faint} />
+            <Text style={[styles.scheduleBtnText, { color: voiceEnabled ? theme.accent : theme.faint }]}>
               {voiceEnabled ? 'Voice On' : 'Voice Off'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.scheduleBtn} onPress={() => setMeetModal(true)}>
-            <Feather name="calendar" size={14} color="#1F9A5A" />
+            <Feather name="calendar" size={14} color={theme.accent} />
             <Text style={styles.scheduleBtnText}>Schedule</Text>
           </TouchableOpacity>
         </View>
@@ -797,18 +800,18 @@ export default function AskAI({ navigation }) {
               (!prev.ts && m.ts);
             return (
               <View key={m.id}>
-                {showDate && <DateSeparator ts={m.ts} />}
-                <MessageBubble message={m} />
+                {showDate && <DateSeparator ts={m.ts} styles={styles} />}
+                <MessageBubble message={m} theme={theme} styles={styles} />
               </View>
             );
           })}
           {(aiLoading || transcribing) && (
             <View style={[styles.bubbleRow, styles.bubbleRowAi]}>
-              <AiAvatar />
+              <AiAvatar theme={theme} styles={styles} />
               <View style={[styles.bubble, styles.bubbleAi, { paddingVertical: 16, paddingHorizontal: 20 }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <ActivityIndicator size="small" color="#1F9A5A" />
-                  {transcribing && <Text style={{ fontSize: 12, color: "#9AA1AE" }}>Transcribing…</Text>}
+                  <ActivityIndicator size="small" color={theme.accent} />
+                  {transcribing && <Text style={{ fontSize: 12, color: theme.faint }}>Transcribing…</Text>}
                 </View>
               </View>
             </View>
@@ -819,13 +822,13 @@ export default function AskAI({ navigation }) {
         <View style={[styles.inputBar, { paddingHorizontal: horizontalPad, paddingBottom: 12 }]}>
           {/* Attachment button — opens picker modal */}
           <TouchableOpacity style={styles.iconButton} onPress={() => setAttachModal(true)} disabled={uploading}>
-            <Feather name={uploading ? "loader" : "paperclip"} size={20} color={uploading ? "#1F9A5A" : "#6B7280"} />
+            <Feather name={uploading ? "loader" : "paperclip"} size={20} color={uploading ? theme.accent : theme.muted} />
           </TouchableOpacity>
 
           <TextInput
             style={styles.textInput}
             placeholder="Ask anything or use voice"
-            placeholderTextColor="#9AA1AE"
+            placeholderTextColor={theme.placeholder}
             value={input}
             onChangeText={setInput}
             multiline
@@ -847,30 +850,30 @@ export default function AskAI({ navigation }) {
             onPress={() => handleSend()}
             disabled={!input.trim() || aiLoading}
           >
-            <Feather name="arrow-up" size={18} color={input.trim() ? "#FFFFFF" : "#B9BDC6"} />
+            <Feather name="arrow-up" size={18} color={input.trim() ? "#FFFFFF" : theme.disabled} />
           </TouchableOpacity>
         </View>
 
         {/* Tab bar */}
         <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
           <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Home"); }}>
-            <Ionicons name="home" size={22} color="#9AA1AE" />
+            <Ionicons name="home" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>HOME</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Priorities"); }}>
-            <Feather name="calendar" size={22} color="#9AA1AE" />
+            <Feather name="calendar" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>PRIORITIES</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem}>
-            <Feather name="mic" size={22} color="#1F7A54" />
+            <Feather name="mic" size={22} color={theme.accent} />
             <Text style={[styles.tabLabel, styles.tabLabelActive]}>ASK AI</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Space"); }}>
-            <Feather name="folder" size={22} color="#9AA1AE" />
+            <Feather name="folder" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>SPACE</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Profile"); }}>
-            <Feather name="user" size={22} color="#9AA1AE" />
+            <Feather name="user" size={22} color={theme.faint} />
             <Text style={styles.tabLabel}>PROFILE</Text>
           </TouchableOpacity>
         </View>
@@ -889,7 +892,7 @@ export default function AskAI({ navigation }) {
                   <Text style={styles.approveBtnText}>Approve</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.denyBtn} onPress={handleDeny}>
-                  <Feather name="x" size={15} color="#E0546E" />
+                  <Feather name="x" size={15} color={theme.danger} />
                   <Text style={styles.denyBtnText}>Deny</Text>
                 </TouchableOpacity>
               </View>
@@ -903,6 +906,8 @@ export default function AskAI({ navigation }) {
         onClose={() => setMeetModal(false)}
         onCreated={handleMeetingCreated}
         bottomInset={insets.bottom}
+        theme={theme}
+        styles={styles}
       />
 
       {/* Attachment picker modal */}
@@ -916,36 +921,36 @@ export default function AskAI({ navigation }) {
                 <Text style={styles.attachSubtitle}>Upload a file or image — Mneva will read and index it so you can ask questions about it</Text>
 
                 <TouchableOpacity style={styles.attachOption} onPress={handleDocUpload}>
-                  <View style={[styles.attachIcon, { backgroundColor: "rgba(61,139,255,0.1)" }]}>
-                    <Feather name="file-text" size={22} color="#3D8BFF" />
+                  <View style={[styles.attachIcon, { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : "rgba(61,139,255,0.1)" }]}>
+                    <Feather name="file-text" size={22} color={theme.info} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.attachOptionTitle}>Document</Text>
                     <Text style={styles.attachOptionSub}>PDF, DOCX, TXT, CSV, JSON…</Text>
                   </View>
-                  <Feather name="chevron-right" size={18} color="#9AA1AE" />
+                  <Feather name="chevron-right" size={18} color={theme.faint} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.attachOption} onPress={() => handleImageUpload(false)}>
-                  <View style={[styles.attachIcon, { backgroundColor: "rgba(31,154,90,0.1)" }]}>
-                    <Feather name="image" size={22} color="#1F9A5A" />
+                  <View style={[styles.attachIcon, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : "rgba(31,154,90,0.1)" }]}>
+                    <Feather name="image" size={22} color={theme.accent} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.attachOptionTitle}>Photo Library</Text>
                     <Text style={styles.attachOptionSub}>Pick an image — OCR extracts text</Text>
                   </View>
-                  <Feather name="chevron-right" size={18} color="#9AA1AE" />
+                  <Feather name="chevron-right" size={18} color={theme.faint} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.attachOption} onPress={() => handleImageUpload(true)}>
-                  <View style={[styles.attachIcon, { backgroundColor: "rgba(155,114,255,0.1)" }]}>
-                    <Feather name="camera" size={22} color="#9B72FF" />
+                  <View style={[styles.attachIcon, { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : "rgba(155,114,255,0.1)" }]}>
+                    <Feather name="camera" size={22} color={theme.accentAlt} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.attachOptionTitle}>Camera</Text>
                     <Text style={styles.attachOptionSub}>Take a photo — OCR extracts text</Text>
                   </View>
-                  <Feather name="chevron-right" size={18} color="#9AA1AE" />
+                  <Feather name="chevron-right" size={18} color={theme.faint} />
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
@@ -956,16 +961,16 @@ export default function AskAI({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFC" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: {
     paddingTop: 16,
     paddingBottom: 12,
     flexDirection: "row",
     alignItems: "center",
   },
-  headerTitle: { fontSize: 32, fontWeight: "800", color: "#14171F", marginBottom: 4 },
-  headerSubtitle: { fontSize: 14, color: "#9AA1AE" },
+  headerTitle: { fontSize: 32, fontWeight: "800", color: theme.text, marginBottom: 4 },
+  headerSubtitle: { fontSize: 14, color: theme.faint },
   scheduleBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -973,11 +978,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: "rgba(31,154,90,0.1)",
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : "rgba(31,154,90,0.1)",
     borderWidth: 1,
-    borderColor: "rgba(31,154,90,0.3)",
+    borderColor: theme.isDark ? 'rgba(52,199,123,0.4)' : "rgba(31,154,90,0.3)",
   },
-  scheduleBtnText: { fontSize: 12, fontWeight: "700", color: "#1F9A5A" },
+  scheduleBtnText: { fontSize: 12, fontWeight: "700", color: theme.accent },
   container: { flex: 1 },
   scrollContent: { paddingTop: 8, paddingBottom: 16 },
   bubbleRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 16 },
@@ -985,18 +990,18 @@ const styles = StyleSheet.create({
   bubbleRowUser: { justifyContent: "flex-end" },
   aiAvatar: {
     width: 26, height: 26, borderRadius: 13,
-    backgroundColor: "#EFFDF6",
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6",
     alignItems: "center", justifyContent: "center",
     marginRight: 8,
   },
   bubble: { maxWidth: "86%", borderRadius: 20, paddingHorizontal: 18, paddingVertical: 14 },
-  bubbleAi: { backgroundColor: "#FFFFFF", borderBottomLeftRadius: 6 },
-  bubbleUser: { backgroundColor: "#3CB37A", borderBottomRightRadius: 6 },
-  bubbleTextAi: { fontSize: 14.5, lineHeight: 21, color: "#374151" },
+  bubbleAi: { backgroundColor: theme.card, borderBottomLeftRadius: 6 },
+  bubbleUser: { backgroundColor: theme.accent, borderBottomRightRadius: 6 },
+  bubbleTextAi: { fontSize: 14.5, lineHeight: 21, color: theme.textSecondary },
   bubbleTextUser: { fontSize: 14.5, lineHeight: 21, color: "#FFFFFF" },
   linkAi: {
     fontSize: 14.5, lineHeight: 21,
-    color: "#1F9A5A",
+    color: theme.accent,
     fontWeight: "700",
     textDecorationLine: "underline",
   },
@@ -1010,74 +1015,74 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingTop: 10,
-    backgroundColor: "#F9FAFC",
+    backgroundColor: theme.bg,
   },
   iconButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   textInput: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#14171F",
+    color: theme.text,
     maxHeight: 100,
     marginHorizontal: 4,
   },
   micButton: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "#B9BDC6",
+    backgroundColor: theme.disabled,
     alignItems: "center", justifyContent: "center",
     marginLeft: 4,
   },
-  micButtonActive: { backgroundColor: "#E0546E" },
+  micButtonActive: { backgroundColor: theme.danger },
   sendButton: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
     alignItems: "center", justifyContent: "center",
     marginLeft: 8,
   },
-  sendButtonDisabled: { backgroundColor: "#EEF0F3" },
+  sendButtonDisabled: { backgroundColor: theme.border },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderTopWidth: 1,
-    borderTopColor: "#EEF0F3",
+    borderTopColor: theme.border,
     paddingTop: 10,
   },
   tabItem: { flex: 1, alignItems: "center" },
-  tabLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
-  tabLabelActive: { color: "#1F7A54" },
+  tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
+  tabLabelActive: { color: theme.accent },
 
   // ── Action card ────────────────────────────────────────────────────────────
   actionOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    flex: 1, backgroundColor: theme.overlay,
     alignItems: 'center', justifyContent: 'center',
   },
   actionCard: {
-    width: 320, backgroundColor: '#FFFFFF', borderRadius: 20,
+    width: 320, backgroundColor: theme.card, borderRadius: 20,
     padding: 22, marginHorizontal: 20,
   },
-  actionTitle: { fontSize: 16, fontWeight: '800', color: '#14171F', marginBottom: 10 },
-  actionSummary: { fontSize: 13.5, color: '#374151', lineHeight: 20, marginBottom: 18 },
+  actionTitle: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 10 },
+  actionSummary: { fontSize: 13.5, color: theme.textSecondary, lineHeight: 20, marginBottom: 18 },
   actionBtns: { flexDirection: 'row', gap: 10 },
   approveBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: '#1F9A5A', borderRadius: 12, paddingVertical: 12,
+    gap: 6, backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 12,
   },
   approveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   denyBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: 'rgba(224,84,110,0.1)', borderRadius: 12, paddingVertical: 12,
-    borderWidth: 1, borderColor: 'rgba(224,84,110,0.3)',
+    gap: 6, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : 'rgba(224,84,110,0.1)', borderRadius: 12, paddingVertical: 12,
+    borderWidth: 1, borderColor: theme.isDark ? 'rgba(241,113,134,0.4)' : 'rgba(224,84,110,0.3)',
   },
-  denyBtnText: { color: '#E0546E', fontSize: 13, fontWeight: '700' },
+  denyBtnText: { color: theme.danger, fontSize: 13, fontWeight: '700' },
 
   // ── Meeting Modal ──────────────────────────────────────────────────────────
-  modalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(14,17,26,0.5)" },
+  modalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.overlay },
   modalSheet: { position: "absolute", bottom: 0, left: 0, right: 0 },
   modalContent: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
@@ -1088,7 +1093,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     width: 40, height: 4,
     borderRadius: 2,
-    backgroundColor: "#E3E5EA",
+    backgroundColor: theme.borderStrong,
     marginBottom: 16,
   },
   modalHeader: {
@@ -1097,47 +1102,47 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 14,
   },
-  modalTitle: { fontSize: 20, fontWeight: "800", color: "#14171F" },
-  modalSubtitle: { fontSize: 12, color: "#9AA1AE", marginTop: 2 },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: theme.text },
+  modalSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   modalClose: { padding: 4 },
   meetBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(31,154,90,0.08)",
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : "rgba(31,154,90,0.08)",
     borderWidth: 1,
-    borderColor: "rgba(31,154,90,0.2)",
+    borderColor: theme.isDark ? 'rgba(52,199,123,0.4)' : "rgba(31,154,90,0.2)",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
     marginBottom: 16,
   },
-  meetBadgeText: { fontSize: 12, fontWeight: "700", color: "#1F9A5A" },
-  fieldLabel: { fontSize: 12, fontWeight: "600", color: "#6B7280", marginBottom: 5, marginTop: 10 },
+  meetBadgeText: { fontSize: 12, fontWeight: "700", color: theme.accent },
+  fieldLabel: { fontSize: 12, fontWeight: "600", color: theme.muted, marginBottom: 5, marginTop: 10 },
   fieldInput: {
-    backgroundColor: "#F5F6F8",
+    backgroundColor: theme.surfaceAlt,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontSize: 14,
-    color: "#14171F",
+    color: theme.text,
   },
   pickerBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#F5F6F8",
+    backgroundColor: theme.surfaceAlt,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
   },
-  pickerBtnText: { flex: 1, fontSize: 14, fontWeight: "600", color: "#14171F" },
+  pickerBtnText: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.text },
   pickerDoneBtn: {
     alignSelf: "flex-end",
     marginTop: 6,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
     borderRadius: 10,
   },
   pickerDoneBtnText: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
@@ -1148,18 +1153,18 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#E3E5EA",
-    backgroundColor: "#F5F6F8",
+    borderColor: theme.borderStrong,
+    backgroundColor: theme.surfaceAlt,
     alignItems: "center",
   },
-  durationChipActive: { backgroundColor: "rgba(31,154,90,0.12)", borderColor: "#1F9A5A" },
-  durationChipText: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
-  durationChipTextActive: { color: "#1F9A5A" },
-  errorText: { fontSize: 12, color: "#E0546E", marginTop: 8 },
+  durationChipActive: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : "rgba(31,154,90,0.12)", borderColor: theme.accent },
+  durationChipText: { fontSize: 12, fontWeight: "600", color: theme.muted },
+  durationChipTextActive: { color: theme.accent },
+  errorText: { fontSize: 12, color: theme.danger, marginTop: 8 },
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 20 },
   createBtn: {
     flex: 1,
-    backgroundColor: "#1F9A5A",
+    backgroundColor: theme.accent,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
@@ -1170,44 +1175,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: theme.soft,
     alignItems: "center",
     justifyContent: "center",
   },
-  cancelBtnText: { fontSize: 14, fontWeight: "700", color: "#374151" },
+  cancelBtnText: { fontSize: 14, fontWeight: "700", color: theme.textSecondary },
 
   // ── Attachment Modal ───────────────────────────────────────────────────────
   attachOverlay: {
     flex: 1,
-    backgroundColor: "rgba(14,17,26,0.5)",
+    backgroundColor: theme.overlay,
     justifyContent: "flex-end",
   },
   attachSheet: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
     paddingTop: 12,
   },
-  attachTitle: { fontSize: 18, fontWeight: "800", color: "#14171F", marginBottom: 4, marginTop: 8 },
-  attachSubtitle: { fontSize: 12, color: "#9AA1AE", marginBottom: 16, lineHeight: 17 },
+  attachTitle: { fontSize: 18, fontWeight: "800", color: theme.text, marginBottom: 4, marginTop: 8 },
+  attachSubtitle: { fontSize: 12, color: theme.faint, marginBottom: 16, lineHeight: 17 },
   attachOption: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: theme.soft,
   },
   attachIcon: {
     width: 44, height: 44, borderRadius: 12,
     alignItems: "center", justifyContent: "center",
   },
-  attachOptionTitle: { fontSize: 15, fontWeight: "700", color: "#14171F" },
-  attachOptionSub: { fontSize: 12, color: "#9AA1AE", marginTop: 2 },
+  attachOptionTitle: { fontSize: 15, fontWeight: "700", color: theme.text },
+  attachOptionSub: { fontSize: 12, color: theme.faint, marginTop: 2 },
 
   // ── Date separator ─────────────────────────────────────────────────────────
   dateSepRow: { flexDirection: "row", alignItems: "center", marginVertical: 12 },
-  dateSepLine: { flex: 1, height: 1, backgroundColor: "#EEF0F3" },
-  dateSepText: { fontSize: 11, color: "#9AA1AE", fontWeight: "600", marginHorizontal: 10 },
+  dateSepLine: { flex: 1, height: 1, backgroundColor: theme.border },
+  dateSepText: { fontSize: 11, color: theme.faint, fontWeight: "600", marginHorizontal: 10 },
 });

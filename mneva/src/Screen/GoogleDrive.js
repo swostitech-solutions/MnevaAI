@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../api/client';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const ACCENT = '#1A73E8';
@@ -18,12 +19,14 @@ const MIME_META = {
   'application/vnd.google-apps.folder':       { icon: 'folder',    color: '#9B72FF', label: 'Folder' },
 };
 
-function getMeta(mimeType) {
-  return MIME_META[mimeType] || { icon: 'file', color: '#9AA1AE', label: 'File' };
+function getMeta(mimeType, theme) {
+  return MIME_META[mimeType] || { icon: 'file', color: theme.faint, label: 'File' };
 }
 
 export default function GoogleDriveScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
 
   const [files, setFiles]           = useState([]);
@@ -119,7 +122,7 @@ export default function GoogleDriveScreen({ navigation }) {
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-            <Feather name="arrow-left" size={20} color="#14171F" />
+            <Feather name="arrow-left" size={20} color={theme.text} />
           </TouchableOpacity>
           <Text style={styles.topBarTitle}>Drive</Text>
           <View style={{ width: 40 }} />
@@ -146,7 +149,7 @@ export default function GoogleDriveScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
-          <Feather name="arrow-left" size={20} color="#14171F" />
+          <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.topBarTitle}>Drive</Text>
@@ -164,7 +167,7 @@ export default function GoogleDriveScreen({ navigation }) {
             style={[styles.chip, filter === f.key && styles.chipActive]}
             onPress={() => { setFilter(f.key); loadFiles(f.key); }}
           >
-            <Feather name={f.icon} size={13} color={filter === f.key ? '#FFFFFF' : '#6B7280'} />
+            <Feather name={f.icon} size={13} color={filter === f.key ? '#FFFFFF' : theme.muted} />
             <Text style={[styles.chipText, filter === f.key && styles.chipTextActive]}>{f.label}</Text>
           </TouchableOpacity>
         ))}
@@ -181,23 +184,23 @@ export default function GoogleDriveScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadFiles(); }} tintColor={ACCENT} colors={[ACCENT]} />}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Feather name="hard-drive" size={32} color="#C7CBD3" />
+              <Feather name="hard-drive" size={32} color={theme.disabled} />
               <Text style={styles.emptyText}>No files found</Text>
             </View>
           }
           renderItem={({ item }) => {
-            const meta = getMeta(item.mimeType);
+            const meta = getMeta(item.mimeType, theme);
             const date = item.modifiedTime ? new Date(item.modifiedTime).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
             return (
               <TouchableOpacity style={styles.fileRow} onPress={() => item.webViewLink && Linking.openURL(item.webViewLink)} activeOpacity={0.7}>
-                <View style={[styles.fileIcon, { backgroundColor: meta.color + '18' }]}>
+                <View style={[styles.fileIcon, { backgroundColor: theme.isDark ? `${meta.color}30` : `${meta.color}18` }]}>
                   <Feather name={meta.icon} size={20} color={meta.color} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
                   <Text style={styles.fileMeta}>{meta.label} · {date}</Text>
                 </View>
-                <Feather name="external-link" size={14} color="#C7CBD3" />
+                <Feather name="external-link" size={14} color={theme.disabled} />
               </TouchableOpacity>
             );
           }}
@@ -205,44 +208,44 @@ export default function GoogleDriveScreen({ navigation }) {
       )}
 
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}><Ionicons name="home" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>HOME</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}><Feather name="calendar" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>PRIORITIES</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}><Feather name="mic" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>ASK AI</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}><Feather name="folder" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>SPACE</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}><Feather name="user" size={22} color="#9AA1AE" /><Text style={styles.tabLabel}>PROFILE</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}><Ionicons name="home" size={22} color={theme.faint} /><Text style={styles.tabLabel}>HOME</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}><Feather name="calendar" size={22} color={theme.faint} /><Text style={styles.tabLabel}>PRIORITIES</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}><Feather name="mic" size={22} color={theme.faint} /><Text style={styles.tabLabel}>ASK AI</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}><Feather name="folder" size={22} color={theme.faint} /><Text style={styles.tabLabel}>SPACE</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}><Feather name="user" size={22} color={theme.faint} /><Text style={styles.tabLabel}>PROFILE</Text></TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  topBarTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  topBarSub: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
-  disconnectBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#F3F4F6' },
-  disconnectText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
+  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  topBarTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  topBarSub: { fontSize: 12, color: theme.faint, marginTop: 1 },
+  disconnectBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: theme.soft },
+  disconnectText: { fontSize: 12, fontWeight: '700', color: theme.muted },
   filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E3E5EA' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.borderStrong },
   chipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  chipText: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  chipText: { fontSize: 12, fontWeight: '600', color: theme.muted },
   chipTextActive: { color: '#FFFFFF' },
-  fileRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, marginBottom: 8, gap: 12 },
+  fileRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 14, padding: 14, marginBottom: 8, gap: 12 },
   fileIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  fileName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 3 },
-  fileMeta: { fontSize: 12, color: '#9AA1AE' },
+  fileName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 3 },
+  fileMeta: { fontSize: 12, color: theme.faint },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 10 },
-  emptyText: { fontSize: 14, color: '#9AA1AE', fontWeight: '600' },
+  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
   connectScreen: { flex: 1, alignItems: 'center', paddingHorizontal: 28 },
   connectIcon: { width: 80, height: 80, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 32, marginBottom: 20 },
-  connectTitle: { fontSize: 26, fontWeight: '800', color: '#14171F', marginBottom: 10 },
-  connectSubtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  connectTitle: { fontSize: 26, fontWeight: '800', color: theme.text, marginBottom: 10 },
+  connectSubtitle: { fontSize: 14, color: theme.muted, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
   connectBtn: { width: '100%', borderRadius: 18, overflow: 'hidden', marginBottom: 14 },
   connectBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 17, gap: 10 },
   connectBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  connectNote: { fontSize: 12, color: '#9AA1AE', textAlign: 'center' },
-  tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
+  connectNote: { fontSize: 12, color: theme.faint, textAlign: 'center' },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
-  tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 });

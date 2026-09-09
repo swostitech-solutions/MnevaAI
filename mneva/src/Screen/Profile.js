@@ -14,6 +14,7 @@ import {
 } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { onAppDataRefresh } from '../services/dataRefresh';
+import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -80,7 +81,10 @@ const SETTINGS_ROWS = [
     title: "Privacy & Security",
     value: null,
     icon: "lock",
-    iconColor: "#374151",
+    // Medium gray reads fine on both a white and a near-black background —
+    // the original #374151 was tuned for light mode only and nearly
+    // disappears once the row's background goes dark.
+    iconColor: "#6B7280",
     screen: "Settings",
   },
   {
@@ -104,7 +108,8 @@ const SETTINGS_ROWS = [
 export default function Profile({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [darkTheme, setDarkTheme] = useState(false);
+  const { theme, isDark, toggleTheme } = useTheme();
+  const styles = createStyles(theme);
   const [user, setUser] = useState(null);
 
   React.useEffect(() => {
@@ -152,22 +157,22 @@ export default function Profile({ navigation }) {
             <Text style={styles.profileName}>{user?.name || 'Loading…'}</Text>
             <Text style={styles.profileEmail}>{user?.email || ''}</Text>
             <TouchableOpacity style={styles.planBadge} onPress={() => navigation?.navigate?.('Subscription')} activeOpacity={0.75}>
-              <Feather name="sun" size={12} color="#1F9A5A" />
+              <Feather name="sun" size={12} color={theme.accent} />
               <Text style={styles.planBadgeText}>{"  "}{displayPlanName(user?.plan)}</Text>
-              <Feather name="chevron-right" size={13} color="#1F9A5A" style={{ marginLeft: 4 }} />
+              <Feather name="chevron-right" size={13} color={theme.accent} style={{ marginLeft: 4 }} />
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.themeCard}>
           <View style={styles.themeRow}>
-            <Feather name="sun" size={18} color="#F5A623" />
+            <Feather name={isDark ? "moon" : "sun"} size={18} color={theme.warning} />
             <Text style={styles.themeLabel}>Interactive Dark Theme</Text>
           </View>
           <Switch
-            value={darkTheme}
-            onValueChange={setDarkTheme}
-            trackColor={{ false: "#E3E5EA", true: "#1F9A5A" }}
+            value={isDark}
+            onValueChange={toggleTheme}
+            trackColor={{ false: theme.borderStrong, true: theme.accent }}
             thumbColor="#FFFFFF"
           />
         </View>
@@ -194,7 +199,7 @@ export default function Profile({ navigation }) {
               {row.value && (
                 <Text style={styles.settingsValue}>{row.value}</Text>
               )}
-              <Feather name="chevron-right" size={18} color="#C7CBD3" />
+              <Feather name="chevron-right" size={18} color={theme.disabled} />
             </TouchableOpacity>
           ))}
         </View>
@@ -206,32 +211,32 @@ export default function Profile({ navigation }) {
           style={styles.tabItem}
           onPress={() => navigation?.navigate?.("Home")}
         >
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => navigation?.navigate?.("Priorities")}
         >
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => navigation?.navigate?.("AskAI")}
         >
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => navigation?.navigate?.("Space")}
         >
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem}>
-          <Feather name="user" size={22} color="#1F7A54" />
+          <Feather name="user" size={22} color={theme.accent} />
           <Text style={[styles.tabLabel, styles.tabLabelActive]}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -239,10 +244,10 @@ export default function Profile({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F9FAFC",
+    backgroundColor: theme.bg,
   },
   container: {
     flex: 1,
@@ -275,19 +280,19 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#14171F",
+    color: theme.text,
     marginBottom: 2,
   },
   profileEmail: {
     fontSize: 13,
-    color: "#9AA1AE",
+    color: theme.faint,
     marginBottom: 8,
   },
   planBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "#E8F5EE",
+    backgroundColor: theme.isDark ? "rgba(52, 199, 123, 0.16)" : "#E8F5EE",
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 5,
@@ -295,13 +300,13 @@ const styles = StyleSheet.create({
   planBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#1F9A5A",
+    color: theme.accent,
   },
   themeCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 18,
     paddingHorizontal: 18,
     paddingVertical: 18,
@@ -314,11 +319,11 @@ const styles = StyleSheet.create({
   themeLabel: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     marginLeft: 12,
   },
   settingsCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.card,
     borderRadius: 18,
     paddingHorizontal: 18,
   },
@@ -329,25 +334,25 @@ const styles = StyleSheet.create({
   },
   settingsRowDivider: {
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F1F4",
+    borderBottomColor: theme.border,
   },
   settingsLabel: {
     flex: 1,
     fontSize: 15,
     fontWeight: "700",
-    color: "#14171F",
+    color: theme.text,
     marginLeft: 14,
   },
   settingsValue: {
     fontSize: 13,
-    color: "#9AA1AE",
+    color: theme.faint,
     marginRight: 6,
   },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.tabBarBg,
     borderTopWidth: 1,
-    borderTopColor: "#EEF0F3",
+    borderTopColor: theme.border,
     paddingTop: 10,
   },
   tabItem: {
@@ -357,11 +362,11 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#9AA1AE",
+    color: theme.faint,
     marginTop: 4,
     letterSpacing: 0.3,
   },
   tabLabelActive: {
-    color: "#1F7A54",
+    color: theme.accent,
   },
 });

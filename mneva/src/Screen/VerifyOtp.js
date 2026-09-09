@@ -14,8 +14,11 @@ import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
 import { saveAuth } from '../storage/auth';
+import { useTheme } from '../context/ThemeContext';
 
 export default function VerifyOtp({ route, navigation }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { email, devOtp } = route.params || {};
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
@@ -96,15 +99,15 @@ export default function VerifyOtp({ route, navigation }) {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar style="dark" />
+      <StatusBar style={theme.statusBarStyle} />
 
       <View style={styles.container}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Feather name="arrow-left" size={22} color="#14171F" />
+          <Feather name="arrow-left" size={22} color={theme.text} />
         </TouchableOpacity>
 
         <View style={styles.iconWrap}>
-          <Feather name="mail" size={32} color="#1F9A5A" />
+          <Feather name="mail" size={32} color={theme.accent} />
         </View>
 
         <Text style={styles.title}>Check your email</Text>
@@ -161,7 +164,7 @@ export default function VerifyOtp({ route, navigation }) {
           ) : (
             <TouchableOpacity onPress={handleResend} disabled={resending}>
               {resending ? (
-                <ActivityIndicator size="small" color="#1F9A5A" />
+                <ActivityIndicator size="small" color={theme.accent} />
               ) : (
                 <Text style={styles.resendLink}>Resend code</Text>
               )}
@@ -173,10 +176,10 @@ export default function VerifyOtp({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: '#FAFAFC',
+    backgroundColor: theme.bg,
   },
   container: {
     flex: 1,
@@ -194,7 +197,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 22,
-    backgroundColor: '#EFFDF6',
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -202,28 +205,28 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#14171F',
+    color: theme.text,
     marginBottom: 10,
   },
   subtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: theme.muted,
     textAlign: 'center',
     lineHeight: 21,
     marginBottom: 24,
   },
   emailText: {
     fontWeight: '700',
-    color: '#14171F',
+    color: theme.text,
   },
   errorText: {
-    color: '#DC2626',
+    color: theme.danger,
     fontSize: 13,
     marginBottom: 16,
     textAlign: 'center',
   },
   devText: {
-    color: '#1F9A5A',
+    color: theme.accent,
   },
   otpRow: {
     flexDirection: 'row',
@@ -235,15 +238,15 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#E4E7EF',
-    backgroundColor: '#FFFFFF',
+    borderColor: theme.borderStrong,
+    backgroundColor: theme.card,
     textAlign: 'center',
     fontSize: 22,
     fontWeight: '700',
-    color: '#14171F',
+    color: theme.text,
   },
   otpInputFilled: {
-    borderColor: '#1F9A5A',
+    borderColor: theme.accent,
   },
   verifyButton: {
     width: '100%',
@@ -269,16 +272,16 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   resendText: {
-    color: '#6B7280',
+    color: theme.muted,
     fontSize: 14,
   },
   resendLink: {
-    color: '#1F9A5A',
+    color: theme.accent,
     fontSize: 14,
     fontWeight: '700',
   },
   countdownText: {
-    color: '#9AA1AE',
+    color: theme.faint,
     fontSize: 14,
     fontWeight: '600',
   },

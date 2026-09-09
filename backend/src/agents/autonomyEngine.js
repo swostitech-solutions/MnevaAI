@@ -354,6 +354,11 @@ export const MNEVA_TOOLS = [
     input_schema: { type: 'object', properties: {}, required: [] }
   },
   {
+    name: 'get_full_summary',
+    description: 'Generate a COMPLETE cross-module summary spanning Communications (urgent emails, unread alerts), Priorities (pending tasks), Family (family tasks, medication refills, pet reminders, upcoming family events), Health (today\'s logged metrics), and Finance (bills/EMIs/subscriptions due soon, maturing fixed deposits). Use this ONLY when the user explicitly asks for everything important, a full/complete summary, or "what all is going on across everything" — not for a single-domain question, which should use the domain-specific tool instead (get_emails, get_health_data, query_bills, get_daily_brief, etc.).',
+    input_schema: { type: 'object', properties: {}, required: [] }
+  },
+  {
     name: 'query_bills',
     description: 'Fetch upcoming utility, telecom, credit card, and housing bills with due dates and payment status.',
     input_schema: { type: 'object', properties: { filter: { type: 'string', enum: ['all','due_soon','pending','paid'], description: 'Filter bills by status' } }, required: ['filter'] }
@@ -492,6 +497,14 @@ export async function executeTool(name, input, userId) {
         completedSummary,
         todaySchedule,
         insights: [],
+      }
+    }
+    case 'get_full_summary': {
+      try {
+        const { buildFullSummary } = await import('../services/fullSummary.js')
+        return await buildFullSummary(userId)
+      } catch (err) {
+        return { error: 'Could not generate full summary', detail: err.message }
       }
     }
     case 'query_bills':          return []
@@ -987,7 +1000,7 @@ CRITICAL RULES:
 8. Log important actions to the Signed Ledger automatically
 9. When the user asks about their own profile, name, email, or account details — answer directly from the USER PROFILE section below. Never say you don't know their name or email.
 10. ALWAYS answer the user's actual question directly. If you called a tool, use the tool result to answer — do NOT just repeat the tool result verbatim or say "you have X notifications". Synthesize it into a real answer.
-11. Only call get_daily_brief when the user explicitly asks for their daily brief or morning summary. For reminders, scheduling, or any other task — use the appropriate tool directly.
+11. Only call get_daily_brief when the user explicitly asks for their daily brief or morning summary. For reminders, scheduling, or any other task — use the appropriate tool directly. Only call get_full_summary when the user explicitly asks for a complete/full summary spanning everything (email + tasks + family + health + finance) — for a single-domain question, call that domain's own tool instead (get_emails, get_health_data, query_bills, etc.), never get_full_summary.
 12. When the user asks to set a reminder or schedule something, call set_reminder or schedule_event immediately — do not call get_daily_brief first.
 13. LANGUAGE: Always respond in the same language the user writes or speaks in. If the user writes in Hindi, respond in Hindi. If in Tamil, respond in Tamil. Match their language exactly.
 14. CONNECTED ACCOUNTS: You always know which accounts are connected from the CONNECTED ACCOUNTS section below. Answer questions about integrations directly from that — never say you don't know. If an account is not connected, tell the user to go to Settings → Connected Accounts to connect it.

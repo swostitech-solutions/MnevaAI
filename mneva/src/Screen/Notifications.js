@@ -8,24 +8,33 @@ import { Feather } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
-import { useTheme } from '@react-navigation/native';
+import { useTheme } from '../context/ThemeContext';
 import SmartReplyCard from '../components/SmartReplyCard';
 import ReminderAlert from '../components/ReminderAlert';
 
+// Each entry's `lightBg`/`darkBg` are the pastel tint used behind the type
+// icon — a flat pastel reads fine on the light background but needs to
+// become a translucent tint (matching accent hue) on the dark background,
+// same technique used for tint chips on Finance/Priorities.
 const TYPE_META = {
-  email:    { icon: 'mail',           color: '#615FF8', bg: '#EEEDFE', emoji: '📧' },
-  sms:      { icon: 'message-square', color: '#4FA6E8', bg: '#EAF3FD', emoji: '📱' },
-  calendar: { icon: 'calendar',       color: '#1F9A5A', bg: '#EFFDF6', emoji: '📅' },
-  whatsapp: { icon: 'message-circle', color: '#25D366', bg: '#E8FDF0', emoji: '💬' },
-  payment:  { icon: 'credit-card',    color: '#1F9A5A', bg: '#EFFDF6', emoji: '💸' },
-  booking:  { icon: 'navigation',     color: '#4FA6E8', bg: '#EAF3FD', emoji: '🚗' },
-  food:     { icon: 'shopping-bag',   color: '#F5A623', bg: '#FEF3C7', emoji: '🍛' },
-  shopping: { icon: 'shopping-cart',  color: '#F5A623', bg: '#FEF3C7', emoji: '🛍️' },
-  reminder: { icon: 'bell',           color: '#F5A623', bg: '#FEF3C7', emoji: '🔔' },
-  info:     { icon: 'bell',           color: '#9AA1AE', bg: '#F3F4F6', emoji: '🔔' },
+  email:    { icon: 'mail',           color: '#615FF8', lightBg: '#EEEDFE', darkBg: 'rgba(129,128,255,0.16)', emoji: '📧' },
+  sms:      { icon: 'message-square', color: '#4FA6E8', lightBg: '#EAF3FD', darkBg: 'rgba(107,184,240,0.16)', emoji: '📱' },
+  calendar: { icon: 'calendar',       color: '#1F9A5A', lightBg: '#EFFDF6', darkBg: 'rgba(52,199,123,0.16)', emoji: '📅' },
+  whatsapp: { icon: 'message-circle', color: '#25D366', lightBg: '#E8FDF0', darkBg: 'rgba(37,211,102,0.16)', emoji: '💬' },
+  payment:  { icon: 'credit-card',    color: '#1F9A5A', lightBg: '#EFFDF6', darkBg: 'rgba(52,199,123,0.16)', emoji: '💸' },
+  booking:  { icon: 'navigation',     color: '#4FA6E8', lightBg: '#EAF3FD', darkBg: 'rgba(107,184,240,0.16)', emoji: '🚗' },
+  food:     { icon: 'shopping-bag',   color: '#F5A623', lightBg: '#FEF3C7', darkBg: 'rgba(255,184,77,0.16)', emoji: '🍛' },
+  shopping: { icon: 'shopping-cart',  color: '#F5A623', lightBg: '#FEF3C7', darkBg: 'rgba(255,184,77,0.16)', emoji: '🛍️' },
+  reminder: { icon: 'bell',           color: '#F5A623', lightBg: '#FEF3C7', darkBg: 'rgba(255,184,77,0.16)', emoji: '🔔' },
 };
 
-const getMeta = (type) => TYPE_META[type] || TYPE_META.info;
+// The generic/unknown-type fallback is a structural gray, not a brand color
+// — it already resolves straight to theme tokens instead of a pastel tint.
+const getMeta = (type, theme) => {
+  const raw = TYPE_META[type];
+  if (!raw) return { icon: 'bell', color: theme.faint, bg: theme.soft, emoji: '🔔' };
+  return { icon: raw.icon, color: raw.color, bg: theme.isDark ? raw.darkBg : raw.lightBg, emoji: raw.emoji };
+};
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -40,8 +49,8 @@ function formatTime(iso) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-function NotifRow({ item, onMarkRead }) {
-  const meta = getMeta(item.type);
+function NotifRow({ item, onMarkRead, styles, theme }) {
+  const meta = getMeta(item.type, theme);
   const fadeAnim = React.useRef(new Animated.Value(item.read ? 1 : 0)).current;
 
   const handlePress = () => {
@@ -80,7 +89,7 @@ function NotifRow({ item, onMarkRead }) {
         </View>
         {item.priority >= 60 && (
           <View style={[styles.priorityPill, item.priority >= 85 && styles.priorityPillUrgent]}>
-            <Feather name={item.priority >= 85 ? 'alert-circle' : 'flag'} size={11} color={item.priority >= 85 ? '#B42318' : '#9A6700'} />
+            <Feather name={item.priority >= 85 ? 'alert-circle' : 'flag'} size={11} color={item.priority >= 85 ? theme.danger : theme.warning} />
             <Text style={[styles.priorityPillText, item.priority >= 85 && styles.priorityPillUrgentText]}>
               {item.priority >= 85 ? 'Priority' : 'Important'} · {item.priority}
             </Text>
@@ -94,6 +103,7 @@ function NotifRow({ item, onMarkRead }) {
 export default function Notifications({ navigation }) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { width } = useWindowDimensions();
   const hPad = width < 360 ? 16 : 20;
   const { on, emit } = useSocket();
@@ -218,7 +228,7 @@ export default function Notifications({ navigation }) {
     }
     return (
       <>
-        <NotifRow item={item} onMarkRead={() => handleNotifPress(item)} />
+        <NotifRow item={item} onMarkRead={() => handleNotifPress(item)} styles={styles} theme={theme} />
         {item.type === 'email' && activeReply?.id === item.id && (
           <View style={styles.inlineReply}>
             <SmartReplyCard
@@ -236,7 +246,7 @@ export default function Notifications({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ReminderAlert />
 
       {/* Auto-popup smart reply cards — Modal bottom-sheet */}
@@ -254,7 +264,7 @@ export default function Notifications({ navigation }) {
       {/* Header */}
       <View style={[styles.header, { paddingHorizontal: hPad }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack()}>
-          <Feather name="arrow-left" size={22} color="#14171F" />
+          <Feather name="arrow-left" size={22} color={theme.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Notifications</Text>
@@ -268,7 +278,7 @@ export default function Notifications({ navigation }) {
             onPress={markAllRead}
             disabled={markingAll}
           >
-            <Feather name="check-circle" size={14} color="#7B5FE8" />
+            <Feather name="check-circle" size={14} color={theme.accentAlt} />
             <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
         )}
@@ -283,7 +293,7 @@ export default function Notifications({ navigation }) {
       ) : notifications.length === 0 ? (
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
-            <Feather name="bell" size={32} color="#C7CBD3" />
+            <Feather name="bell" size={32} color={theme.disabled} />
           </View>
           <Text style={styles.emptyTitle}>All caught up</Text>
           <Text style={styles.emptySub}>No notifications yet</Text>
@@ -299,8 +309,8 @@ export default function Notifications({ navigation }) {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); loadData(true); }}
-              tintColor="#7B5FE8"
-              colors={['#7B5FE8']}
+              tintColor={theme.accentAlt}
+              colors={[theme.accentAlt]}
             />
           }
         />
@@ -309,8 +319,8 @@ export default function Notifications({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -320,27 +330,27 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: theme.soft,
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: '#14171F' },
-  headerSub: { fontSize: 12, color: '#7B5FE8', fontWeight: '600', marginTop: 1 },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: theme.text },
+  headerSub: { fontSize: 12, color: theme.accentAlt, fontWeight: '600', marginTop: 1 },
   markAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(123,95,232,0.08)',
+    backgroundColor: theme.isDark ? 'rgba(129,128,255,0.12)' : 'rgba(123,95,232,0.08)',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(123,95,232,0.2)',
+    borderColor: theme.isDark ? 'rgba(129,128,255,0.24)' : 'rgba(123,95,232,0.2)',
   },
-  markAllText: { fontSize: 12, fontWeight: '700', color: '#7B5FE8' },
+  markAllText: { fontSize: 12, fontWeight: '700', color: theme.accentAlt },
   sectionHeader: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#9AA1AE',
+    color: theme.faint,
     letterSpacing: 0.8,
     marginTop: 16,
     marginBottom: 8,
@@ -348,7 +358,7 @@ const styles = StyleSheet.create({
   notifRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderRadius: 16,
     padding: 14,
     marginBottom: 8,
@@ -357,7 +367,7 @@ const styles = StyleSheet.create({
   notifRowRead: { opacity: 0.7 },
   unreadDot: {
     width: 8, height: 8, borderRadius: 4,
-    backgroundColor: '#7B5FE8',
+    backgroundColor: theme.accentAlt,
     marginTop: 5,
     flexShrink: 0,
   },
@@ -376,11 +386,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   notifTitle: {
-    fontSize: 14, fontWeight: '700', color: '#14171F', flex: 1,
+    fontSize: 14, fontWeight: '700', color: theme.text, flex: 1,
   },
-  notifTitleRead: { fontWeight: '500', color: '#6B7280' },
-  notifTime: { fontSize: 11, color: '#C7CBD3', flexShrink: 0 },
-  notifBody: { fontSize: 12.5, color: '#6B7280', lineHeight: 18, marginBottom: 8 },
+  notifTitleRead: { fontWeight: '500', color: theme.muted },
+  notifTime: { fontSize: 11, color: theme.disabled, flexShrink: 0 },
+  notifBody: { fontSize: 12.5, color: theme.muted, lineHeight: 18, marginBottom: 8 },
   typePill: {
     alignSelf: 'flex-start',
     borderRadius: 6,
@@ -390,14 +400,14 @@ const styles = StyleSheet.create({
   typePillText: { fontSize: 10, fontWeight: '800' },
   priorityPill: {
     alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#FFF7E6', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, marginTop: 5,
+    backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FFF7E6', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, marginTop: 5,
   },
-  priorityPillUrgent: { backgroundColor: '#FEF3F2' },
-  priorityPillText: { fontSize: 10, fontWeight: '800', color: '#9A6700' },
-  priorityPillUrgentText: { color: '#B42318' },
+  priorityPillUrgent: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FEF3F2' },
+  priorityPillText: { fontSize: 10, fontWeight: '800', color: theme.warning },
+  priorityPillUrgentText: { color: theme.danger },
   skeleton: {
     height: 76,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.card,
     borderRadius: 16,
     marginBottom: 8,
   },
@@ -406,11 +416,11 @@ const styles = StyleSheet.create({
   },
   emptyIconWrap: {
     width: 72, height: 72, borderRadius: 36,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: theme.soft,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#14171F' },
-  emptySub: { fontSize: 13, color: '#9AA1AE' },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: theme.text },
+  emptySub: { fontSize: 13, color: theme.faint },
   inlineReply: { marginBottom: 8 },
 });
