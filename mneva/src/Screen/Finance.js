@@ -1,50 +1,66 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Modal, TouchableWithoutFeedback, useWindowDimensions,
+  RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useSocket } from '../services/socket';
-import AddLoanModal from './finance/AddLoanModal';
-import AddEmiModal from './finance/AddEmiModal';
-import AddSubscriptionModal from './finance/AddSubscriptionModal';
-import AddBillModal from './finance/AddBillModal';
-import AddFDModal from './finance/AddFDModal';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const SPEND_COLORS = ['#1F9A5A', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623', '#9B72FF', '#06B6D4'];
 
-const CATEGORY_EMOJI = {
-  Electricity: '⚡', Water: '💧', Internet: '🌐', Mobile: '📱', Gas: '🔥',
-  Rent: '🏠', Maintenance: '🔧', Insurance: '🛡️',
-};
-
-// Real Bill rows (Upcoming/Due/Paid/Overdue + autoPay) mapped to the shape
-// this section has always rendered (pending/auto/paid), so the existing
-// "Upcoming Bills" UI didn't need a rewrite when the backend went from a
-// hardcoded stub to real data.
-const billDisplay = (bill) => ({
-  id: bill.id,
-  name: bill.name,
-  dueDate: bill.dueDate,
-  amount: bill.expectedAmount ?? bill.lastBillAmount ?? 0,
-  uiStatus: bill.status === 'Paid' ? 'paid' : bill.autoPay ? 'auto' : 'pending',
-  category: bill.category,
-  logo: CATEGORY_EMOJI[bill.category] || '🧾',
-});
-
-const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : '—';
+// A small multi-segment donut — reused for the Spending breakdown and the
+// Portfolio holdings allocation, since both are "share of a total" data.
+function DonutChart({ data, size = 128, strokeWidth = 18, centerLabel, centerSub }) {
+  const total = data.reduce((sum, d) => sum + (d.value || 0), 0);
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  let cumulative = 0;
+  return (
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke="#F0F1F4" strokeWidth={strokeWidth} fill="none" />
+        {total > 0 && data.map((d, i) => {
+          if (!d.value) return null;
+          const segLen = (d.value / total) * circumference;
+          const offset = -cumulative;
+          cumulative += segLen;
+          return (
+            <Circle
+              key={i}
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              stroke={d.color}
+              strokeWidth={strokeWidth}
+              fill="none"
+              strokeDasharray={`${segLen} ${circumference - segLen}`}
+              strokeDashoffset={offset}
+              rotation="-90"
+              origin={`${size / 2}, ${size / 2}`}
+            />
+          );
+        })}
+      </Svg>
+      <View style={[StyleSheet.absoluteFill, styles.donutCenter]} pointerEvents="none">
+        <Text style={styles.donutCenterLabel} numberOfLines={1}>{centerLabel}</Text>
+        {centerSub ? <Text style={styles.donutCenterSub}>{centerSub}</Text> : null}
+      </View>
+    </View>
+  );
+}
 
 const ADD_OPTIONS = [
-  { key: 'loan', label: 'Loan', sub: 'Home, car, personal & more', icon: 'briefcase', colors: ['#4FA6E8', '#3D8BFF'] },
-  { key: 'emi', label: 'EMI', sub: 'Any installment purchase', icon: 'credit-card', colors: ['#F5A623', '#E0901A'] },
-  { key: 'subscription', label: 'Subscription', sub: 'Streaming, software & more', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'] },
-  { key: 'bill', label: 'Bill', sub: 'Electricity, rent, internet & more', icon: 'file-text', colors: ['#E0546E', '#C8405A'] },
-  { key: 'fd', label: 'Fixed Deposit', sub: 'Bank FDs & maturity tracking', icon: 'lock', colors: ['#06B6D4', '#0891B2'] },
+  { key: 'loan', label: 'Loan', sub: 'Home, car, personal & more', icon: 'briefcase', colors: ['#4FA6E8', '#3D8BFF'], screen: 'LoanScreen' },
+  { key: 'emi', label: 'EMI', sub: 'Any installment purchase', icon: 'credit-card', colors: ['#F5A623', '#E0901A'], screen: 'EmiScreen' },
+  { key: 'subscription', label: 'Subscription', sub: 'Streaming, software & more', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'], screen: 'SubscriptionScreen' },
+  { key: 'bill', label: 'Bill', sub: 'Electricity, rent, internet & more', icon: 'file-text', colors: ['#E0546E', '#C8405A'], screen: 'BillScreen' },
+  { key: 'fd', label: 'Fixed Deposit', sub: 'Bank FDs & maturity tracking', icon: 'lock', colors: ['#06B6D4', '#0891B2'], screen: 'FDScreen' },
 ];
 
 export default function Finance({ navigation }) {
@@ -63,14 +79,6 @@ export default function Finance({ navigation }) {
   const [fixedDeposits, setFixedDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [payModal, setPayModal] = useState(null);
-  const [paying, setPaying] = useState(false);
-  const [activeAddModal, setActiveAddModal] = useState(null);
-  const [editingItem, setEditingItem] = useState(null);
-
-  const openCreate = (type) => { setEditingItem(null); setActiveAddModal(type); };
-  const openEdit = (type, item) => { setEditingItem(item); setActiveAddModal(type); };
-  const closeAddModal = () => { setActiveAddModal(null); setEditingItem(null); };
 
   const hasRealDataRef = useRef(false);
 
@@ -98,11 +106,11 @@ export default function Finance({ navigation }) {
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  // Paint the last known bills/portfolio/spending/loans/emis/subscriptions
-  // immediately from cache — otherwise this screen shows skeleton cards on
-  // every single open even though nothing changed since last time. loadData()
-  // below still runs right after and silently replaces this with fresh data;
-  // the ref guard stops a slow cache read from ever clobbering real data.
+  // Paint the last known data immediately from cache — otherwise this screen
+  // shows skeleton cards on every single open even though nothing changed
+  // since last time. loadData() below still runs right after and silently
+  // replaces this with fresh data; the ref guard stops a slow cache read
+  // from ever clobbering real data.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -133,12 +141,14 @@ export default function Finance({ navigation }) {
   useEffect(() => { loadData(); }, []);
   useEffect(() => onAppDataRefresh(() => loadData(true)), []);
 
-  // New Loans/EMIs/Subscriptions/Bills never get pushed into state from the
-  // Add-modal's own POST response — they arrive here over the socket, same
-  // convention as ParentMedication.js, so every screen with this data open
-  // stays in sync, not just the one that created it.
+  // Loans/EMIs/Subscriptions/Bills/FDs are added & edited on their own
+  // screens now — this dashboard only tracks the raw lists to compute the
+  // overview totals below, so it still needs to stay live via sockets.
   useEffect(() => {
     const offs = [
+      on('bill:created', (bill) => setBills(prev => prev.some(x => x.id === bill.id) ? prev : [bill, ...prev])),
+      on('bill:updated', (bill) => setBills(prev => prev.map(x => x.id === bill.id ? bill : x))),
+      on('bill:deleted', ({ id }) => setBills(prev => prev.filter(x => x.id !== id))),
       on('loan:created', (loan) => setLoans(prev => prev.some(x => x.id === loan.id) ? prev : [loan, ...prev])),
       on('loan:updated', (loan) => setLoans(prev => prev.map(x => x.id === loan.id ? loan : x))),
       on('loan:deleted', ({ id }) => setLoans(prev => prev.filter(x => x.id !== id))),
@@ -148,9 +158,6 @@ export default function Finance({ navigation }) {
       on('subscription:created', (s) => setSubscriptions(prev => prev.some(x => x.id === s.id) ? prev : [s, ...prev])),
       on('subscription:updated', (s) => setSubscriptions(prev => prev.map(x => x.id === s.id ? s : x))),
       on('subscription:deleted', ({ id }) => setSubscriptions(prev => prev.filter(x => x.id !== id))),
-      on('bill:created', (bill) => setBills(prev => prev.some(x => x.id === bill.id) ? prev : [bill, ...prev])),
-      on('bill:updated', (bill) => setBills(prev => prev.map(x => x.id === bill.id ? bill : x))),
-      on('bill:deleted', ({ id }) => setBills(prev => prev.filter(x => x.id !== id))),
       on('fd:created', (fd) => setFixedDeposits(prev => prev.some(x => x.id === fd.id) ? prev : [fd, ...prev])),
       on('fd:updated', (fd) => setFixedDeposits(prev => prev.map(x => x.id === fd.id ? fd : x))),
       on('fd:deleted', ({ id }) => setFixedDeposits(prev => prev.filter(x => x.id !== id))),
@@ -158,22 +165,7 @@ export default function Finance({ navigation }) {
     return () => offs.forEach(off => off?.());
   }, [on]);
 
-  const handlePay = async () => {
-    if (!payModal) return;
-    setPaying(true);
-    try {
-      await apiFetch('/api/finance/pay', {
-        method: 'POST',
-        body: { billId: payModal.id, amount: payModal.amount, payee: payModal.name, category: payModal.category },
-      });
-      setPayModal(null);
-      loadData(true);
-    } catch {}
-    finally { setPaying(false); }
-  };
-
-  const displayedBills = bills.map(b => ({ ...billDisplay(b), raw: b }));
-  const pendingBills = displayedBills.filter(b => b.uiStatus === 'pending').length;
+  const pendingBills = bills.filter(b => b.status !== 'Paid' && !b.autoPay).length;
 
   const STAT_CARDS = [
     { label: 'Total Spend', value: `₹${(spending?.total || 0).toLocaleString('en-IN')}`, color: '#1F9A5A', sub: 'This month' },
@@ -181,6 +173,33 @@ export default function Finance({ navigation }) {
     { label: 'Portfolio', value: portfolio ? `₹${((portfolio.totalCurrent || 0) / 1000).toFixed(0)}k` : '—', color: '#615FF8', sub: `+${portfolio?.returnPct || 0}% return` },
     { label: 'CIBIL Score', value: portfolio?.cibilScore || '—', color: '#4FA6E8', sub: portfolio?.cibilGrade || 'Not connected' },
   ];
+
+  const activeLoans = loans.filter(l => l.status === 'Active');
+  const loanOutstanding = activeLoans.reduce((sum, l) => sum + (l.outstandingAmount || 0), 0);
+  const activeEmis = emis.filter(e => e.status === 'Active');
+  const emiMonthly = activeEmis.reduce((sum, e) => sum + (e.emiAmount || 0), 0);
+  const activeSubs = subscriptions.filter(s => s.status === 'Active');
+  const subsTotal = activeSubs.reduce((sum, s) => sum + (s.amount || 0), 0);
+  const activeFds = fixedDeposits.filter(f => f.status === 'Active');
+  const fdInvested = activeFds.reduce((sum, f) => sum + (f.principalAmount || 0), 0);
+
+  const OVERVIEW = [
+    { key: 'loan', label: 'Loans', icon: 'briefcase', colors: ['#4FA6E8', '#3D8BFF'], screen: 'LoanScreen', count: activeLoans.length, total: loanOutstanding, totalLabel: 'outstanding' },
+    { key: 'emi', label: 'EMIs', icon: 'credit-card', colors: ['#F5A623', '#E0901A'], screen: 'EmiScreen', count: activeEmis.length, total: emiMonthly, totalLabel: 'per month' },
+    { key: 'subscription', label: 'Subscriptions', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'], screen: 'SubscriptionScreen', count: activeSubs.length, total: subsTotal, totalLabel: 'billed' },
+    { key: 'fd', label: 'Fixed Deposits', icon: 'lock', colors: ['#06B6D4', '#0891B2'], screen: 'FDScreen', count: activeFds.length, total: fdInvested, totalLabel: 'invested' },
+  ];
+  const maxOverviewTotal = Math.max(...OVERVIEW.map(ov => ov.total), 1);
+
+  const spendChartData = (spending?.categories || []).map((cat, i) => ({
+    value: cat.amount || 0,
+    color: SPEND_COLORS[i % SPEND_COLORS.length],
+  }));
+
+  const holdingsChartData = (portfolio?.holdings || []).map((h, i) => ({
+    value: h.current || 0,
+    color: SPEND_COLORS[i % SPEND_COLORS.length],
+  }));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -209,229 +228,46 @@ export default function Finance({ navigation }) {
           ))}
         </View>
 
-        {/* Add to Finance — always-visible card (replaces the old + popup) */}
-        <View style={[styles.sectionCard, { marginBottom: 16 }]}>
-          <Text style={styles.sectionTitle}>Add to Finance</Text>
-          <View style={{ marginTop: 10 }}>
-            {ADD_OPTIONS.map((opt, i) => (
+        {/* Overview — totals for everything added via "Add to Finance" */}
+        <View style={[styles.sectionCard, { marginTop: 4 }]}>
+          <Text style={styles.sectionTitle}>Overview</Text>
+
+          <View style={styles.barChartWrap}>
+            {OVERVIEW.map((ov) => {
+              const pct = ov.total > 0 ? Math.max((ov.total / maxOverviewTotal) * 100, 6) : 2;
+              return (
+                <View key={ov.key} style={styles.barChartCol}>
+                  <View style={styles.barChartTrack}>
+                    <LinearGradient colors={ov.colors} style={[styles.barChartFill, { height: `${pct}%` }]} />
+                  </View>
+                  <Text style={styles.barChartLabel} numberOfLines={1}>{ov.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={{ marginTop: 4 }}>
+            {OVERVIEW.map((ov, i) => (
               <TouchableOpacity
-                key={opt.key}
-                style={[styles.chooserOption, i !== ADD_OPTIONS.length - 1 && styles.billRowDivider]}
-                onPress={() => openCreate(opt.key)}
+                key={ov.key}
+                style={[styles.chooserOption, i !== OVERVIEW.length - 1 && styles.rowDivider]}
+                onPress={() => navigation?.navigate?.(ov.screen)}
                 activeOpacity={0.7}
               >
-                <LinearGradient colors={opt.colors} style={styles.chooserIconGrad}>
-                  <Feather name={opt.icon} size={18} color="#FFFFFF" />
+                <LinearGradient colors={ov.colors} style={styles.chooserIconGrad}>
+                  <Feather name={ov.icon} size={18} color="#FFFFFF" />
                 </LinearGradient>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.chooserOptionTitle}>{opt.label}</Text>
-                  <Text style={styles.chooserOptionSub}>{opt.sub}</Text>
+                  <Text style={styles.chooserOptionTitle}>{ov.label}</Text>
+                  <Text style={styles.chooserOptionSub}>{ov.count} active</Text>
                 </View>
-                <Feather name="chevron-right" size={18} color="#C7CBD3" />
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.overviewAmount}>₹{ov.total.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.overviewAmountSub}>{ov.totalLabel}</Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
-
-        {/* Bills */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Upcoming Bills</Text>
-            <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>{displayedBills.length} total</Text>
-            </View>
-          </View>
-
-          {loading ? (
-            [1, 2].map(i => <View key={i} style={styles.billSkeleton} />)
-          ) : displayedBills.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="inbox" size={26} color="#C7CBD3" />
-              <Text style={styles.emptyText}>No bills yet. Tap + to add one.</Text>
-            </View>
-          ) : (
-            displayedBills.map((bill, i) => (
-              <TouchableOpacity
-                key={bill.id}
-                style={[styles.billRow, i !== displayedBills.length - 1 && styles.billRowDivider]}
-                onPress={() => bill.uiStatus === 'pending' && setPayModal(bill)}
-                activeOpacity={bill.uiStatus === 'pending' ? 0.7 : 1}
-              >
-                <View style={styles.billIconWrap}>
-                  <Text style={styles.billEmoji}>{bill.logo}</Text>
-                </View>
-                <View style={styles.billTextWrap}>
-                  <Text style={styles.billName}>{bill.name}</Text>
-                  <Text style={styles.billDue}>Due {fmtShortDate(bill.dueDate)}</Text>
-                </View>
-                <View style={styles.billRight}>
-                  <Text style={styles.billAmount}>₹{(bill.amount || 0).toLocaleString('en-IN')}</Text>
-                  <View style={[styles.billBadge, { backgroundColor: bill.uiStatus === 'pending' ? '#FEF3C7' : '#EFFDF6' }]}>
-                    <Text style={[styles.billBadgeText, { color: bill.uiStatus === 'pending' ? '#D97706' : '#1F9A5A' }]}>
-                      {bill.uiStatus === 'pending' ? 'Pay Now' : bill.uiStatus === 'auto' ? 'Auto' : 'Paid'}
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit('bill', bill.raw)} hitSlop={8}>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" />
-                </TouchableOpacity>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
-
-        {/* Loans */}
-        <View style={[styles.sectionCard, { marginTop: 16 }]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Loans</Text>
-            <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>{loans.length} total</Text>
-            </View>
-          </View>
-          {loans.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="briefcase" size={26} color="#C7CBD3" />
-              <Text style={styles.emptyText}>No loans added yet.</Text>
-            </View>
-          ) : (
-            loans.map((loan, i) => (
-              <View key={loan.id} style={[styles.billRow, i !== loans.length - 1 && styles.billRowDivider]}>
-                <View style={styles.billIconWrap}>
-                  <Feather name="briefcase" size={16} color="#4FA6E8" />
-                </View>
-                <View style={styles.billTextWrap}>
-                  <Text style={styles.billName}>{loan.name}</Text>
-                  <Text style={styles.billDue}>{loan.lenderName} · Next EMI {fmtShortDate(loan.nextEmiDate)}</Text>
-                </View>
-                <View style={styles.billRight}>
-                  <Text style={styles.billAmount}>₹{(loan.outstandingAmount || 0).toLocaleString('en-IN')}</Text>
-                  <View style={[styles.billBadge, { backgroundColor: loan.status === 'Active' ? '#EFFDF6' : '#F3F4F6' }]}>
-                    <Text style={[styles.billBadgeText, { color: loan.status === 'Active' ? '#1F9A5A' : '#6B7280' }]}>{loan.status}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit('loan', loan)} hitSlop={8}>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" />
-                </TouchableOpacity>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* EMIs */}
-        <View style={[styles.sectionCard, { marginTop: 16 }]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>EMIs</Text>
-            <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>{emis.length} total</Text>
-            </View>
-          </View>
-          {emis.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="credit-card" size={26} color="#C7CBD3" />
-              <Text style={styles.emptyText}>No EMIs added yet.</Text>
-            </View>
-          ) : (
-            emis.map((emi, i) => {
-              const remaining = emi.installmentsRemaining ?? Math.max((emi.numberOfInstallments || 0) - (emi.installmentsPaid || 0), 0);
-              return (
-                <View key={emi.id} style={[styles.billRow, i !== emis.length - 1 && styles.billRowDivider]}>
-                  <View style={styles.billIconWrap}>
-                    <Feather name="credit-card" size={16} color="#F5A623" />
-                  </View>
-                  <View style={styles.billTextWrap}>
-                    <Text style={styles.billName}>{emi.name}</Text>
-                    <Text style={styles.billDue}>{emi.provider} · {remaining} left</Text>
-                  </View>
-                  <View style={styles.billRight}>
-                    <Text style={styles.billAmount}>₹{(emi.emiAmount || 0).toLocaleString('en-IN')}</Text>
-                    <Text style={styles.billMetaText}>{fmtShortDate(emi.nextPaymentDate)}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit('emi', emi)} hitSlop={8}>
-                    <Feather name="edit-2" size={14} color="#9AA1AE" />
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
-        </View>
-
-        {/* Subscriptions */}
-        <View style={[styles.sectionCard, { marginTop: 16 }]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Subscriptions</Text>
-            <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>{subscriptions.length} total</Text>
-            </View>
-          </View>
-          {subscriptions.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="repeat" size={26} color="#C7CBD3" />
-              <Text style={styles.emptyText}>No subscriptions added yet.</Text>
-            </View>
-          ) : (
-            subscriptions.map((sub, i) => (
-              <View key={sub.id} style={[styles.billRow, i !== subscriptions.length - 1 && styles.billRowDivider]}>
-                <View style={styles.billIconWrap}>
-                  <Feather name="repeat" size={16} color="#9B72FF" />
-                </View>
-                <View style={styles.billTextWrap}>
-                  <Text style={styles.billName}>{sub.name}</Text>
-                  <Text style={styles.billDue}>
-                    {sub.provider || sub.category} · {sub.billingCycle}{sub.autoRenewal ? ' · Auto-renew' : ''}
-                  </Text>
-                </View>
-                <View style={styles.billRight}>
-                  <Text style={styles.billAmount}>₹{(sub.amount || 0).toLocaleString('en-IN')}</Text>
-                  <Text style={styles.billMetaText}>{fmtShortDate(sub.nextBillingDate)}</Text>
-                </View>
-                <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit('subscription', sub)} hitSlop={8}>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" />
-                </TouchableOpacity>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Fixed Deposits */}
-        <View style={[styles.sectionCard, { marginTop: 16 }]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Fixed Deposits</Text>
-            <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>{fixedDeposits.length} total</Text>
-            </View>
-          </View>
-          {fixedDeposits.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="lock" size={26} color="#C7CBD3" />
-              <Text style={styles.emptyText}>No fixed deposits added yet.</Text>
-            </View>
-          ) : (
-            fixedDeposits.map((fd, i) => (
-              <TouchableOpacity
-                key={fd.id}
-                style={[styles.billRow, i !== fixedDeposits.length - 1 && styles.billRowDivider]}
-                onPress={() => openEdit('fd', fd)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.billIconWrap}>
-                  <Feather name="lock" size={16} color="#06B6D4" />
-                </View>
-                <View style={styles.billTextWrap}>
-                  <Text style={styles.billName}>{fd.name}</Text>
-                  <Text style={styles.billDue}>{fd.bankName} · Matures {fmtShortDate(fd.maturityDate)}</Text>
-                </View>
-                <View style={styles.billRight}>
-                  <Text style={styles.billAmount}>₹{(fd.principalAmount || 0).toLocaleString('en-IN')}</Text>
-                  <View style={[styles.billBadge, { backgroundColor: fd.status === 'Active' ? '#ECFEFF' : '#F3F4F6' }]}>
-                    <Text style={[styles.billBadgeText, { color: fd.status === 'Active' ? '#0891B2' : '#6B7280' }]}>{fd.status}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit('fd', fd)} hitSlop={8}>
-                  <Feather name="edit-2" size={14} color="#9AA1AE" />
-                </TouchableOpacity>
-              </TouchableOpacity>
-            ))
-          )}
         </View>
 
         {/* Portfolio */}
@@ -456,20 +292,30 @@ export default function Finance({ navigation }) {
                 <Text style={styles.emptyText}>No holdings. Connect Zerodha / Groww to populate.</Text>
               </View>
             ) : (
-              (portfolio.holdings || []).map((h, i) => (
-                <View key={h.id || i} style={[styles.holdingRow, i !== portfolio.holdings.length - 1 && styles.billRowDivider]}>
-                  <View style={styles.holdingTextWrap}>
-                    <Text style={styles.holdingName}>{h.name}</Text>
-                    <Text style={styles.holdingSub}>{h.sipOn ? `SIP ₹${(h.sipAmt || 0).toLocaleString('en-IN')}/mo` : h.ticker || 'Equity'}</Text>
-                  </View>
-                  <View style={styles.holdingRight}>
-                    <Text style={[styles.holdingReturn, { color: h.ret >= 0 ? '#1F9A5A' : '#E0546E' }]}>
-                      {h.ret >= 0 ? '+' : ''}{h.ret}%
-                    </Text>
-                    <Text style={styles.holdingCurrent}>₹{(h.current || 0).toLocaleString('en-IN')}</Text>
-                  </View>
+              <>
+                <View style={styles.donutRowCentered}>
+                  <DonutChart
+                    data={holdingsChartData}
+                    centerLabel={`₹${((portfolio.totalCurrent || 0) / 1000).toFixed(1)}k`}
+                    centerSub="allocated"
+                  />
                 </View>
-              ))
+                {(portfolio.holdings || []).map((h, i) => (
+                  <View key={h.id || i} style={[styles.holdingRow, i !== portfolio.holdings.length - 1 && styles.rowDivider]}>
+                    <View style={[styles.spendDot, { backgroundColor: SPEND_COLORS[i % SPEND_COLORS.length] }]} />
+                    <View style={styles.holdingTextWrap}>
+                      <Text style={styles.holdingName}>{h.name}</Text>
+                      <Text style={styles.holdingSub}>{h.sipOn ? `SIP ₹${(h.sipAmt || 0).toLocaleString('en-IN')}/mo` : h.ticker || 'Equity'}</Text>
+                    </View>
+                    <View style={styles.holdingRight}>
+                      <Text style={[styles.holdingReturn, { color: h.ret >= 0 ? '#1F9A5A' : '#E0546E' }]}>
+                        {h.ret >= 0 ? '+' : ''}{h.ret}%
+                      </Text>
+                      <Text style={styles.holdingCurrent}>₹{(h.current || 0).toLocaleString('en-IN')}</Text>
+                    </View>
+                  </View>
+                ))}
+              </>
             )}
           </View>
         )}
@@ -486,61 +332,55 @@ export default function Finance({ navigation }) {
                 <Text style={styles.emptyText}>No spending data. Connect finance integrations.</Text>
               </View>
             ) : (
-              (spending.categories || []).map((cat, i) => {
-                const pct = spending.total > 0 ? (cat.amount / spending.total) * 100 : 0;
-                return (
-                  <View key={cat.name} style={styles.spendRow}>
-                    <View style={[styles.spendDot, { backgroundColor: SPEND_COLORS[i % SPEND_COLORS.length] }]} />
-                    <Text style={styles.spendName}>{cat.name}</Text>
-                    <View style={styles.spendBarWrap}>
-                      <View style={[styles.spendBar, { width: `${Math.min(pct, 100)}%`, backgroundColor: SPEND_COLORS[i % SPEND_COLORS.length] }]} />
-                    </View>
-                    <Text style={styles.spendAmount}>₹{(cat.amount || 0).toLocaleString('en-IN')}</Text>
-                  </View>
-                );
-              })
+              <View style={styles.donutRow}>
+                <DonutChart
+                  data={spendChartData}
+                  centerLabel={`₹${((spending.total || 0) / 1000).toFixed(1)}k`}
+                  centerSub="spent"
+                />
+                <View style={styles.legendCol}>
+                  {(spending.categories || []).map((cat, i) => {
+                    const pct = spending.total > 0 ? Math.round((cat.amount / spending.total) * 100) : 0;
+                    return (
+                      <View key={cat.name} style={styles.legendRow}>
+                        <View style={[styles.spendDot, { backgroundColor: SPEND_COLORS[i % SPEND_COLORS.length] }]} />
+                        <Text style={styles.legendName} numberOfLines={1}>{cat.name}</Text>
+                        <Text style={styles.legendPct}>{pct}%</Text>
+                        <Text style={styles.legendAmount}>₹{(cat.amount || 0).toLocaleString('en-IN')}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
             )}
           </View>
         )}
-      </ScrollView>
 
-      {/* Pay Modal */}
-      <Modal visible={!!payModal} transparent animationType="fade" onRequestClose={() => setPayModal(null)}>
-        <TouchableWithoutFeedback onPress={() => setPayModal(null)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.modalSheet}>
-                <Text style={styles.modalTitle}>Confirm Payment</Text>
-                <Text style={styles.modalAmount}>₹{(payModal?.amount || 0).toLocaleString('en-IN')}</Text>
-                {[['Payee', payModal?.name], ['Category', payModal?.category], ['Via', 'UPI — HDFC ••4521']].map(([k, v]) => (
-                  <View key={k} style={styles.modalRow}>
-                    <Text style={styles.modalRowKey}>{k}</Text>
-                    <Text style={styles.modalRowVal}>{v}</Text>
-                  </View>
-                ))}
-                <View style={styles.biometricNote}>
-                  <Feather name="lock" size={13} color="#D97706" />
-                  <Text style={styles.biometricText}>  Biometric required for payments ≥ ₹1,000</Text>
+        {/* Add to Finance — always-visible card. Each option opens its own
+            full page (list + add form) instead of a popup. */}
+        <View style={[styles.sectionCard, { marginTop: 16 }]}>
+          <Text style={styles.sectionTitle}>Add to Finance</Text>
+          <View style={{ marginTop: 10 }}>
+            {ADD_OPTIONS.map((opt, i) => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.chooserOption, i !== ADD_OPTIONS.length - 1 && styles.rowDivider]}
+                onPress={() => navigation?.navigate?.(opt.screen)}
+                activeOpacity={0.7}
+              >
+                <LinearGradient colors={opt.colors} style={styles.chooserIconGrad}>
+                  <Feather name={opt.icon} size={18} color="#FFFFFF" />
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.chooserOptionTitle}>{opt.label}</Text>
+                  <Text style={styles.chooserOptionSub}>{opt.sub}</Text>
                 </View>
-                <TouchableOpacity style={styles.payBtn} onPress={handlePay} disabled={paying}>
-                  <LinearGradient colors={['#1F9A5A', '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.payBtnGrad}>
-                    <Text style={styles.payBtnText}>{paying ? 'Processing…' : 'Authenticate & Pay'}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setPayModal(null)}>
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
+                <Feather name="chevron-right" size={18} color="#C7CBD3" />
+              </TouchableOpacity>
+            ))}
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      <AddLoanModal visible={activeAddModal === 'loan'} onClose={closeAddModal} editItem={activeAddModal === 'loan' ? editingItem : null} />
-      <AddEmiModal visible={activeAddModal === 'emi'} onClose={closeAddModal} editItem={activeAddModal === 'emi' ? editingItem : null} />
-      <AddSubscriptionModal visible={activeAddModal === 'subscription'} onClose={closeAddModal} editItem={activeAddModal === 'subscription' ? editingItem : null} />
-      <AddBillModal visible={activeAddModal === 'bill'} onClose={closeAddModal} editItem={activeAddModal === 'bill' ? editingItem : null} />
-      <AddFDModal visible={activeAddModal === 'fd'} onClose={closeAddModal} editItem={activeAddModal === 'fd' ? editingItem : null} />
+        </View>
+      </ScrollView>
 
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
@@ -576,33 +416,23 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   headerTitle: { fontSize: 28, fontWeight: '800', color: '#14171F' },
   headerSubtitle: { fontSize: 13, color: '#9AA1AE', marginTop: 2 },
-  headerBadge: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  statCard: { width: '47.5%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14 },
+  statCard: {
+    width: '47.5%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14,
+    shadowColor: '#0F1720', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
   statLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.3, marginBottom: 6 },
   statValue: { fontSize: 22, fontWeight: '800', marginBottom: 2 },
   statSub: { fontSize: 11, color: '#9AA1AE' },
-  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
+  sectionCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4,
+    shadowColor: '#0F1720', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
+  },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#14171F' },
-  sectionBadge: { backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  sectionBadgeText: { fontSize: 11, fontWeight: '700', color: '#6B7280' },
-  billSkeleton: { height: 52, backgroundColor: '#F0F1F4', borderRadius: 12, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 24, gap: 8 },
   emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
-  billRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  billRowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  billIconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  billEmoji: { fontSize: 18 },
-  billTextWrap: { flex: 1 },
-  billName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
-  billDue: { fontSize: 12, color: '#9AA1AE' },
-  billRight: { alignItems: 'flex-end', gap: 4 },
-  billAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
-  billBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  billBadgeText: { fontSize: 10, fontWeight: '800' },
-  billMetaText: { fontSize: 11, color: '#9AA1AE' },
-  editIconBtn: { padding: 6, marginLeft: 4 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
   portfolioReturn: { fontSize: 13, fontWeight: '800', color: '#1F9A5A' },
   portfolioSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F9FAFC', borderRadius: 12, padding: 12, marginBottom: 14 },
   portfolioStat: { alignItems: 'center' },
@@ -616,31 +446,31 @@ const styles = StyleSheet.create({
   holdingReturn: { fontSize: 13, fontWeight: '800', marginBottom: 2 },
   holdingCurrent: { fontSize: 12, color: '#6B7280' },
   savingsRate: { fontSize: 12, fontWeight: '700', color: '#1F9A5A' },
-  spendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   spendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  spendName: { fontSize: 12, color: '#374151', fontWeight: '600', width: 80 },
-  spendBarWrap: { flex: 1, height: 6, backgroundColor: '#F0F1F4', borderRadius: 3, marginHorizontal: 8, overflow: 'hidden' },
-  spendBar: { height: 6, borderRadius: 3 },
-  spendAmount: { fontSize: 12, fontWeight: '700', color: '#14171F', width: 70, textAlign: 'right' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.6)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
-  modalSheet: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 28, padding: 24 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#14171F', textAlign: 'center', marginBottom: 8 },
-  modalAmount: { fontSize: 36, fontWeight: '800', color: '#14171F', textAlign: 'center', marginBottom: 20 },
-  modalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
-  modalRowKey: { fontSize: 13, color: '#9AA1AE' },
-  modalRowVal: { fontSize: 13, fontWeight: '700', color: '#14171F' },
-  biometricNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12, marginVertical: 16 },
-  biometricText: { fontSize: 12, color: '#D97706', fontWeight: '600' },
-  payBtn: { borderRadius: 16, overflow: 'hidden', marginBottom: 10 },
-  payBtnGrad: { paddingVertical: 16, alignItems: 'center' },
-  payBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  cancelBtn: { paddingVertical: 14, alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 16 },
-  cancelBtnText: { fontSize: 15, fontWeight: '700', color: '#374151' },
-  chooserSheet: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 28, padding: 20 },
+
+  donutCenter: { alignItems: 'center', justifyContent: 'center' },
+  donutCenterLabel: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  donutCenterSub: { fontSize: 10, color: '#9AA1AE', marginTop: 2 },
+  donutRow: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8 },
+  donutRowCentered: { alignItems: 'center', marginBottom: 16 },
+  legendCol: { flex: 1, marginLeft: 20, gap: 10 },
+  legendRow: { flexDirection: 'row', alignItems: 'center' },
+  legendName: { flex: 1, fontSize: 12, color: '#374151', fontWeight: '600', marginLeft: 6 },
+  legendPct: { fontSize: 11, color: '#9AA1AE', width: 32, textAlign: 'right' },
+  legendAmount: { fontSize: 12, fontWeight: '700', color: '#14171F', width: 76, textAlign: 'right', marginLeft: 6 },
+
+  barChartWrap: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 108, marginTop: 6, marginBottom: 4, paddingHorizontal: 2 },
+  barChartCol: { flex: 1, alignItems: 'center' },
+  barChartTrack: { width: 26, height: 84, backgroundColor: '#F3F4F6', borderRadius: 13, justifyContent: 'flex-end', overflow: 'hidden' },
+  barChartFill: { width: '100%', borderRadius: 13 },
+  barChartLabel: { fontSize: 10, color: '#9AA1AE', fontWeight: '700', marginTop: 8, textAlign: 'center' },
+
   chooserOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   chooserIconGrad: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   chooserOptionTitle: { fontSize: 15, fontWeight: '700', color: '#14171F' },
   chooserOptionSub: { fontSize: 12, color: '#9AA1AE', marginTop: 1 },
+  overviewAmount: { fontSize: 14, fontWeight: '800', color: '#14171F' },
+  overviewAmountSub: { fontSize: 11, color: '#9AA1AE', marginTop: 1 },
   tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F3', paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
   tabLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', marginTop: 4, letterSpacing: 0.3 },

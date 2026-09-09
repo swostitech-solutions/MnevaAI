@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Modal, TextInput, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback, ActivityIndicator, Alert,
+  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { apiFetch } from '../../api/client';
+import { apiFetch, peekCachedResponse } from '../../api/client';
+import { useSocket } from '../../services/socket';
 import DateField from './DateField';
 
 const CATEGORIES = ['Streaming', 'Software', 'Cloud', 'Gaming', 'News', 'Fitness', 'Education', 'Other'];
@@ -34,28 +34,68 @@ const formFromItem = (item) => ({
   reminderBeforeRenewal: item.reminderBeforeRenewal != null ? String(item.reminderBeforeRenewal) : '', notes: item.notes || '',
 });
 
-export default function AddSubscriptionModal({ visible, onClose, editItem }) {
+const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : '—';
+const ACCENT = ['#9B72FF', '#7C5CE8'];
+
+export default function SubscriptionScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { on } = useSocket();
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const isEditing = !!editItem;
 
+  const loadData = async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    try {
+      const s = await apiFetch('/api/finance/subscriptions');
+      setSubscriptions(s?.subscriptions || []);
+    } catch {}
+    finally { setLoading(false); setRefreshing(false); }
+  };
+
   useEffect(() => {
-    if (visible) setForm(editItem ? formFromItem(editItem) : EMPTY_FORM);
-  }, [visible, editItem]);
+    let cancelled = false;
+    (async () => {
+      const s = await peekCachedResponse('/api/finance/subscriptions').catch(() => null);
+      if (!cancelled && s) { setSubscriptions(s.subscriptions || []); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    const offs = [
+      on('subscription:created', (s) => setSubscriptions(prev => prev.some(x => x.id === s.id) ? prev : [s, ...prev])),
+      on('subscription:updated', (s) => setSubscriptions(prev => prev.map(x => x.id === s.id ? s : x))),
+      on('subscription:deleted', ({ id }) => setSubscriptions(prev => prev.filter(x => x.id !== id))),
+    ];
+    return () => offs.forEach(off => off?.());
+  }, [on]);
+
+  useEffect(() => {
+    setForm(editItem ? formFromItem(editItem) : EMPTY_FORM);
+  }, [editItem, showForm]);
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
   const canSave = form.name.trim() && form.category && form.amount && form.billingCycle && form.startDate;
 
-  const handleClose = () => { setForm(EMPTY_FORM); onClose(); };
+  const openAdd = () => { setEditItem(null); setShowForm(true); };
+  const openEdit = (item) => { setEditItem(item); setShowForm(true); };
+  const closeForm = () => { setShowForm(false); setEditItem(null); };
 
   const handleDelete = () => {
     Alert.alert('Delete Subscription', `Remove "${editItem.name}"? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try { await apiFetch(`/api/finance/subscriptions/${editItem.id}`, { method: 'DELETE' }); } catch {}
-        handleClose();
+        closeForm();
       } },
     ]);
   };
@@ -69,7 +109,7 @@ export default function AddSubscriptionModal({ visible, onClose, editItem }) {
       } else {
         await apiFetch('/api/finance/subscriptions', { method: 'POST', body: form });
       }
-      handleClose();
+      closeForm();
     } catch {
       // Socket event updates the list on success; a failed request leaves the form open to retry.
     } finally {
@@ -77,30 +117,34 @@ export default function AddSubscriptionModal({ visible, onClose, editItem }) {
     }
   };
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableWithoutFeedback onPress={handleClose}>
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-        <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <LinearGradient colors={['#9B72FF', '#7C5CE8']} style={styles.sheetIconGrad}>
-              <Feather name="repeat" size={20} color="#FFFFFF" />
-            </LinearGradient>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sheetTitle}>{isEditing ? 'Edit Subscription' : 'Add Subscription'}</Text>
-              <Text style={styles.sheetSubtitle}>Streaming, software, and other recurring services</Text>
-            </View>
-            {isEditing && (
-              <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-                <Feather name="trash-2" size={18} color="#E0546E" />
-              </TouchableOpacity>
-            )}
-          </View>
+  const handleBack = () => { if (showForm) closeForm(); else navigation?.goBack(); };
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
+          <Feather name="arrow-left" size={20} color="#14171F" />
+        </TouchableOpacity>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.headerTitle}>{showForm ? (isEditing ? 'Edit Subscription' : 'Add Subscription') : 'Subscriptions'}</Text>
+          <Text style={styles.headerSubtitle}>{showForm ? 'Streaming, software & more' : `${subscriptions.length} total`}</Text>
+        </View>
+        {showForm && isEditing ? (
+          <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
+            <Feather name="trash-2" size={18} color="#E0546E" />
+          </TouchableOpacity>
+        ) : !showForm ? (
+          <TouchableOpacity onPress={openAdd}>
+            <LinearGradient colors={ACCENT} style={styles.addBtnGrad}>
+              <Feather name="plus" size={20} color="#FFFFFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : <View style={{ width: 38 }} />}
+      </View>
+
+      {showForm ? (
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>Subscription Name <Text style={styles.required}>*</Text></Text>
             <TextInput style={styles.input} placeholder="e.g. Netflix" placeholderTextColor="#9AA1AE" value={form.name} onChangeText={v => setField('name', v)} />
@@ -210,28 +254,80 @@ export default function AddSubscriptionModal({ visible, onClose, editItem }) {
             <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Any other details..." placeholderTextColor="#9AA1AE" value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />
 
             <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={handleSave}>
-              <LinearGradient colors={['#9B72FF', '#7C5CE8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
+              <LinearGradient colors={ACCENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
                 {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Feather name="check" size={16} color="#FFFFFF" />}
                 <Text style={styles.saveBtnText}>{saving ? 'Saving...' : isEditing ? 'Update Subscription' : 'Save Subscription'}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        </KeyboardAvoidingView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#9B72FF" colors={['#9B72FF']} />}
+        >
+          {loading ? (
+            [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
+          ) : subscriptions.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Feather name="repeat" size={32} color="#C7CBD3" />
+              <Text style={styles.emptyText}>No subscriptions added yet. Tap + to add one.</Text>
+            </View>
+          ) : (
+            <View style={styles.sectionCard}>
+              {subscriptions.map((sub, i) => (
+                <TouchableOpacity key={sub.id} style={[styles.row, i !== subscriptions.length - 1 && styles.rowDivider]} onPress={() => openEdit(sub)} activeOpacity={0.7}>
+                  <View style={styles.iconWrap}>
+                    <Feather name="repeat" size={16} color="#9B72FF" />
+                  </View>
+                  <View style={styles.rowTextWrap}>
+                    <Text style={styles.rowName}>{sub.name}</Text>
+                    <Text style={styles.rowSub}>
+                      {sub.provider || sub.category} · {sub.billingCycle}{sub.autoRenewal ? ' · Auto-renew' : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.rowRight}>
+                    <Text style={styles.rowAmount}>₹{(sub.amount || 0).toLocaleString('en-IN')}</Text>
+                    <Text style={styles.rowMeta}>{fmtShortDate(sub.nextBillingDate)}</Text>
+                  </View>
+                  <Feather name="edit-2" size={14} color="#9AA1AE" style={{ marginLeft: 8 }} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.55)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginBottom: 20 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  sheetIconGrad: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  sheetSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
+  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  addBtnGrad: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
+  scrollContent: { paddingHorizontal: 20 },
+  skeleton: { height: 60, backgroundColor: '#F0F1F4', borderRadius: 14, marginBottom: 10 },
+  emptyWrap: { alignItems: 'center', paddingVertical: 60, gap: 10 },
+  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
+
+  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rowTextWrap: { flex: 1 },
+  rowName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
+  rowSub: { fontSize: 12, color: '#9AA1AE' },
+  rowRight: { alignItems: 'flex-end', gap: 4 },
+  rowAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  rowMeta: { fontSize: 11, color: '#9AA1AE' },
+
+  formScroll: { paddingHorizontal: 20 },
   sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
   required: { color: '#E0546E' },

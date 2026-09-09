@@ -16,6 +16,11 @@ import Askai from "./src/Screen/Askai";
 import Space from "./src/Screen/Space";
 import Profile from "./src/Screen/Profile";
 import Finance from "./src/Screen/Finance";
+import LoanScreen from "./src/Screen/finance/LoanScreen";
+import EmiScreen from "./src/Screen/finance/EmiScreen";
+import SubscriptionScreen from "./src/Screen/finance/SubscriptionScreen";
+import BillScreen from "./src/Screen/finance/BillScreen";
+import FDScreen from "./src/Screen/finance/FDScreen";
 import Communications from "./src/Screen/Communications";
 import Health from "./src/Screen/Health";
 import LifeOps from "./src/Screen/LifeOps";
@@ -389,6 +394,11 @@ function AppInner() {
           <Stack.Screen name="Space" component={Space} />
           <Stack.Screen name="Profile" component={Profile} />
           <Stack.Screen name="Finance" component={Finance} />
+          <Stack.Screen name="LoanScreen" component={LoanScreen} />
+          <Stack.Screen name="EmiScreen" component={EmiScreen} />
+          <Stack.Screen name="SubscriptionScreen" component={SubscriptionScreen} />
+          <Stack.Screen name="BillScreen" component={BillScreen} />
+          <Stack.Screen name="FDScreen" component={FDScreen} />
           <Stack.Screen name="Communications" component={Communications} />
           <Stack.Screen name="Health" component={Health} />
           <Stack.Screen name="LifeOps" component={LifeOps} />

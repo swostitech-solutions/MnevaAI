@@ -1,20 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Modal, TextInput, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback, ActivityIndicator, Alert,
+  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, RefreshControl,
+  Modal, TouchableWithoutFeedback,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { apiFetch } from '../../api/client';
+import { apiFetch, peekCachedResponse } from '../../api/client';
+import { useSocket } from '../../services/socket';
 import DateField from './DateField';
 
 const CATEGORIES = ['Electricity', 'Water', 'Internet', 'Mobile', 'Gas', 'Rent', 'Maintenance', 'Insurance', 'Other'];
 const BILLING_CYCLES = ['Weekly', 'Monthly', 'Quarterly', 'Yearly', 'Custom'];
 const STATUSES = ['Upcoming', 'Due', 'Paid', 'Overdue'];
+const CATEGORY_EMOJI = {
+  Electricity: '⚡', Water: '💧', Internet: '🌐', Mobile: '📱', Gas: '🔥',
+  Rent: '🏠', Maintenance: '🔧', Insurance: '🛡️',
+};
 
 const EMPTY_FORM = {
   name: '', category: '', provider: '', accountNumber: '', description: '',
@@ -40,29 +45,82 @@ const formFromItem = (item) => ({
   notes: item.notes || '', attachmentDocId: item.attachmentDocId || '', attachmentName: item.attachmentDocId ? 'Attached document' : '',
 });
 
-export default function AddBillModal({ visible, onClose, editItem }) {
+const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : '—';
+const ACCENT = ['#E0546E', '#C8405A'];
+
+const billDisplay = (bill) => ({
+  id: bill.id,
+  name: bill.name,
+  dueDate: bill.dueDate,
+  amount: bill.expectedAmount ?? bill.lastBillAmount ?? 0,
+  uiStatus: bill.status === 'Paid' ? 'paid' : bill.autoPay ? 'auto' : 'pending',
+  category: bill.category,
+  logo: CATEGORY_EMOJI[bill.category] || '🧾',
+  raw: bill,
+});
+
+export default function BillScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { on } = useSocket();
+  const [bills, setBills] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [payModal, setPayModal] = useState(null);
+  const [paying, setPaying] = useState(false);
   const isEditing = !!editItem;
 
+  const loadData = async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    try {
+      const b = await apiFetch('/api/finance/bills');
+      setBills(Array.isArray(b) ? b : []);
+    } catch {}
+    finally { setLoading(false); setRefreshing(false); }
+  };
+
   useEffect(() => {
-    if (visible) setForm(editItem ? formFromItem(editItem) : EMPTY_FORM);
-  }, [visible, editItem]);
+    let cancelled = false;
+    (async () => {
+      const b = await peekCachedResponse('/api/finance/bills').catch(() => null);
+      if (!cancelled && b) { setBills(Array.isArray(b) ? b : []); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    const offs = [
+      on('bill:created', (bill) => setBills(prev => prev.some(x => x.id === bill.id) ? prev : [bill, ...prev])),
+      on('bill:updated', (bill) => setBills(prev => prev.map(x => x.id === bill.id ? bill : x))),
+      on('bill:deleted', ({ id }) => setBills(prev => prev.filter(x => x.id !== id))),
+    ];
+    return () => offs.forEach(off => off?.());
+  }, [on]);
+
+  useEffect(() => {
+    setForm(editItem ? formFromItem(editItem) : EMPTY_FORM);
+  }, [editItem, showForm]);
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
   const canSave = form.name.trim() && form.category && form.dueDate;
 
-  const handleClose = () => { setForm(EMPTY_FORM); onClose(); };
+  const openAdd = () => { setEditItem(null); setShowForm(true); };
+  const openEdit = (item) => { setEditItem(item); setShowForm(true); };
+  const closeForm = () => { setShowForm(false); setEditItem(null); };
 
   const handleDelete = () => {
     Alert.alert('Delete Bill', `Remove "${editItem.name}"? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try { await apiFetch(`/api/finance/bills/${editItem.id}`, { method: 'DELETE' }); } catch {}
-        handleClose();
+        closeForm();
       } },
     ]);
   };
@@ -99,7 +157,7 @@ export default function AddBillModal({ visible, onClose, editItem }) {
       } else {
         await apiFetch('/api/finance/bills', { method: 'POST', body: form });
       }
-      handleClose();
+      closeForm();
     } catch {
       // Socket event updates the list on success; a failed request leaves the form open to retry.
     } finally {
@@ -107,30 +165,49 @@ export default function AddBillModal({ visible, onClose, editItem }) {
     }
   };
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TouchableWithoutFeedback onPress={handleClose}>
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-        <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <LinearGradient colors={['#E0546E', '#C8405A']} style={styles.sheetIconGrad}>
-              <Feather name="file-text" size={20} color="#FFFFFF" />
-            </LinearGradient>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sheetTitle}>{isEditing ? 'Edit Bill' : 'Add Bill'}</Text>
-              <Text style={styles.sheetSubtitle}>Electricity, water, internet, rent and more</Text>
-            </View>
-            {isEditing && (
-              <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-                <Feather name="trash-2" size={18} color="#E0546E" />
-              </TouchableOpacity>
-            )}
-          </View>
+  const handlePay = async () => {
+    if (!payModal) return;
+    setPaying(true);
+    try {
+      await apiFetch('/api/finance/pay', {
+        method: 'POST',
+        body: { billId: payModal.id, amount: payModal.amount, payee: payModal.name, category: payModal.category },
+      });
+      setPayModal(null);
+      loadData(true);
+    } catch {}
+    finally { setPaying(false); }
+  };
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+  const handleBack = () => { if (showForm) closeForm(); else navigation?.goBack(); };
+  const displayedBills = bills.map(billDisplay);
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
+          <Feather name="arrow-left" size={20} color="#14171F" />
+        </TouchableOpacity>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.headerTitle}>{showForm ? (isEditing ? 'Edit Bill' : 'Add Bill') : 'Bills'}</Text>
+          <Text style={styles.headerSubtitle}>{showForm ? 'Electricity, rent, internet & more' : `${displayedBills.length} total`}</Text>
+        </View>
+        {showForm && isEditing ? (
+          <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
+            <Feather name="trash-2" size={18} color="#E0546E" />
+          </TouchableOpacity>
+        ) : !showForm ? (
+          <TouchableOpacity onPress={openAdd}>
+            <LinearGradient colors={ACCENT} style={styles.addBtnGrad}>
+              <Feather name="plus" size={20} color="#FFFFFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : <View style={{ width: 38 }} />}
+      </View>
+
+      {showForm ? (
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>Bill Name <Text style={styles.required}>*</Text></Text>
             <TextInput style={styles.input} placeholder="e.g. BESCOM Electricity" placeholderTextColor="#9AA1AE" value={form.name} onChangeText={v => setField('name', v)} />
@@ -248,28 +325,121 @@ export default function AddBillModal({ visible, onClose, editItem }) {
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={handleSave}>
-              <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
+              <LinearGradient colors={ACCENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
                 {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Feather name="check" size={16} color="#FFFFFF" />}
                 <Text style={styles.saveBtnText}>{saving ? 'Saving...' : isEditing ? 'Update Bill' : 'Save Bill'}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        </KeyboardAvoidingView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor="#E0546E" colors={['#E0546E']} />}
+        >
+          {loading ? (
+            [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
+          ) : displayedBills.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Feather name="file-text" size={32} color="#C7CBD3" />
+              <Text style={styles.emptyText}>No bills added yet. Tap + to add one.</Text>
+            </View>
+          ) : (
+            <View style={styles.sectionCard}>
+              {displayedBills.map((bill, i) => (
+                <TouchableOpacity
+                  key={bill.id}
+                  style={[styles.row, i !== displayedBills.length - 1 && styles.rowDivider]}
+                  onPress={() => bill.uiStatus === 'pending' && setPayModal(bill)}
+                  activeOpacity={bill.uiStatus === 'pending' ? 0.7 : 1}
+                >
+                  <View style={styles.iconWrap}>
+                    <Text style={{ fontSize: 18 }}>{bill.logo}</Text>
+                  </View>
+                  <View style={styles.rowTextWrap}>
+                    <Text style={styles.rowName}>{bill.name}</Text>
+                    <Text style={styles.rowSub}>Due {fmtShortDate(bill.dueDate)}</Text>
+                  </View>
+                  <View style={styles.rowRight}>
+                    <Text style={styles.rowAmount}>₹{(bill.amount || 0).toLocaleString('en-IN')}</Text>
+                    <View style={[styles.badge, { backgroundColor: bill.uiStatus === 'pending' ? '#FEF3C7' : '#EFFDF6' }]}>
+                      <Text style={[styles.badgeText, { color: bill.uiStatus === 'pending' ? '#D97706' : '#1F9A5A' }]}>
+                        {bill.uiStatus === 'pending' ? 'Pay Now' : bill.uiStatus === 'auto' ? 'Auto' : 'Paid'}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit(bill.raw)} hitSlop={8}>
+                    <Feather name="edit-2" size={14} color="#9AA1AE" />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      <Modal visible={!!payModal} transparent animationType="fade" onRequestClose={() => setPayModal(null)}>
+        <TouchableWithoutFeedback onPress={() => setPayModal(null)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalSheet}>
+                <Text style={styles.modalTitle}>Confirm Payment</Text>
+                <Text style={styles.modalAmount}>₹{(payModal?.amount || 0).toLocaleString('en-IN')}</Text>
+                {[['Payee', payModal?.name], ['Category', payModal?.category], ['Via', 'UPI — HDFC ••4521']].map(([k, v]) => (
+                  <View key={k} style={styles.modalRow}>
+                    <Text style={styles.modalRowKey}>{k}</Text>
+                    <Text style={styles.modalRowVal}>{v}</Text>
+                  </View>
+                ))}
+                <View style={styles.biometricNote}>
+                  <Feather name="lock" size={13} color="#D97706" />
+                  <Text style={styles.biometricText}>  Biometric required for payments ≥ ₹1,000</Text>
+                </View>
+                <TouchableOpacity style={styles.payBtn} onPress={handlePay} disabled={paying}>
+                  <LinearGradient colors={['#1F9A5A', '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.payBtnGrad}>
+                    <Text style={styles.payBtnText}>{paying ? 'Processing…' : 'Authenticate & Pay'}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setPayModal(null)}>
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.55)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E3E5EA', marginBottom: 20 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  sheetIconGrad: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
-  sheetSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
+  backBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
+  headerSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 2 },
+  addBtnGrad: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
+  scrollContent: { paddingHorizontal: 20 },
+  skeleton: { height: 60, backgroundColor: '#F0F1F4', borderRadius: 14, marginBottom: 10 },
+  emptyWrap: { alignItems: 'center', paddingVertical: 60, gap: 10 },
+  emptyText: { fontSize: 13, color: '#9AA1AE', textAlign: 'center', lineHeight: 19 },
+
+  sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rowTextWrap: { flex: 1 },
+  rowName: { fontSize: 14, fontWeight: '700', color: '#14171F', marginBottom: 2 },
+  rowSub: { fontSize: 12, color: '#9AA1AE' },
+  rowRight: { alignItems: 'flex-end', gap: 4 },
+  rowAmount: { fontSize: 15, fontWeight: '800', color: '#14171F' },
+  badge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  badgeText: { fontSize: 10, fontWeight: '800' },
+
+  formScroll: { paddingHorizontal: 20 },
   sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.5, marginTop: 8, marginBottom: 12 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
   required: { color: '#E0546E' },
@@ -289,4 +459,20 @@ const styles = StyleSheet.create({
   saveBtnDisabled: { opacity: 0.45 },
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
   saveBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+
+  editIconBtn: { padding: 6, marginLeft: 4 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(14,17,26,0.6)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
+  modalSheet: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 28, padding: 24 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#14171F', textAlign: 'center', marginBottom: 8 },
+  modalAmount: { fontSize: 36, fontWeight: '800', color: '#14171F', textAlign: 'center', marginBottom: 20 },
+  modalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F1F4' },
+  modalRowKey: { fontSize: 13, color: '#9AA1AE' },
+  modalRowVal: { fontSize: 13, fontWeight: '700', color: '#14171F' },
+  biometricNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12, marginVertical: 16 },
+  biometricText: { fontSize: 12, color: '#D97706', fontWeight: '600' },
+  payBtn: { borderRadius: 16, overflow: 'hidden', marginBottom: 10 },
+  payBtnGrad: { paddingVertical: 16, alignItems: 'center' },
+  payBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  cancelBtn: { paddingVertical: 14, alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 16 },
+  cancelBtnText: { fontSize: 15, fontWeight: '700', color: '#374151' },
 });

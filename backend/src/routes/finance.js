@@ -553,16 +553,60 @@ financeRouter.get('/portfolio', (_req, res) =>
     accounts: [],
   }),
 )
-financeRouter.get('/spending', (req, res) =>
-  res.json({
-    period: req.query.period || 'month',
-    total: 0,
-    budget: 0,
-    savingsRate: 0,
-    categories: [],
-    insights: [],
-  }),
-)
+// Real spend, computed from Bills actually marked Paid this month plus this
+// month's due EMI/Subscription installments — no separate transactions table
+// exists, so this is the best signal already sitting in the database.
+financeRouter.get('/spending', async (req, res) => {
+  try {
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const dueThisMonth = (date) => {
+      if (!date) return false
+      const d = new Date(date)
+      return d >= monthStart && d < monthEnd
+    }
+
+    const [paidBills, emis, subs] = await Promise.all([
+      prisma.bill.findMany({ where: { userId: req.user.id, status: 'Paid', updatedAt: { gte: monthStart, lt: monthEnd } } }),
+      prisma.emi.findMany({ where: { userId: req.user.id, status: 'Active' } }),
+      prisma.subscription.findMany({ where: { userId: req.user.id, status: 'Active' } }),
+    ])
+
+    const categoryTotals = {}
+    const addCategory = (name, amount) => { if (amount) categoryTotals[name] = (categoryTotals[name] || 0) + amount }
+
+    for (const bill of paidBills) addCategory(bill.category || 'Bills', bill.lastBillAmount ?? bill.expectedAmount ?? 0)
+
+    let emiTotal = 0
+    for (const emi of emis) {
+      const due = emi.frequency === 'Monthly' ? (!emi.nextPaymentDate || dueThisMonth(emi.nextPaymentDate)) : dueThisMonth(emi.nextPaymentDate)
+      if (due) emiTotal += emi.emiAmount || 0
+    }
+    addCategory('EMIs', emiTotal)
+
+    let subTotal = 0
+    for (const sub of subs) {
+      const due = sub.billingCycle === 'Monthly' ? (!sub.nextBillingDate || dueThisMonth(sub.nextBillingDate)) : dueThisMonth(sub.nextBillingDate)
+      if (due) subTotal += sub.amount || 0
+    }
+    addCategory('Subscriptions', subTotal)
+
+    const categories = Object.entries(categoryTotals)
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount)
+    const total = categories.reduce((sum, c) => sum + c.amount, 0)
+
+    res.json({
+      period: req.query.period || 'month',
+      total,
+      budget: 0,
+      savingsRate: 0,
+      categories,
+      insights: [],
+    })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
 
 financeRouter.post('/pay', async (req, res) => {
   try {
