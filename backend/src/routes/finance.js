@@ -443,6 +443,102 @@ financeRouter.delete('/bills/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// ── Fixed Deposits ───────────────────────────────────────────────────────────
+
+financeRouter.get('/fixed-deposits', async (req, res) => {
+  try {
+    const fixedDeposits = await prisma.fixedDeposit.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+    })
+    res.json({ fixedDeposits })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.post('/fixed-deposits', async (req, res) => {
+  try {
+    const b = req.body
+    if (!b.name?.trim() || !b.bankName?.trim() || b.principalAmount === undefined
+      || b.interestRate === undefined || !b.startDate || !b.maturityDate) {
+      return res.status(400).json({ error: 'name, bankName, principalAmount, interestRate, startDate and maturityDate are required' })
+    }
+    const fixedDeposit = await prisma.fixedDeposit.create({
+      data: {
+        userId: req.user.id,
+        name: b.name.trim(),
+        bankName: b.bankName.trim(),
+        accountNumber: toStr(b.accountNumber),
+        status: b.status || 'Active',
+        principalAmount: toFloat(b.principalAmount),
+        interestRate: toFloat(b.interestRate),
+        compoundingFrequency: b.compoundingFrequency || 'Quarterly',
+        interestPayout: b.interestPayout || 'On Maturity',
+        startDate: b.startDate,
+        maturityDate: b.maturityDate,
+        tenureMonths: toInt(b.tenureMonths),
+        maturityAmount: toFloat(b.maturityAmount),
+        interestEarned: toFloat(b.interestEarned),
+        autoRenewal: toBool(b.autoRenewal) ?? false,
+        nominee: toStr(b.nominee),
+        paymentAccount: toStr(b.paymentAccount),
+        prematureWithdrawalAllowed: toBool(b.prematureWithdrawalAllowed),
+        prematureWithdrawalPenalty: toFloat(b.prematureWithdrawalPenalty),
+        notes: toStr(b.notes),
+        attachmentDocId: toStr(b.attachmentDocId),
+      },
+    })
+    emit(req.app.get('io'), req.user.id, 'fd:created', fixedDeposit)
+    res.status(201).json({ fixedDeposit })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.patch('/fixed-deposits/:id', async (req, res) => {
+  try {
+    const existing = await prisma.fixedDeposit.findUnique({ where: { id: req.params.id } })
+    if (!existing) return res.status(404).json({ error: 'Not found' })
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    const b = req.body
+    const fixedDeposit = await prisma.fixedDeposit.update({
+      where: { id: req.params.id },
+      data: {
+        ...(b.name !== undefined && { name: b.name.trim() }),
+        ...(b.bankName !== undefined && { bankName: b.bankName.trim() }),
+        ...(b.accountNumber !== undefined && { accountNumber: toStr(b.accountNumber) }),
+        ...(b.status !== undefined && { status: b.status }),
+        ...(b.principalAmount !== undefined && { principalAmount: toFloat(b.principalAmount) }),
+        ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
+        ...(b.compoundingFrequency !== undefined && { compoundingFrequency: b.compoundingFrequency }),
+        ...(b.interestPayout !== undefined && { interestPayout: b.interestPayout }),
+        ...(b.startDate !== undefined && { startDate: b.startDate }),
+        ...(b.maturityDate !== undefined && { maturityDate: b.maturityDate }),
+        ...(b.tenureMonths !== undefined && { tenureMonths: toInt(b.tenureMonths) }),
+        ...(b.maturityAmount !== undefined && { maturityAmount: toFloat(b.maturityAmount) }),
+        ...(b.interestEarned !== undefined && { interestEarned: toFloat(b.interestEarned) }),
+        ...(b.autoRenewal !== undefined && { autoRenewal: toBool(b.autoRenewal) }),
+        ...(b.nominee !== undefined && { nominee: toStr(b.nominee) }),
+        ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
+        ...(b.prematureWithdrawalAllowed !== undefined && { prematureWithdrawalAllowed: toBool(b.prematureWithdrawalAllowed) }),
+        ...(b.prematureWithdrawalPenalty !== undefined && { prematureWithdrawalPenalty: toFloat(b.prematureWithdrawalPenalty) }),
+        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+        ...(b.attachmentDocId !== undefined && { attachmentDocId: toStr(b.attachmentDocId) }),
+      },
+    })
+    emit(req.app.get('io'), req.user.id, 'fd:updated', fixedDeposit)
+    res.json({ fixedDeposit })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.delete('/fixed-deposits/:id', async (req, res) => {
+  try {
+    const existing = await prisma.fixedDeposit.findUnique({ where: { id: req.params.id } })
+    if (!existing) return res.status(404).json({ error: 'Not found' })
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    await prisma.fixedDeposit.delete({ where: { id: req.params.id } })
+    emit(req.app.get('io'), req.user.id, 'fd:deleted', { id: req.params.id })
+    res.json({ success: true })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // ── Portfolio / Spending (unchanged, still not backed by real accounts) ──────
 
 financeRouter.get('/portfolio', (_req, res) =>

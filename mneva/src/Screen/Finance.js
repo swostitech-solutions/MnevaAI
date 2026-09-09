@@ -13,6 +13,7 @@ import AddLoanModal from './finance/AddLoanModal';
 import AddEmiModal from './finance/AddEmiModal';
 import AddSubscriptionModal from './finance/AddSubscriptionModal';
 import AddBillModal from './finance/AddBillModal';
+import AddFDModal from './finance/AddFDModal';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const SPEND_COLORS = ['#1F9A5A', '#615FF8', '#4FA6E8', '#E0546E', '#F5A623', '#9B72FF', '#06B6D4'];
@@ -43,6 +44,7 @@ const ADD_OPTIONS = [
   { key: 'emi', label: 'EMI', sub: 'Any installment purchase', icon: 'credit-card', colors: ['#F5A623', '#E0901A'] },
   { key: 'subscription', label: 'Subscription', sub: 'Streaming, software & more', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'] },
   { key: 'bill', label: 'Bill', sub: 'Electricity, rent, internet & more', icon: 'file-text', colors: ['#E0546E', '#C8405A'] },
+  { key: 'fd', label: 'Fixed Deposit', sub: 'Bank FDs & maturity tracking', icon: 'lock', colors: ['#06B6D4', '#0891B2'] },
 ];
 
 export default function Finance({ navigation }) {
@@ -58,11 +60,11 @@ export default function Finance({ navigation }) {
   const [loans, setLoans] = useState([]);
   const [emis, setEmis] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
+  const [fixedDeposits, setFixedDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [payModal, setPayModal] = useState(null);
   const [paying, setPaying] = useState(false);
-  const [chooserVisible, setChooserVisible] = useState(false);
   const [activeAddModal, setActiveAddModal] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
 
@@ -75,13 +77,14 @@ export default function Finance({ navigation }) {
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
-      const [b, p, s, l, e, sub] = await Promise.all([
+      const [b, p, s, l, e, sub, fd] = await Promise.all([
         apiFetch('/api/finance/bills'),
         apiFetch('/api/finance/portfolio'),
         apiFetch('/api/finance/spending?period=month'),
         apiFetch('/api/finance/loans'),
         apiFetch('/api/finance/emis'),
         apiFetch('/api/finance/subscriptions'),
+        apiFetch('/api/finance/fixed-deposits'),
       ]);
       hasRealDataRef.current = true;
       setBills(Array.isArray(b) ? b : []);
@@ -90,6 +93,7 @@ export default function Finance({ navigation }) {
       setLoans(l?.loans || []);
       setEmis(e?.emis || []);
       setSubscriptions(sub?.subscriptions || []);
+      setFixedDeposits(fd?.fixedDeposits || []);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
@@ -102,15 +106,16 @@ export default function Finance({ navigation }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [b, p, s, l, e, sub] = await Promise.all([
+      const [b, p, s, l, e, sub, fd] = await Promise.all([
         peekCachedResponse('/api/finance/bills').catch(() => null),
         peekCachedResponse('/api/finance/portfolio').catch(() => null),
         peekCachedResponse('/api/finance/spending?period=month').catch(() => null),
         peekCachedResponse('/api/finance/loans').catch(() => null),
         peekCachedResponse('/api/finance/emis').catch(() => null),
         peekCachedResponse('/api/finance/subscriptions').catch(() => null),
+        peekCachedResponse('/api/finance/fixed-deposits').catch(() => null),
       ]);
-      const gotSomething = b || p || s || l || e || sub;
+      const gotSomething = b || p || s || l || e || sub || fd;
       if (!cancelled && !hasRealDataRef.current && gotSomething) {
         if (b) setBills(Array.isArray(b) ? b : []);
         if (p) setPortfolio(p);
@@ -118,6 +123,7 @@ export default function Finance({ navigation }) {
         if (l) setLoans(l.loans || []);
         if (e) setEmis(e.emis || []);
         if (sub) setSubscriptions(sub.subscriptions || []);
+        if (fd) setFixedDeposits(fd.fixedDeposits || []);
         setLoading(false);
       }
     })();
@@ -145,6 +151,9 @@ export default function Finance({ navigation }) {
       on('bill:created', (bill) => setBills(prev => prev.some(x => x.id === bill.id) ? prev : [bill, ...prev])),
       on('bill:updated', (bill) => setBills(prev => prev.map(x => x.id === bill.id ? bill : x))),
       on('bill:deleted', ({ id }) => setBills(prev => prev.filter(x => x.id !== id))),
+      on('fd:created', (fd) => setFixedDeposits(prev => prev.some(x => x.id === fd.id) ? prev : [fd, ...prev])),
+      on('fd:updated', (fd) => setFixedDeposits(prev => prev.map(x => x.id === fd.id ? fd : x))),
+      on('fd:deleted', ({ id }) => setFixedDeposits(prev => prev.filter(x => x.id !== id))),
     ];
     return () => offs.forEach(off => off?.());
   }, [on]);
@@ -187,11 +196,6 @@ export default function Finance({ navigation }) {
             <Text style={styles.headerTitle}>Finance</Text>
             <Text style={styles.headerSubtitle}>Bills, portfolio & spending</Text>
           </View>
-          <TouchableOpacity onPress={() => setChooserVisible(true)}>
-            <LinearGradient colors={['#1F9A5A', '#3CB37A']} style={styles.headerBadge}>
-              <Feather name="plus" size={20} color="#FFFFFF" />
-            </LinearGradient>
-          </TouchableOpacity>
         </View>
 
         {/* Stat Cards */}
@@ -203,6 +207,30 @@ export default function Finance({ navigation }) {
               <Text style={styles.statSub}>{s.sub}</Text>
             </View>
           ))}
+        </View>
+
+        {/* Add to Finance — always-visible card (replaces the old + popup) */}
+        <View style={[styles.sectionCard, { marginBottom: 16 }]}>
+          <Text style={styles.sectionTitle}>Add to Finance</Text>
+          <View style={{ marginTop: 10 }}>
+            {ADD_OPTIONS.map((opt, i) => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.chooserOption, i !== ADD_OPTIONS.length - 1 && styles.billRowDivider]}
+                onPress={() => openCreate(opt.key)}
+                activeOpacity={0.7}
+              >
+                <LinearGradient colors={opt.colors} style={styles.chooserIconGrad}>
+                  <Feather name={opt.icon} size={18} color="#FFFFFF" />
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.chooserOptionTitle}>{opt.label}</Text>
+                  <Text style={styles.chooserOptionSub}>{opt.sub}</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color="#C7CBD3" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Bills */}
@@ -364,6 +392,48 @@ export default function Finance({ navigation }) {
           )}
         </View>
 
+        {/* Fixed Deposits */}
+        <View style={[styles.sectionCard, { marginTop: 16 }]}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Fixed Deposits</Text>
+            <View style={styles.sectionBadge}>
+              <Text style={styles.sectionBadgeText}>{fixedDeposits.length} total</Text>
+            </View>
+          </View>
+          {fixedDeposits.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Feather name="lock" size={26} color="#C7CBD3" />
+              <Text style={styles.emptyText}>No fixed deposits added yet.</Text>
+            </View>
+          ) : (
+            fixedDeposits.map((fd, i) => (
+              <TouchableOpacity
+                key={fd.id}
+                style={[styles.billRow, i !== fixedDeposits.length - 1 && styles.billRowDivider]}
+                onPress={() => openEdit('fd', fd)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.billIconWrap}>
+                  <Feather name="lock" size={16} color="#06B6D4" />
+                </View>
+                <View style={styles.billTextWrap}>
+                  <Text style={styles.billName}>{fd.name}</Text>
+                  <Text style={styles.billDue}>{fd.bankName} · Matures {fmtShortDate(fd.maturityDate)}</Text>
+                </View>
+                <View style={styles.billRight}>
+                  <Text style={styles.billAmount}>₹{(fd.principalAmount || 0).toLocaleString('en-IN')}</Text>
+                  <View style={[styles.billBadge, { backgroundColor: fd.status === 'Active' ? '#ECFEFF' : '#F3F4F6' }]}>
+                    <Text style={[styles.billBadgeText, { color: fd.status === 'Active' ? '#0891B2' : '#6B7280' }]}>{fd.status}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.editIconBtn} onPress={() => openEdit('fd', fd)} hitSlop={8}>
+                  <Feather name="edit-2" size={14} color="#9AA1AE" />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
+
         {/* Portfolio */}
         {portfolio && (
           <View style={[styles.sectionCard, { marginTop: 16 }]}>
@@ -466,39 +536,11 @@ export default function Finance({ navigation }) {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Add-type Chooser */}
-      <Modal visible={chooserVisible} transparent animationType="fade" onRequestClose={() => setChooserVisible(false)}>
-        <TouchableWithoutFeedback onPress={() => setChooserVisible(false)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.chooserSheet}>
-                <Text style={styles.modalTitle}>Add to Finance</Text>
-                {ADD_OPTIONS.map(opt => (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={styles.chooserOption}
-                    onPress={() => { setChooserVisible(false); openCreate(opt.key); }}
-                  >
-                    <LinearGradient colors={opt.colors} style={styles.chooserIconGrad}>
-                      <Feather name={opt.icon} size={18} color="#FFFFFF" />
-                    </LinearGradient>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.chooserOptionTitle}>{opt.label}</Text>
-                      <Text style={styles.chooserOptionSub}>{opt.sub}</Text>
-                    </View>
-                    <Feather name="chevron-right" size={18} color="#C7CBD3" />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
       <AddLoanModal visible={activeAddModal === 'loan'} onClose={closeAddModal} editItem={activeAddModal === 'loan' ? editingItem : null} />
       <AddEmiModal visible={activeAddModal === 'emi'} onClose={closeAddModal} editItem={activeAddModal === 'emi' ? editingItem : null} />
       <AddSubscriptionModal visible={activeAddModal === 'subscription'} onClose={closeAddModal} editItem={activeAddModal === 'subscription' ? editingItem : null} />
       <AddBillModal visible={activeAddModal === 'bill'} onClose={closeAddModal} editItem={activeAddModal === 'bill' ? editingItem : null} />
+      <AddFDModal visible={activeAddModal === 'fd'} onClose={closeAddModal} editItem={activeAddModal === 'fd' ? editingItem : null} />
 
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
