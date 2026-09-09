@@ -89,7 +89,7 @@ function LogDataSheet({ visible, onClose, onSynced, bottomInset }) {
     setError('');
     setLoading(true);
     try {
-      await apiFetch('/api/health-data/sync', { method: 'POST', body: JSON.stringify(payload) });
+      await apiFetch('/api/health-data/sync', { method: 'POST', body: payload });
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -198,6 +198,202 @@ function MetricCard({ icon, label, value, unit, color, bg }) {
   );
 }
 
+// Sunday-start week bucket for a 'YYYY-MM-DD' date string. Computed in UTC to
+// match how healthLog keys are already written server-side
+// (`new Date().toISOString().slice(0,10)`), so a date always buckets into the
+// same week here as it was recorded under.
+function startOfWeek(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.toISOString().slice(0, 10);
+}
+
+function endOfWeek(weekStartStr) {
+  const d = new Date(`${weekStartStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 6);
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtWeekLabel(weekStartStr, weekEndStr) {
+  const start = new Date(`${weekStartStr}T00:00:00Z`);
+  const end = new Date(`${weekEndStr}T00:00:00Z`);
+  const startLabel = start.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  const endLabel = end.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${startLabel} – ${endLabel}`;
+}
+
+// How each loggable field (see CATEGORY_FIELDS above — this covers every
+// field across all 6 manual-entry categories, plus the handful Google Fit
+// auto-logs) should be combined across a week's worth of daily entries:
+// 'sum' for cumulative daily totals (steps, active minutes...), 'avg' for
+// fluctuating daily readings (heart rate, macros...), 'latest' for
+// point-in-time measurements and free-text fields (weight, workout type,
+// cycle phase...) where a week's total/average wouldn't mean anything.
+const FIELD_META = {
+  // activity
+  steps: { agg: 'sum', decimals: 0 },
+  activeMinutes: { agg: 'sum', decimals: 0 },
+  workoutType: { agg: 'latest', decimals: 0 },
+  workoutDuration: { agg: 'sum', decimals: 0 },
+  workoutCalories: { agg: 'sum', decimals: 0 },
+  distance: { agg: 'sum', decimals: 1 },
+  // body
+  weight: { agg: 'latest', decimals: 1 },
+  height: { agg: 'latest', decimals: 0 },
+  bmi: { agg: 'latest', decimals: 1 },
+  bodyFat: { agg: 'latest', decimals: 1 },
+  muscleMass: { agg: 'latest', decimals: 1 },
+  waist: { agg: 'latest', decimals: 0 },
+  // vitals
+  heartRate: { agg: 'avg', decimals: 0 },
+  bloodPressureSystolic: { agg: 'avg', decimals: 0 },
+  bloodPressureDiastolic: { agg: 'avg', decimals: 0 },
+  bloodOxygen: { agg: 'avg', decimals: 0 },
+  bodyTemp: { agg: 'avg', decimals: 1 },
+  // nutrition
+  calories: { agg: 'avg', decimals: 0 },
+  protein: { agg: 'avg', decimals: 0 },
+  carbs: { agg: 'avg', decimals: 0 },
+  fat: { agg: 'avg', decimals: 0 },
+  fiber: { agg: 'avg', decimals: 0 },
+  water: { agg: 'avg', decimals: 0 },
+  // sleep
+  sleep: { agg: 'avg', decimals: 1 },
+  sleepBedtime: { agg: 'latest', decimals: 0 },
+  sleepWakeup: { agg: 'latest', decimals: 0 },
+  sleepDeep: { agg: 'avg', decimals: 1 },
+  sleepRem: { agg: 'avg', decimals: 1 },
+  sleepLight: { agg: 'avg', decimals: 1 },
+  // cycle
+  cycleDay: { agg: 'latest', decimals: 0 },
+  cyclePhase: { agg: 'latest', decimals: 0 },
+  periodFlow: { agg: 'latest', decimals: 0 },
+  symptoms: { agg: 'latest', decimals: 0 },
+};
+
+function roundTo(n, decimals) {
+  const f = 10 ** decimals;
+  return Math.round(n * f) / f;
+}
+
+function aggregateField(days, key, meta) {
+  if (meta.agg === 'sum' || meta.agg === 'avg') {
+    const vals = days.map(d => d[key]).filter(v => typeof v === 'number');
+    if (!vals.length) return null;
+    const total = vals.reduce((a, b) => a + b, 0);
+    return roundTo(meta.agg === 'sum' ? total : total / vals.length, meta.decimals);
+  }
+  // 'latest' — most recent day in the week that has this field, whether it's
+  // a number (weight, cycleDay) or free text (workoutType, symptoms).
+  for (let i = days.length - 1; i >= 0; i--) {
+    const v = days[i][key];
+    if (v !== undefined && v !== null && v !== '') {
+      return typeof v === 'number' ? roundTo(v, meta.decimals) : v;
+    }
+  }
+  return null;
+}
+
+// Groups the full per-date healthLog (manual entries + Google Fit's daily
+// auto-log — see backend `GET /api/health-data/log`) into calendar weeks, so
+// the screen can show week-over-week history across every tracked category
+// (Activity, Body, Vitals, Nutrition, Sleep, Cycle) instead of just today.
+function groupLogByWeek(log) {
+  const days = Object.entries(log || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, entry]) => ({ date, ...entry }));
+  if (!days.length) return [];
+
+  const buckets = new Map();
+  for (const day of days) {
+    const weekStart = startOfWeek(day.date);
+    if (!buckets.has(weekStart)) buckets.set(weekStart, []);
+    buckets.get(weekStart).push(day);
+  }
+
+  const todayWeekStart = startOfWeek(new Date().toISOString().slice(0, 10));
+
+  const weeks = Array.from(buckets.entries()).map(([weekStart, weekDays]) => {
+    const stats = {};
+    for (const key of Object.keys(FIELD_META)) {
+      stats[key] = aggregateField(weekDays, key, FIELD_META[key]);
+    }
+    return {
+      weekStart,
+      weekEnd: endOfWeek(weekStart),
+      isCurrentWeek: weekStart === todayWeekStart,
+      daysLogged: weekDays.length,
+      stats,
+    };
+  });
+
+  weeks.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+  return weeks;
+}
+
+function WeekCard({ week }) {
+  return (
+    <View style={styles.weekCard}>
+      <View style={styles.weekCardHeaderRow}>
+        <Text style={styles.weekCardRange}>{fmtWeekLabel(week.weekStart, week.weekEnd)}</Text>
+        {week.isCurrentWeek && (
+          <View style={styles.weekCardBadge}>
+            <Text style={styles.weekCardBadgeText}>This Week</Text>
+          </View>
+        )}
+      </View>
+      {LOG_CATEGORIES.map(cat => {
+        const fields = (CATEGORY_FIELDS[cat.key] || []).filter(f => week.stats[f.key] != null);
+        if (!fields.length) return null;
+        return (
+          <View key={cat.key} style={styles.weekCategoryBlock}>
+            <View style={styles.weekCategoryLabelRow}>
+              <Feather name={cat.icon} size={12} color={cat.color} />
+              <Text style={[styles.weekCategoryLabel, { color: cat.color }]}>{cat.label.toUpperCase()}</Text>
+            </View>
+            <View style={styles.weekStatsRow}>
+              {fields.map(f => (
+                <View key={f.key} style={styles.weekStat}>
+                  <Text style={styles.weekStatLabel}>{f.label}</Text>
+                  <Text style={styles.weekStatValue}>{week.stats[f.key]}{f.unit ? ` ${f.unit}` : ''}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      })}
+      <Text style={styles.weekDaysLogged}>{week.daysLogged}/7 days logged</Text>
+    </View>
+  );
+}
+
+function HistoryModal({ visible, onClose, weeks, bottomInset }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.sheetOverlay} />
+      </TouchableWithoutFeedback>
+      <View style={styles.historySheetWrap}>
+        <View style={[styles.historySheetContent, { paddingBottom: 20 + bottomInset }]}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View>
+              <Text style={styles.sheetTitle}>Weekly History</Text>
+              <Text style={styles.sheetSubtitle}>{weeks.length} week{weeks.length === 1 ? '' : 's'} tracked</Text>
+            </View>
+            <TouchableOpacity onPress={onClose}>
+              <Feather name="x" size={20} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {weeks.map(week => <WeekCard key={week.weekStart} week={week} />)}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function Health({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -207,6 +403,9 @@ export default function Health({ navigation }) {
   const [metrics, setMetrics] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [medications, setMedications] = useState([]);
+  const [weeklyHistory, setWeeklyHistory] = useState([]);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const currentWeek = weeklyHistory.find(w => w.isCurrentWeek) || null;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncVisible, setLogVisible] = useState(false);
@@ -217,45 +416,48 @@ export default function Health({ navigation }) {
   // Shared by the real fetch below and by the cache-hydration pass before it,
   // so a returning user sees their last known vitals immediately instead of
   // skeleton cards for however long the network round-trip takes.
-  const applyHealthData = ({ m, a, meds, fitStatus }) => {
+  const applyHealthData = ({ m, a, meds, fitStatus, log }) => {
     if (m) setMetrics(m);
     if (fitStatus) setFitConnected(fitStatus?.connected || false);
     if (a) setAppointments(a.appointments || []);
     if (meds) setMedications(meds.medications || []);
+    if (log) setWeeklyHistory(groupLogByWeek(log));
   };
 
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
-      const [m, a, meds, fitStatus] = await Promise.all([
+      const [m, a, meds, fitStatus, logRes] = await Promise.all([
         apiFetch('/api/health-data/metrics'),
         apiFetch('/api/health-data/appointments'),
         apiFetch('/api/health-data/medications'),
         apiFetch('/api/googlefit/status').catch(() => ({ connected: false })),
+        apiFetch('/api/health-data/log').catch(() => ({ log: {} })),
       ]);
       hasRealDataRef.current = true;
-      applyHealthData({ m, a, meds, fitStatus });
+      applyHealthData({ m, a, meds, fitStatus, log: logRes?.log });
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  // Paint the last known vitals/appointments/medications immediately from
-  // cache — otherwise this screen shows skeleton cards on every single open
-  // even though nothing changed since last time. loadData() below still runs
-  // right after and silently replaces this with fresh data; the ref guard
-  // stops a slow cache read from ever clobbering real data.
+  // Paint the last known vitals/appointments/medications/weekly-history
+  // immediately from cache — otherwise this screen shows skeleton cards on
+  // every single open even though nothing changed since last time. loadData()
+  // below still runs right after and silently replaces this with fresh data;
+  // the ref guard stops a slow cache read from ever clobbering real data.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [m, a, meds, fitStatus] = await Promise.all([
+      const [m, a, meds, fitStatus, logRes] = await Promise.all([
         peekCachedResponse('/api/health-data/metrics').catch(() => null),
         peekCachedResponse('/api/health-data/appointments').catch(() => null),
         peekCachedResponse('/api/health-data/medications').catch(() => null),
         peekCachedResponse('/api/googlefit/status').catch(() => null),
+        peekCachedResponse('/api/health-data/log').catch(() => null),
       ]);
-      const gotSomething = m || a || meds || fitStatus;
+      const gotSomething = m || a || meds || fitStatus || logRes;
       if (!cancelled && !hasRealDataRef.current && gotSomething) {
-        applyHealthData({ m, a, meds, fitStatus });
+        applyHealthData({ m, a, meds, fitStatus, log: logRes?.log });
         setLoading(false);
       }
     })();
@@ -342,6 +544,32 @@ export default function Health({ navigation }) {
           </View>
         )}
 
+        {/* Weekly Tracking — only the current Sunday-to-Saturday week shows
+            here; the full history (every past week) lives behind "View Full
+            History" so this page stays focused on "now", not a long scroll. */}
+        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>WEEKLY TRACKING</Text>
+        {loading ? (
+          <View style={styles.sectionCard}>
+            <View style={styles.listSkeleton} />
+          </View>
+        ) : !currentWeek ? (
+          <View style={styles.sectionCard}>
+            <View style={styles.emptyWrap}>
+              <Feather name="bar-chart-2" size={24} color="#C7CBD3" />
+              <Text style={styles.emptyText}>No health data logged this week yet — tap + to add your first entry</Text>
+            </View>
+          </View>
+        ) : (
+          <WeekCard week={currentWeek} />
+        )}
+        {weeklyHistory.length > 0 && (
+          <TouchableOpacity style={styles.historyLink} onPress={() => setHistoryVisible(true)}>
+            <Feather name="clock" size={14} color="#4FA6E8" />
+            <Text style={styles.historyLinkText}>View Full History</Text>
+            <Feather name="chevron-right" size={16} color="#4FA6E8" />
+          </TouchableOpacity>
+        )}
+
         {/* Appointments */}
         <Text style={[styles.sectionHeader, { marginTop: 20 }]}>APPOINTMENTS</Text>
         <View style={styles.sectionCard}>
@@ -414,6 +642,13 @@ export default function Health({ navigation }) {
         bottomInset={insets.bottom}
       />
 
+      <HistoryModal
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        weeks={weeklyHistory}
+        bottomInset={insets.bottom}
+      />
+
       {/* Tab Bar */}
       <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}>
@@ -467,6 +702,19 @@ const styles = StyleSheet.create({
   weeklyBarWrap: { flex: 1, width: '60%', justifyContent: 'flex-end', marginBottom: 4 },
   weeklyBar: { width: '100%', borderRadius: 4, minHeight: 4 },
   weeklyDayLabel: { fontSize: 10, color: '#9AA1AE', fontWeight: '600' },
+  weekCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, marginBottom: 12 },
+  weekCardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  weekCardRange: { fontSize: 14, fontWeight: '700', color: '#14171F' },
+  weekCardBadge: { backgroundColor: '#FCEAED', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  weekCardBadgeText: { fontSize: 10, fontWeight: '800', color: '#E0546E' },
+  weekCategoryBlock: { marginBottom: 12 },
+  weekCategoryLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
+  weekCategoryLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
+  weekStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 10 },
+  weekStat: { minWidth: '28%' },
+  weekStatLabel: { fontSize: 10, fontWeight: '700', color: '#9AA1AE', letterSpacing: 0.3, marginBottom: 3 },
+  weekStatValue: { fontSize: 14, fontWeight: '800', color: '#14171F' },
+  weekDaysLogged: { fontSize: 11, color: '#9AA1AE', fontWeight: '600' },
   listSkeleton: { height: 52, backgroundColor: '#F0F1F4', borderRadius: 12, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 24, gap: 8 },
   emptyText: { fontSize: 13, color: '#9AA1AE', fontWeight: '600' },
@@ -503,6 +751,15 @@ const styles = StyleSheet.create({
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: '#14171F' },
   sheetSubtitle: { fontSize: 12, color: '#9AA1AE', marginTop: 3 },
+  historyLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, marginBottom: 4 },
+  historyLinkText: { fontSize: 13, fontWeight: '700', color: '#4FA6E8' },
+  historySheetWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, top: '15%' },
+  historySheetContent: {
+    flex: 1,
+    backgroundColor: '#F9FAFC',
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingTop: 12,
+  },
   syncGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
   syncField: { width: '47%', backgroundColor: '#F5F6F8', borderRadius: 14, padding: 12 },
   syncFieldLabel: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },

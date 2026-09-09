@@ -2043,15 +2043,26 @@ healthRouter.get("/metrics", async (req, res) => {
       const today = new Date().toISOString().slice(0, 10);
       const prefs = user?.preferences || {};
       if (!prefs.healthLog) prefs.healthLog = {};
+      // FIX: this used to replace the whole day's entry outright. GET
+      // /metrics fires automatically on every screen refresh — including the
+      // one right after a manual save — so a Fit-connected user would save
+      // e.g. Nutrition, the screen would refresh, and this block would wipe
+      // that entry back down to just Fit's 6 fields, silently deleting the
+      // manual ones. Merge onto the existing entry instead: Fit refreshes
+      // the fields it actually knows about (falling back to whatever was
+      // already recorded if Fit has no value), everything manual-only
+      // (nutrition, activity extras, cycle, etc.) survives untouched.
+      const existing = prefs.healthLog[today] || {};
       prefs.healthLog[today] = {
-        source: "google_fit",
+        ...existing,
+        source: existing.source || "google_fit",
         lastSynced: data.lastUpdated,
-        steps: data.steps?.value ?? null,
-        heartRate: data.heartRate?.value ?? null,
-        sleep: data.sleep?.value ?? null,
-        calories: data.calories?.consumed ?? null,
-        weight: data.weight?.value ?? null,
-        height: data.height?.value ?? null,
+        steps: data.steps?.value ?? existing.steps ?? null,
+        heartRate: data.heartRate?.value ?? existing.heartRate ?? null,
+        sleep: data.sleep?.value ?? existing.sleep ?? null,
+        calories: data.calories?.consumed ?? existing.calories ?? null,
+        weight: data.weight?.value ?? existing.weight ?? null,
+        height: data.height?.value ?? existing.height ?? null,
       };
       await prisma.user
         .update({ where: { id: req.user.id }, data: { preferences: prefs } })

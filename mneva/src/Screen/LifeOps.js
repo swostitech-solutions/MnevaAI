@@ -712,14 +712,14 @@ export default function LifeOps({ navigation }) {
                     try {
                       const res = await apiFetch('/api/lifeops/flight/book', {
                         method: 'POST',
-                        body: JSON.stringify({
+                        body: {
                           flightId: selectedFlight.id, airline: selectedFlight.airline,
                           flightCode: selectedFlight.flightCode,
                           from: flightFrom, to: flightTo,
                           depart: selectedFlight.depart, arrive: selectedFlight.arrive,
                           date: flightDate, cabinClass: flightClass,
                           seat: selectedSeat, price: selectedFlight.price,
-                        }),
+                        },
                       });
                       setFlightResult(res);
                       setBookedFlights(prev => [res, ...prev]);
