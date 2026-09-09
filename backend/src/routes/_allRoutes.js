@@ -2053,16 +2053,22 @@ healthRouter.get("/metrics", async (req, res) => {
       // already recorded if Fit has no value), everything manual-only
       // (nutrition, activity extras, cycle, etc.) survives untouched.
       const existing = prefs.healthLog[today] || {};
+      // `??` only falls through on null/undefined — Fit reporting a genuine
+      // 0 (extremely common: early in the day, or a metric it simply has no
+      // reading for yet) counted as a "real" value and overwrote whatever
+      // had actually been recorded. `||` treats that 0 as "no data" instead,
+      // so a manually-logged number survives until Fit reports something
+      // meaningfully nonzero.
       prefs.healthLog[today] = {
         ...existing,
         source: existing.source || "google_fit",
         lastSynced: data.lastUpdated,
-        steps: data.steps?.value ?? existing.steps ?? null,
-        heartRate: data.heartRate?.value ?? existing.heartRate ?? null,
-        sleep: data.sleep?.value ?? existing.sleep ?? null,
-        calories: data.calories?.consumed ?? existing.calories ?? null,
-        weight: data.weight?.value ?? existing.weight ?? null,
-        height: data.height?.value ?? existing.height ?? null,
+        steps: data.steps?.value || existing.steps || null,
+        heartRate: data.heartRate?.value || existing.heartRate || null,
+        sleep: data.sleep?.value || existing.sleep || null,
+        calories: data.calories?.consumed || existing.calories || null,
+        weight: data.weight?.value || existing.weight || null,
+        height: data.height?.value || existing.height || null,
       };
       await prisma.user
         .update({ where: { id: req.user.id }, data: { preferences: prefs } })

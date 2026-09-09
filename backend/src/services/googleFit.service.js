@@ -654,14 +654,28 @@ export async function getHealthData(user) {
 
         const weeklySteps =
           weeklyStepsRaw.status === "fulfilled" ? weeklyStepsRaw.value : [];
-        const todaySteps =
+        const rawTodaySteps =
           weeklySteps.find((d) => d.date === today)?.steps || 0;
         const stepGoal = 10000;
-        const hr = heartRate.status === "fulfilled" ? heartRate.value : null;
-        const sl = sleep.status === "fulfilled" ? sleep.value : null;
-        const cal = calories.status === "fulfilled" ? calories.value : null;
-        const wt = weight.status === "fulfilled" ? weight.value : null;
-        const ht = height.status === "fulfilled" ? height.value : null;
+        const rawHr = heartRate.status === "fulfilled" ? heartRate.value : null;
+        const rawSl = sleep.status === "fulfilled" ? sleep.value : null;
+        const rawCal = calories.status === "fulfilled" ? calories.value : null;
+        const rawWt = weight.status === "fulfilled" ? weight.value : null;
+        const rawHt = height.status === "fulfilled" ? height.value : null;
+        // FIX: this used to return Fit's live reading unconditionally, even
+        // when Fit simply has no data yet (steps come back 0, the rest come
+        // back null) — which silently overrode whatever the user had just
+        // manually logged in "Today's Vitals" every time this refreshed
+        // (e.g. right after saving). Fall back to today's manually-logged
+        // value whenever Fit's own reading is empty; once Fit actually has a
+        // real reading it takes over again automatically.
+        const todayLog = prefs.healthLog?.[today] || null;
+        const todaySteps = rawTodaySteps || todayLog?.steps || 0;
+        const hr = rawHr || todayLog?.heartRate || null;
+        const sl = rawSl || todayLog?.sleep || null;
+        const cal = rawCal || todayLog?.calories || null;
+        const wt = rawWt || todayLog?.weight || null;
+        const ht = rawHt || todayLog?.height || null;
         return {
           period: "today",
           lastUpdated: new Date().toISOString(),
