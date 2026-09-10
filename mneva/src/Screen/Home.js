@@ -8569,6 +8569,16 @@ export default function Home({ navigation }) {
       item.start &&
       isToday(item.start, todayStart, todayEnd),
   );
+  // Real joinable meetings (video-call link) scheduled today — Priorities.js
+  // counts these in its header but only lists them under its MEETINGS tab.
+  // "Today's Priorities" is meant to be everything due today though, so this
+  // card needs the actual meeting rows too, not just the header count.
+  const todayMeetings = calendarItems.filter(
+    (item) =>
+      isJoinableMeetingLink(item.meetLink) &&
+      item.start &&
+      isToday(item.start, todayStart, todayEnd),
+  );
   const reminderTitles = new Set(
     todayReminders.map((item) => (item.title || "").trim().toLowerCase()),
   );
@@ -8602,19 +8612,22 @@ export default function Home({ navigation }) {
   const urgentEmailItems = brief?.urgentEmails || [];
   const suggestedMeetingItems = brief?.suggestedMeetings || [];
 
-  const doneTaskCount = todayReminders.filter((item) =>
-    doneMeetingIds.has(item.id),
-  ).length;
+  const doneTaskCount =
+    todayReminders.filter((item) => doneMeetingIds.has(item.id)).length +
+    todayMeetings.filter((item) => doneMeetingIds.has(item.id)).length;
   const pendingTaskCount =
     todayTaskItems.length +
     todayReminders.filter((item) => !doneMeetingIds.has(item.id)).length +
+    todayMeetings.filter((item) => !doneMeetingIds.has(item.id)).length +
     autoToday.length +
     urgentEmailItems.length +
     suggestedMeetingItems.length;
   const totalTaskCount = pendingTaskCount + doneTaskCount;
-  // Mirrors Priorities.js's TODAY tab exactly (same priority order: meeting
-  // requests, urgent emails, tasks, reminders, then AI-detected items) so
-  // this card never disagrees with what Priorities itself shows.
+  // Mirrors Priorities.js's TODAY tab (same priority order: meeting
+  // requests, urgent emails, live meetings, tasks, reminders, then
+  // AI-detected items) so this card never disagrees with what Priorities
+  // itself shows — including real joinable meetings, which Priorities.js
+  // only counts in its header but this card lists outright.
   const dashboardPriorityItems = [
     ...suggestedMeetingItems.map((mtg, i) => ({
       id: `suggest_${mtg.emailId || i}`,
@@ -8631,6 +8644,16 @@ export default function Home({ navigation }) {
       done: false,
       icon: "alert-circle",
       kind: "urgent_email",
+    })),
+    ...todayMeetings.map((meeting) => ({
+      id: `meeting_${meeting.id}`,
+      rawId: meeting.id,
+      title: meeting.title,
+      detail: `Meeting · ${formatPriorityReminderTime(meeting.start)}`,
+      done: doneMeetingIds.has(meeting.id),
+      icon: "video",
+      kind: "meeting",
+      start: meeting.start,
     })),
     ...todayTaskItems.map((task) => ({
       id: `task_${task.id}`,
@@ -9020,10 +9043,11 @@ export default function Home({ navigation }) {
               {/* Render the same current-day task/reminder data as Priorities. */}
               {dashboardPriorityItems.slice(0, 3).map((item) => {
                 const confirmedPending = confirmedPendingIds.has(item.id);
-                // Only reminders carry a scheduled time — a plain task has
-                // nothing to be "overdue" against, so it always keeps the
-                // static badge (mirrors Priorities.js's TaskCard vs MeetingCard).
-                const isPast = item.kind === "reminder" && item.start && new Date(item.start).getTime() < Date.now();
+                // Only reminders/meetings carry a scheduled time — a plain
+                // task has nothing to be "overdue" against, so it always
+                // keeps the static badge (mirrors Priorities.js's TaskCard
+                // vs MeetingCard).
+                const isPast = (item.kind === "reminder" || item.kind === "meeting") && item.start && new Date(item.start).getTime() < Date.now();
                 const awaitingConfirmation = isPast && !item.done && !confirmedPending;
                 return (
                   <View key={item.id} style={styles.briefingItemRow}>
