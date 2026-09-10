@@ -15,6 +15,10 @@ const TYPE_META = {
   health:  { icon: 'heart',       color: '#E0546E', bg: '#FCEAED' },
   document:{ icon: 'file-text',   color: '#F5A623', bg: '#FEF3C7' },
   memory:  { icon: 'cpu',         color: '#9B72FF', bg: '#F3EFFE' },
+  task:    { icon: 'check-square', color: '#1F9A5A', bg: '#EFFDF6' },
+  family:  { icon: 'users',       color: '#9B72FF', bg: '#F3EFFE' },
+  contact: { icon: 'user',        color: '#4FA6E8', bg: '#EAF3FD' },
+  notification: { icon: 'bell',   color: '#F5A623', bg: '#FEF3C7' },
 };
 
 // Dark-mode counterparts for the pastel `bg` tints above — a translucent
@@ -27,6 +31,10 @@ const TYPE_META_DARK_BG = {
   health: 'rgba(241,113,134,0.16)',
   document: 'rgba(255,184,77,0.16)',
   memory: 'rgba(155,114,255,0.18)',
+  task: 'rgba(52,199,123,0.18)',
+  family: 'rgba(155,114,255,0.18)',
+  contact: 'rgba(107,184,240,0.18)',
+  notification: 'rgba(255,184,77,0.16)',
 };
 
 const getMeta = (type, theme) => TYPE_META[type] || { icon: 'search', color: theme.muted, bg: theme.soft };
@@ -100,7 +108,7 @@ export default function Search({ navigation }) {
           <TextInput
             ref={inputRef}
             style={styles.searchInput}
-            placeholder="Search emails, payments, health…"
+            placeholder="Search everything — tasks, mail, bills, family…"
             placeholderTextColor={theme.placeholder}
             value={query}
             onChangeText={handleChange}
@@ -128,9 +136,9 @@ export default function Search({ navigation }) {
             <Feather name="search" size={32} color={theme.disabled} />
           </View>
           <Text style={styles.emptyTitle}>Search everything</Text>
-          <Text style={styles.emptySub}>Emails · Payments · Health · Documents · Memories</Text>
+          <Text style={styles.emptySub}>Tasks · Emails · Contacts · Bills & EMIs · Family · Health · Memories</Text>
           <View style={styles.hintRow}>
-            {['invoice', 'appointment', 'Swiggy', 'steps'].map(h => (
+            {['invoice', 'meeting', 'EMI', 'medication'].map(h => (
               <TouchableOpacity key={h} style={styles.hintChip} onPress={() => { setQuery(h); doSearch(h); }}>
                 <Text style={styles.hintChipText}>{h}</Text>
               </TouchableOpacity>

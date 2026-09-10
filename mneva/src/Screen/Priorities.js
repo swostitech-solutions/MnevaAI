@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
@@ -151,49 +152,97 @@ function AutoTimelineRow({ item, isLast, styles }) {
   );
 }
 
-function MeetingCard({ m, done, onCheck, styles }) {
+// Section labels render as a soft tinted pill instead of plain uppercase
+// text — a small touch that reads as a designed product surface rather than
+// a bare list of headings.
+function SectionHeader({ icon, label, color, tint, styles }) {
+  return (
+    <View style={[styles.sectionPill, { backgroundColor: tint }]}>
+      <Feather name={icon} size={12} color={color} />
+      <Text style={[styles.sectionPillText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, styles, theme }) {
   const { date, time, durStr } = fmtMeeting(m.start, m.end);
   const attendees = Array.isArray(m.attendees) ? m.attendees : [];
   const isRealtimeMeeting = isJoinableMeetingLink(m.meetLink);
   const isReminder = !isRealtimeMeeting;
+  // Once the scheduled time has passed, a plain checkbox is passive — the
+  // agent should proactively ask whether it actually happened, rather than
+  // wait for the user to remember to tap it. Once answered "No", it settles
+  // into a persistent "still pending" tag instead of re-asking every render.
+  const isPast = new Date(m.start).getTime() < Date.now();
+  const awaitingConfirmation = isPast && !done && !confirmedPending;
+
   return (
-    <View style={[styles.meetCard, done && styles.cardDone]}>
-      <TouchableOpacity
-        style={[styles.checkCircle, done && styles.checkCircleActive]}
-        onPress={() => onCheck(m)}
-        disabled={done}
-      >
-        {done && <Feather name="check" size={13} color="#FFFFFF" />}
-      </TouchableOpacity>
-      <View style={styles.meetBody}>
-        <View style={styles.meetTopRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1, marginRight: 8 }}>
-            <Feather name={isReminder ? 'bell' : 'video'} size={13} color={isReminder ? '#F5A623' : '#E0546E'} />
-            <Text style={[styles.meetTitle, done && styles.cardTitleChecked]} numberOfLines={1}>
-              {m.title}
-            </Text>
+    <View style={[styles.meetCard, done && styles.cardDone, awaitingConfirmation && styles.meetCardOverdue]}>
+      <View style={styles.meetTopSection}>
+        {awaitingConfirmation ? (
+          <View style={styles.confirmIconWrap}>
+            <Feather name="help-circle" size={14} color={theme.warning} />
           </View>
-          {isRealtimeMeeting && !done && (
-            <TouchableOpacity style={styles.joinBtn} onPress={() => Linking.openURL(m.meetLink.trim())}>
-              <Feather name="video" size={12} color="#FFFFFF" />
-              <Text style={styles.joinBtnText}>Join</Text>
-            </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.checkCircle, done && styles.checkCircleActive]}
+            onPress={() => onCheck(m)}
+            disabled={done}
+          >
+            {done && <Feather name="check" size={13} color="#FFFFFF" />}
+          </TouchableOpacity>
+        )}
+        <View style={styles.meetBody}>
+          <View style={styles.meetTopRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1, marginRight: 8 }}>
+              <Feather name={isReminder ? 'bell' : 'video'} size={13} color={isReminder ? theme.warning : theme.danger} />
+              <Text style={[styles.meetTitle, done && styles.cardTitleChecked]} numberOfLines={1}>
+                {m.title}
+              </Text>
+            </View>
+            {isRealtimeMeeting && !done && (
+              <TouchableOpacity style={styles.joinBtn} onPress={() => Linking.openURL(m.meetLink.trim())}>
+                <Feather name="video" size={12} color="#FFFFFF" />
+                <Text style={styles.joinBtnText}>Join</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.meetMetaRow}>
+            <Feather name="clock" size={11} color={theme.faint} />
+            <Text style={styles.meetMeta}> {date}  ·  {time}{durStr ? `  ·  ${durStr}` : ""}</Text>
+          </View>
+          {isRealtimeMeeting && attendees.length > 0 && (
+            <View style={styles.meetMetaRow}>
+              <Feather name="users" size={11} color={theme.faint} />
+              <Text style={styles.meetAttendees} numberOfLines={1}> {attendees.join(", ")}</Text>
+            </View>
+          )}
+          {!!m.description && (
+            <Text style={styles.meetDesc} numberOfLines={2}>{m.description}</Text>
           )}
         </View>
-        <View style={styles.meetMetaRow}>
-          <Feather name="clock" size={11} color="#9AA1AE" />
-          <Text style={styles.meetMeta}> {date}  ·  {time}{durStr ? `  ·  ${durStr}` : ""}</Text>
-        </View>
-        {isRealtimeMeeting && attendees.length > 0 && (
-          <View style={styles.meetMetaRow}>
-            <Feather name="users" size={11} color="#9AA1AE" />
-            <Text style={styles.meetAttendees} numberOfLines={1}> {attendees.join(", ")}</Text>
-          </View>
-        )}
-        {!!m.description && (
-          <Text style={styles.meetDesc} numberOfLines={2}>{m.description}</Text>
-        )}
       </View>
+
+      {awaitingConfirmation && (
+        <View style={styles.confirmRow}>
+          <Text style={styles.confirmPrompt}>Did you complete this?</Text>
+          <View style={styles.confirmBtnRow}>
+            <TouchableOpacity style={styles.confirmNoBtn} onPress={() => onConfirmPending(m)} activeOpacity={0.8}>
+              <Text style={styles.confirmNoText}>No, pending</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmYesBtn} onPress={() => onCheck(m)} activeOpacity={0.85}>
+              <Feather name="check" size={12} color="#FFFFFF" />
+              <Text style={styles.confirmYesText}>Yes, done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      {!awaitingConfirmation && confirmedPending && !done && (
+        <View style={styles.pendingTag}>
+          <Feather name="clock" size={10} color={theme.warning} />
+          <Text style={styles.pendingTagText}>Still pending · past due</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -207,6 +256,7 @@ export default function Priorities({ navigation }) {
   const [tasks, setTasks] = useState([]);
   const [allCalendarItems, setAllCalendarItems] = useState([]);
   const [doneMeetingIds, setDoneMeetingIds] = useState(new Set());
+  const [confirmedPendingIds, setConfirmedPendingIds] = useState(new Set());
   const [urgentEmails, setUrgentEmails] = useState([]);
   const [suggestedMeetings, setSuggestedMeetings] = useState([]);
   const [meetingActed, setMeetingActed] = useState({});
@@ -421,6 +471,13 @@ export default function Priorities({ navigation }) {
     }
   };
 
+  // "No, still pending" on the past-due Yes/No prompt — settles the card
+  // into a persistent "still pending" tag for this session instead of
+  // re-asking on every render, without marking it complete.
+  const handleConfirmPending = (m) => {
+    setConfirmedPendingIds(prev => new Set([...prev, m.id]));
+  };
+
 
 
   const totalPending = pendingTasks.length + urgentEmails.length + suggestedMeetings.length;
@@ -443,14 +500,29 @@ export default function Priorities({ navigation }) {
           />
         }
       >
-        <Text style={styles.headerTitle}>Priorities</Text>
-        <Text style={styles.headerSubtitle}>
-          {pendingTasks.length} task{pendingTasks.length !== 1 ? "s" : ""}{urgentEmails.length > 0 ? ` · ${urgentEmails.length} urgent mail` : ""}{suggestedMeetings.length > 0 ? ` · ${suggestedMeetings.length} meeting request${suggestedMeetings.length !== 1 ? 's' : ''}` : ""} · {meetings.filter(m => !doneMeetingIds.has(m.id)).length} meeting{meetings.filter(m => !doneMeetingIds.has(m.id)).length !== 1 ? "s" : ""}
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Priorities</Text>
+            <Text style={styles.headerSubtitle}>
+              {pendingTasks.length} task{pendingTasks.length !== 1 ? "s" : ""}{urgentEmails.length > 0 ? ` · ${urgentEmails.length} urgent mail` : ""}{suggestedMeetings.length > 0 ? ` · ${suggestedMeetings.length} meeting request${suggestedMeetings.length !== 1 ? 's' : ''}` : ""} · {meetings.filter(m => !doneMeetingIds.has(m.id)).length} meeting{meetings.filter(m => !doneMeetingIds.has(m.id)).length !== 1 ? "s" : ""}
+            </Text>
+          </View>
+          <LinearGradient
+            colors={[theme.accentAlt, theme.accent]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={styles.headerBadge}
+          >
+            <Feather name="zap" size={18} color="#FFFFFF" />
+          </LinearGradient>
+        </View>
 
         {/* Agent status — the same live cue as Twin Diary, so this reads as
             a background agent watching everything, not a static to-do list. */}
-        <View style={styles.agentStatusBar}>
+        <LinearGradient
+          colors={theme.isDark ? ["rgba(129,128,255,0.20)", "rgba(52,199,123,0.12)"] : ["#F3F2FF", "#EFFDF6"]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          style={styles.agentStatusBar}
+        >
           <LiveDot styles={styles} />
           <Text style={styles.agentStatusText}>
             Mneva is analyzing your day
@@ -458,7 +530,7 @@ export default function Priorities({ navigation }) {
               ? ` · ${autoToday.length + autoUpcoming.length} item${(autoToday.length + autoUpcoming.length) !== 1 ? 's' : ''} detected`
               : ''}
           </Text>
-        </View>
+        </LinearGradient>
 
         {/* Segment tabs */}
         <ScrollView
@@ -514,10 +586,12 @@ export default function Priorities({ navigation }) {
                 {/* Suggested meetings from urgent emails */}
                 {suggestedMeetings.length > 0 && (
                   <>
-                    <View style={styles.sectionDivider}>
-                      <Feather name="calendar" size={12} color="#615FF8" />
-                      <Text style={[styles.sectionDividerText, { color: '#615FF8' }]}>MEETING REQUESTS</Text>
-                    </View>
+                    <SectionHeader
+                      icon="calendar" label="MEETING REQUESTS"
+                      color={theme.accentAlt}
+                      tint={theme.isDark ? "rgba(129,128,255,0.16)" : "#EEEDFE"}
+                      styles={styles}
+                    />
                     {suggestedMeetings.map((mtg) => {
                       const acted = meetingActed[mtg.emailId];
                       return (
@@ -562,10 +636,12 @@ export default function Priorities({ navigation }) {
                 {/* Urgent emails section */}
                 {urgentEmails.length > 0 && (
                   <>
-                    <View style={styles.sectionDivider}>
-                      <Feather name="alert-circle" size={12} color="#E0546E" />
-                      <Text style={[styles.sectionDividerText, { color: '#E0546E' }]}>URGENT EMAILS TODAY</Text>
-                    </View>
+                    <SectionHeader
+                      icon="alert-circle" label="URGENT EMAILS TODAY"
+                      color={theme.danger}
+                      tint={theme.isDark ? "rgba(241,113,134,0.16)" : "#FCEAED"}
+                      styles={styles}
+                    />
                     {urgentEmails.map((email, i) => (
                       <View key={email.id || i} style={styles.urgentEmailCard}>
                         <View style={styles.urgentEmailIconWrap}>
@@ -588,21 +664,33 @@ export default function Priorities({ navigation }) {
                 ))}
                 {todayReminders.length > 0 && (
                   <>
-                    <View style={styles.sectionDivider}>
-                      <Feather name="bell" size={12} color="#D88900" />
-                      <Text style={[styles.sectionDividerText, { color: '#D88900' }]}>REMINDERS TODAY</Text>
-                    </View>
+                    <SectionHeader
+                      icon="bell" label="REMINDERS TODAY"
+                      color={theme.warning}
+                      tint={theme.isDark ? "rgba(255,184,77,0.16)" : "#FEF3C7"}
+                      styles={styles}
+                    />
                     {todayReminders.map(m => (
-                      <MeetingCard key={m.id} m={m} done={doneMeetingIds.has(m.id)} onCheck={handleCheckMeeting} styles={styles} />
+                      <MeetingCard
+                        key={m.id} m={m}
+                        done={doneMeetingIds.has(m.id)}
+                        confirmedPending={confirmedPendingIds.has(m.id)}
+                        onCheck={handleCheckMeeting}
+                        onConfirmPending={handleConfirmPending}
+                        styles={styles}
+                        theme={theme}
+                      />
                     ))}
                   </>
                 )}
                 {autoToday.length > 0 && (
                   <>
-                    <View style={styles.sectionDivider}>
-                      <Feather name="cpu" size={12} color={theme.accentAlt} />
-                      <Text style={[styles.sectionDividerText, { color: theme.accentAlt }]}>AI DETECTED TODAY</Text>
-                    </View>
+                    <SectionHeader
+                      icon="cpu" label="AI DETECTED TODAY"
+                      color={theme.accentAlt}
+                      tint={theme.isDark ? "rgba(129,128,255,0.16)" : "#EEEDFE"}
+                      styles={styles}
+                    />
                     {autoToday.map((item, i) => (
                       <AutoTimelineRow key={item.id} item={item} isLast={i === autoToday.length - 1} styles={styles} />
                     ))}
@@ -625,16 +713,21 @@ export default function Priorities({ navigation }) {
                       <MeetingCard
                         key={m.id} m={m}
                         done={doneMeetingIds.has(m.id)}
+                        confirmedPending={confirmedPendingIds.has(m.id)}
                         onCheck={handleCheckMeeting}
+                        onConfirmPending={handleConfirmPending}
                         styles={styles}
+                        theme={theme}
                       />
                     ))}
                     {autoUpcoming.length > 0 && (
                       <>
-                        <View style={styles.sectionDivider}>
-                          <Feather name="cpu" size={12} color={theme.accentAlt} />
-                          <Text style={[styles.sectionDividerText, { color: theme.accentAlt }]}>AI DETECTED — COMING UP</Text>
-                        </View>
+                        <SectionHeader
+                          icon="cpu" label="AI DETECTED — COMING UP"
+                          color={theme.accentAlt}
+                          tint={theme.isDark ? "rgba(129,128,255,0.16)" : "#EEEDFE"}
+                          styles={styles}
+                        />
                         {autoUpcoming.map((item, i) => (
                           <AutoTimelineRow key={item.id} item={item} isLast={i === autoUpcoming.length - 1} styles={styles} />
                         ))}
@@ -659,8 +752,11 @@ export default function Priorities({ navigation }) {
                     <MeetingCard
                       key={m.id} m={m}
                       done={doneMeetingIds.has(m.id)}
+                      confirmedPending={confirmedPendingIds.has(m.id)}
                       onCheck={handleCheckMeeting}
+                      onConfirmPending={handleConfirmPending}
                       styles={styles}
+                      theme={theme}
                     />
                   ))
                 )}
@@ -702,11 +798,13 @@ const createStyles = (theme) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   container: { flex: 1 },
   scrollContent: { paddingTop: 16 },
-  headerTitle: { fontSize: 32, fontWeight: "800", color: theme.text, marginBottom: 4 },
-  headerSubtitle: { fontSize: 14, color: theme.faint, marginBottom: 16 },
+  headerRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 16, gap: 12 },
+  headerTitle: { fontSize: 32, fontWeight: "800", color: theme.text, marginBottom: 4, letterSpacing: -0.5 },
+  headerSubtitle: { fontSize: 14, color: theme.faint },
+  headerBadge: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", shadowColor: theme.accentAlt, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
 
   // Agent status bar
-  agentStatusBar: { flexDirection: "row", alignItems: "center", backgroundColor: theme.isDark ? "rgba(129,128,255,0.16)" : "#F3F2FF", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 16, gap: 8 },
+  agentStatusBar: { flexDirection: "row", alignItems: "center", borderRadius: 14, paddingVertical: 11, paddingHorizontal: 13, marginBottom: 18, gap: 8 },
   agentStatusText: { fontSize: 12, fontWeight: "600", color: theme.accentAlt },
   liveDotWrap: { width: 14, height: 14, alignItems: "center", justifyContent: "center" },
   liveDotPulse: { position: "absolute", width: 10, height: 10, borderRadius: 5, backgroundColor: theme.accent, opacity: 0.35 },
@@ -732,8 +830,9 @@ const createStyles = (theme) => StyleSheet.create({
 
   // Task card
   card: {
-    flexDirection: "row", alignItems: "center", backgroundColor: theme.card, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 16, marginBottom: 12,
-    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    flexDirection: "row", alignItems: "center", backgroundColor: theme.card, borderRadius: 20, paddingVertical: 16, paddingHorizontal: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: theme.border,
+    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2,
   },
   cardDone: { opacity: 0.5 },
   checkCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: theme.borderStrong, alignItems: "center", justifyContent: "center", marginRight: 14, flexShrink: 0 },
@@ -743,15 +842,18 @@ const createStyles = (theme) => StyleSheet.create({
   cardTitleChecked: { color: theme.faint, textDecorationLine: "line-through" },
   cardSubtitle: { fontSize: 12, color: theme.faint },
 
-  // Section divider
-  sectionDivider: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10, marginTop: 6 },
-  sectionDividerText: { fontSize: 12, fontWeight: "700", color: theme.muted, letterSpacing: 0.5 },
+  // Section pill (replaces the old plain-text divider)
+  sectionPill: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 12, marginTop: 6 },
+  sectionPillText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
 
   // Meeting card — same row layout as task card
   meetCard: {
-    flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.card, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12,
-    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    backgroundColor: theme.card, borderRadius: 20, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: theme.border,
+    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2,
   },
+  meetCardOverdue: { borderColor: theme.isDark ? "rgba(255,184,77,0.5)" : "#F5CB7C" },
+  meetTopSection: { flexDirection: "row", alignItems: "flex-start" },
   meetBody: { flex: 1 },
   meetTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
   meetTitle: { fontSize: 15, fontWeight: "700", color: theme.text, flex: 1, marginRight: 8 },
@@ -762,13 +864,27 @@ const createStyles = (theme) => StyleSheet.create({
   joinBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: theme.accent, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
   joinBtnText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
 
+  // Past-due Yes/No confirmation — the agent proactively asks whether a
+  // reminder/meeting whose time has already passed actually happened,
+  // instead of leaving a passive checkbox for the user to remember.
+  confirmIconWrap: { width: 24, height: 24, borderRadius: 12, backgroundColor: theme.isDark ? "rgba(255,184,77,0.16)" : "#FEF3C7", alignItems: "center", justifyContent: "center", marginRight: 14, flexShrink: 0 },
+  confirmRow: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.border },
+  confirmPrompt: { fontSize: 12, fontWeight: "700", color: theme.textSecondary, marginBottom: 8 },
+  confirmBtnRow: { flexDirection: "row", gap: 8 },
+  confirmNoBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 9, borderRadius: 10, backgroundColor: theme.surfaceAlt },
+  confirmNoText: { fontSize: 12, fontWeight: "700", color: theme.textSecondary },
+  confirmYesBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 9, borderRadius: 10, backgroundColor: theme.accent },
+  confirmYesText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  pendingTag: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", marginTop: 10, backgroundColor: theme.isDark ? "rgba(255,184,77,0.16)" : "#FEF3C7", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 },
+  pendingTagText: { fontSize: 11, fontWeight: "700", color: theme.warning },
+
   // Empty
   emptyWrap: { alignItems: "center", paddingVertical: 40, gap: 10 },
   emptyText: { fontSize: 14, color: theme.faint, fontWeight: "600" },
   emptyHint: { fontSize: 12, color: theme.disabled, textAlign: "center" },
 
   // Meeting suggestion card
-  meetSuggestCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.isDark ? "rgba(129,128,255,0.10)" : "#F5F3FF", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: theme.accentAlt },
+  meetSuggestCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.isDark ? "rgba(129,128,255,0.10)" : "#F5F3FF", borderRadius: 20, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: theme.accentAlt },
   meetSuggestIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: theme.isDark ? "rgba(129,128,255,0.18)" : "#EEEDFE", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
   meetSuggestBody: { flex: 1 },
   meetSuggestTitle: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 2 },
@@ -782,7 +898,7 @@ const createStyles = (theme) => StyleSheet.create({
   meetSuggestActed: { fontSize: 12, fontWeight: "600", marginTop: 4 },
 
   // Urgent email card
-  urgentEmailCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.isDark ? "rgba(241,113,134,0.10)" : "#FFF5F7", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: theme.danger },
+  urgentEmailCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: theme.isDark ? "rgba(241,113,134,0.10)" : "#FFF5F7", borderRadius: 20, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: theme.danger },
   urgentEmailIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: theme.isDark ? "rgba(241,113,134,0.16)" : "#FCEAED", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
   urgentEmailBody: { flex: 1 },
   urgentEmailSubject: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 3 },
@@ -793,8 +909,8 @@ const createStyles = (theme) => StyleSheet.create({
 
   // Auto-detected item card (from the cross-module analysis)
   autoItemCard: {
-    flexDirection: "row", alignItems: "center", backgroundColor: theme.card, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3,
-    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    flexDirection: "row", alignItems: "center", backgroundColor: theme.card, borderRadius: 20, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3,
+    shadowColor: "#0F1720", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2,
   },
   autoItemIconWrap: { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
   autoItemBody: { flex: 1 },

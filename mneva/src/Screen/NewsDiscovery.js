@@ -56,7 +56,7 @@ const NEWS_TABS = [
   { id: "following", label: "Following", icon: "bookmark",  colors: ["#10B981", "#047857"] },
 ];
 
-function StoryCard({ story, onPress }) {
+function StoryCard({ story, onPress, theme, storyStyles }) {
   const colors = getCategoryColors(story.category);
   return (
     <TouchableOpacity style={storyStyles.card} activeOpacity={0.85} onPress={onPress}>
@@ -76,9 +76,9 @@ function StoryCard({ story, onPress }) {
             <Text style={storyStyles.sourceText}>{story.source}</Text>
           </View>
           <View style={storyStyles.metaRow}>
-            <Feather name="clock" size={10} color="#9AA1AE" />
+            <Feather name="clock" size={10} color={theme.faint} />
             <Text style={storyStyles.readTime}>{story.readTime}</Text>
-            <Feather name="chevron-right" size={13} color="#9AA1AE" style={{ marginLeft: 4 }} />
+            <Feather name="chevron-right" size={13} color={theme.faint} style={{ marginLeft: 4 }} />
           </View>
         </View>
       </View>
@@ -123,6 +123,9 @@ const DISCOVER_CATEGORIES = [
 
 export default function NewsDiscovery({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
+  const storyStyles = createStoryStyles(theme);
   const [activeTab, setActiveTab]         = useState("foryou");
   const [stories, setStories]             = useState([]);
   const [loading, setLoading]             = useState(false);
@@ -211,7 +214,7 @@ export default function NewsDiscovery({ navigation }) {
             <Feather
               name={t.icon}
               size={13}
-              color={activeTab === t.id ? t.colors[0] : "#9AA1AE"}
+              color={activeTab === t.id ? t.colors[0] : theme.faint}
             />
             <Text style={[styles.tabText, activeTab === t.id && { color: t.colors[0] }]}>
               {t.label}
@@ -252,7 +255,7 @@ export default function NewsDiscovery({ navigation }) {
           {activeTab === "discover" && discoverCat && !discoverTopic && (
             <View>
               <TouchableOpacity style={styles.backRow} onPress={() => setDiscoverCat(null)}>
-                <Feather name="arrow-left" size={14} color="#6C47FF" />
+                <Feather name="arrow-left" size={14} color={theme.accentAlt} />
                 <Text style={styles.backText}>All Categories</Text>
               </TouchableOpacity>
               <View style={styles.catHeaderRow}>
@@ -279,7 +282,7 @@ export default function NewsDiscovery({ navigation }) {
           {/* ── DISCOVER: topic breadcrumb when stories showing ── */}
           {activeTab === "discover" && discoverTopic && (
             <TouchableOpacity style={styles.backRow} onPress={() => { setDiscoverTopic(null); setStories([]); }}>
-              <Feather name="arrow-left" size={14} color="#6C47FF" />
+              <Feather name="arrow-left" size={14} color={theme.accentAlt} />
               <Text style={styles.backText}>{discoverCat?.label} · {discoverTopic}</Text>
             </TouchableOpacity>
           )}
@@ -307,7 +310,7 @@ export default function NewsDiscovery({ navigation }) {
           )}
           {!loading && error && (
             <View style={styles.errorBox}>
-              <Feather name="alert-circle" size={24} color="#F97316" />
+              <Feather name="alert-circle" size={24} color={theme.warning} />
               <Text style={styles.errorText}>Couldn’t load stories. Tap to retry.</Text>
               <TouchableOpacity style={styles.retryBtn} onPress={() => loadStories(activeTab, discoverTopic)}>
                 <Text style={styles.retryText}>Retry</Text>
@@ -316,7 +319,7 @@ export default function NewsDiscovery({ navigation }) {
           )}
           {!loading && !error && activeTab === "following" && (
             <View style={styles.errorBox}>
-              <Feather name="bookmark" size={24} color="#10B981" />
+              <Feather name="bookmark" size={24} color={theme.accent} />
               <Text style={styles.errorText}>Follow topics to see stories here</Text>
             </View>
           )}
@@ -327,10 +330,12 @@ export default function NewsDiscovery({ navigation }) {
                   key={i}
                   story={story}
                   onPress={() => navigation?.navigate?.("NewsStory", { story })}
+                  theme={theme}
+                  storyStyles={storyStyles}
                 />
               ))}
               <View style={styles.aiSourceRow}>
-                <Feather name="cpu" size={10} color="#6C47FF" />
+                <Feather name="cpu" size={10} color={theme.accentAlt} />
                 <Text style={styles.aiSourceText}>Powered by Mneva AI · DeepSeek</Text>
               </View>
             </View>
@@ -342,23 +347,23 @@ export default function NewsDiscovery({ navigation }) {
       {/* ── Bottom tab bar ── */}
       <View style={[styles.bottomBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.bottomItem} onPress={() => navigation?.navigate?.("Home")}>
-          <Ionicons name="home" size={22} color="#9AA1AE" />
+          <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.bottomLabel}>HOME</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.bottomItem} onPress={() => navigation?.navigate?.("Priorities")}>
-          <Feather name="calendar" size={22} color="#9AA1AE" />
+          <Feather name="calendar" size={22} color={theme.faint} />
           <Text style={styles.bottomLabel}>PRIORITIES</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.bottomItem} onPress={() => navigation?.navigate?.("AskAI")}>
-          <Feather name="mic" size={22} color="#9AA1AE" />
+          <Feather name="mic" size={22} color={theme.faint} />
           <Text style={styles.bottomLabel}>ASK AI</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.bottomItem} onPress={() => navigation?.navigate?.("Space")}>
-          <Feather name="folder" size={22} color="#9AA1AE" />
+          <Feather name="folder" size={22} color={theme.faint} />
           <Text style={styles.bottomLabel}>SPACE</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.bottomItem} onPress={() => navigation?.navigate?.("Profile")}>
-          <Feather name="user" size={22} color="#9AA1AE" />
+          <Feather name="user" size={22} color={theme.faint} />
           <Text style={styles.bottomLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
@@ -367,16 +372,16 @@ export default function NewsDiscovery({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F4F3FA" },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
 
   // Header
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14 },
-  headerLabel: { fontSize: 10, fontWeight: "800", color: "#8B83C0", letterSpacing: 1.1, textTransform: "uppercase" },
-  headerTitle: { fontSize: 24, fontWeight: "800", color: "#14171F", letterSpacing: -0.4, marginTop: 2 },
-  livePill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#EDE9FE", borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#6C47FF" },
-  liveText: { fontSize: 9, fontWeight: "800", color: "#6C47FF", letterSpacing: 0.7 },
+  headerLabel: { fontSize: 10, fontWeight: "800", color: theme.faint, letterSpacing: 1.1, textTransform: "uppercase" },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: theme.text, letterSpacing: -0.4, marginTop: 2 },
+  livePill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.isDark ? "rgba(129,128,255,0.16)" : "#EDE9FE", borderRadius: 20, paddingHorizontal: 9, paddingVertical: 7 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.accentAlt },
+  liveText: { fontSize: 9, fontWeight: "800", color: theme.accentAlt, letterSpacing: 0.7 },
 
   // Agent strip
   agentStrip: { marginHorizontal: 16, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, flexDirection: "row", alignItems: "center", marginBottom: 4 },
@@ -385,75 +390,75 @@ const styles = StyleSheet.create({
   agentBold: { color: "#FFFFFF", fontWeight: "800" },
 
   // Tab row
-  tabRow: { flexDirection: "row", backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#EBEBF5", marginTop: 12 },
+  tabRow: { flexDirection: "row", backgroundColor: theme.card, borderBottomWidth: 1, borderBottomColor: theme.border, marginTop: 12 },
   tab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: "transparent" },
-  tabText: { fontSize: 11, fontWeight: "800", color: "#9AA1AE" },
+  tabText: { fontSize: 11, fontWeight: "800", color: theme.faint },
 
   content: { paddingHorizontal: 16, paddingTop: 16 },
 
   // Hero card
-  heroCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 18, marginBottom: 16, overflow: "hidden", borderWidth: 1, borderColor: "#EBEBF5" },
+  heroCard: { backgroundColor: theme.card, borderRadius: 20, padding: 18, marginBottom: 16, overflow: "hidden", borderWidth: 1, borderColor: theme.border },
   heroAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
   heroIconWrap: { marginBottom: 12 },
   heroIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  heroHeadline: { fontSize: 17, fontWeight: "800", color: "#14171F", marginBottom: 6, letterSpacing: -0.3 },
-  heroSub: { fontSize: 12, color: "#6B7280", lineHeight: 18, marginBottom: 14 },
+  heroHeadline: { fontSize: 17, fontWeight: "800", color: theme.text, marginBottom: 6, letterSpacing: -0.3 },
+  heroSub: { fontSize: 12, color: theme.textSecondary, lineHeight: 18, marginBottom: 14 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
   chipText: { fontSize: 11, fontWeight: "700" },
 
   // Placeholder
-  placeholderBox: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 28, alignItems: "center", gap: 12, borderWidth: 1, borderColor: "#EBEBF5" },
+  placeholderBox: { backgroundColor: theme.card, borderRadius: 20, padding: 28, alignItems: "center", gap: 12, borderWidth: 1, borderColor: theme.border },
   placeholderIcon: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  placeholderTitle: { fontSize: 15, fontWeight: "800", color: "#14171F" },
-  placeholderSub: { fontSize: 12, color: "#9AA1AE", textAlign: "center", lineHeight: 18 },
+  placeholderTitle: { fontSize: 15, fontWeight: "800", color: theme.text },
+  placeholderSub: { fontSize: 12, color: theme.faint, textAlign: "center", lineHeight: 18 },
 
   // Bottom tab bar
-  bottomBar: { flexDirection: "row", backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EBEBF5", paddingTop: 10 },
+  bottomBar: { flexDirection: "row", backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   bottomItem: { flex: 1, alignItems: "center" },
-  bottomLabel: { fontSize: 10, fontWeight: "700", color: "#9AA1AE", marginTop: 4, letterSpacing: 0.3 },
+  bottomLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
 
   // Story feed
   storyList:    { gap: 12 },
 
   // Discover
-  sectionLabel:    { fontSize: 10, fontWeight: "800", color: "#8B83C0", letterSpacing: 1.1, textTransform: "uppercase", marginBottom: 12, marginTop: 4 },
+  sectionLabel:    { fontSize: 10, fontWeight: "800", color: theme.faint, letterSpacing: 1.1, textTransform: "uppercase", marginBottom: 12, marginTop: 4 },
   catGrid:         { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
-  catCard:         { width: "48%", backgroundColor: "#FFFFFF", borderRadius: 16, padding: 14, alignItems: "center", gap: 8, borderWidth: 1, borderColor: "#EBEBF5" },
+  catCard:         { width: "48%", backgroundColor: theme.card, borderRadius: 16, padding: 14, alignItems: "center", gap: 8, borderWidth: 1, borderColor: theme.border },
   catIcon:         { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  catLabel:        { fontSize: 12, fontWeight: "800", color: "#14171F" },
+  catLabel:        { fontSize: 12, fontWeight: "800", color: theme.text },
   backRow:         { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16 },
-  backText:        { fontSize: 12, fontWeight: "700", color: "#6C47FF" },
+  backText:        { fontSize: 12, fontWeight: "700", color: theme.accentAlt },
   catHeaderRow:    { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
   catHeaderIcon:   { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  catHeaderLabel:  { fontSize: 18, fontWeight: "800", color: "#14171F" },
+  catHeaderLabel:  { fontSize: 18, fontWeight: "800", color: theme.text },
   topicGrid:       { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   topicChip:       { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
   topicChipText:   { fontSize: 12, fontWeight: "700" },
   loadingBox:   { alignItems: "center", paddingVertical: 48, gap: 12 },
-  loadingText:  { fontSize: 12, color: "#9AA1AE", fontWeight: "600" },
+  loadingText:  { fontSize: 12, color: theme.faint, fontWeight: "600" },
   errorBox:     { alignItems: "center", paddingVertical: 40, gap: 10 },
-  errorText:    { fontSize: 13, color: "#9AA1AE", fontWeight: "600", textAlign: "center" },
-  retryBtn:     { backgroundColor: "#F97316", borderRadius: 12, paddingHorizontal: 20, paddingVertical: 8 },
+  errorText:    { fontSize: 13, color: theme.faint, fontWeight: "600", textAlign: "center" },
+  retryBtn:     { backgroundColor: theme.warning, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 8 },
   retryText:    { fontSize: 12, fontWeight: "800", color: "#FFFFFF" },
   aiSourceRow:  { flexDirection: "row", alignItems: "center", gap: 5, justifyContent: "center", paddingTop: 4 },
-  aiSourceText: { fontSize: 10, color: "#6C47FF", fontWeight: "700" },
+  aiSourceText: { fontSize: 10, color: theme.accentAlt, fontWeight: "700" },
 });
 
-const storyStyles = StyleSheet.create({
-  card:         { backgroundColor: "#FFFFFF", borderRadius: 18, overflow: "hidden", borderWidth: 1, borderColor: "#EBEBF5", shadowColor: "#6C47FF", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+const createStoryStyles = (theme) => StyleSheet.create({
+  card:         { backgroundColor: theme.card, borderRadius: 18, overflow: "hidden", borderWidth: 1, borderColor: theme.border, shadowColor: "#6C47FF", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   categoryBar:  { height: 3 },
   body:         { padding: 14 },
   topRow:       { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
   categoryPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   categoryText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" },
-  timeText:     { fontSize: 10, color: "#9AA1AE", fontWeight: "600" },
-  headline:     { fontSize: 15, fontWeight: "800", color: "#14171F", lineHeight: 22, marginBottom: 6, letterSpacing: -0.2 },
-  summary:      { fontSize: 12, color: "#6B7280", lineHeight: 18, marginBottom: 12 },
+  timeText:     { fontSize: 10, color: theme.faint, fontWeight: "600" },
+  headline:     { fontSize: 15, fontWeight: "800", color: theme.text, lineHeight: 22, marginBottom: 6, letterSpacing: -0.2 },
+  summary:      { fontSize: 12, color: theme.textSecondary, lineHeight: 18, marginBottom: 12 },
   bottomRow:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sourceRow:    { flexDirection: "row", alignItems: "center", gap: 5 },
   sourceDot:    { width: 6, height: 6, borderRadius: 3 },
-  sourceText:   { fontSize: 11, color: "#6B7280", fontWeight: "700" },
+  sourceText:   { fontSize: 11, color: theme.textSecondary, fontWeight: "700" },
   metaRow:      { flexDirection: "row", alignItems: "center", gap: 4 },
-  readTime:     { fontSize: 10, color: "#9AA1AE", fontWeight: "600" },
+  readTime:     { fontSize: 10, color: theme.faint, fontWeight: "600" },
 });

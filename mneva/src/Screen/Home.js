@@ -6822,39 +6822,39 @@ function isToday(value, todayStart, todayEnd) {
   );
 }
 
-// Used by the dashboard's Twin Diary widget, which — unlike the full Twin
-// Diary screen — must only ever show today's entries, so the boundary has
-// to be recomputed at call time rather than captured once in an effect.
-function isSameLocalDay(value) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return false;
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
+// Same cross-module analysis flattening as Priorities.js's TODAY tab (bills,
+// EMIs, subscriptions, medication refills, pet reminders, family items) — the
+// dashboard's "Today's Priorities" card must show this too, not just plain
+// tasks/reminders, or it disagrees with what Priorities itself shows.
+function buildAutoItems(summary) {
+  if (!summary?.sections) return [];
+  const items = [];
+  const push = (id, title, subtitle, date, icon, color, category) => {
+    items.push({ id, title, subtitle, date: date || null, icon, color, category });
+  };
+  const { communications, family, finance } = summary.sections;
 
-// Same tool → icon/color mapping as TwinDiary.js, kept local since that
-// screen doesn't export them — just enough for the dashboard preview card.
-const DIARY_TOOL_ICONS = {
-  schedule_event: 'calendar', set_reminder: 'bell', initiate_payment: 'credit-card',
-  send_email: 'mail', draft_reply: 'edit-2', book_cab: 'navigation', order_food: 'shopping-bag',
-  get_daily_brief: 'sun', get_full_summary: 'cpu', get_portfolio: 'trending-up',
-  get_spending_summary: 'dollar-sign', get_health_data: 'heart', query_bills: 'file-text',
-  personal_search: 'search',
-};
-const DIARY_TOOL_COLORS = {
-  schedule_event: '#4FA6E8', set_reminder: '#F5A623', initiate_payment: '#1F9A5A',
-  send_email: '#615FF8', draft_reply: '#9B72FF', book_cab: '#1F9A5A', order_food: '#F5A623',
-  get_daily_brief: '#F5A623', get_full_summary: '#615FF8', get_portfolio: '#1F9A5A',
-  get_spending_summary: '#1F9A5A', get_health_data: '#E0546E', query_bills: '#4FA6E8',
-  personal_search: '#615FF8',
-};
-const DIARY_TOOL_BG = {
-  schedule_event: '#EAF3FD', set_reminder: '#FEF3C7', initiate_payment: '#EFFDF6',
-  send_email: '#EEEDFE', draft_reply: '#F3EFFE', book_cab: '#EFFDF6', order_food: '#FEF3C7',
-  get_daily_brief: '#FEF3C7', get_full_summary: '#EEEDFE', get_portfolio: '#EFFDF6',
-  get_spending_summary: '#EFFDF6', get_health_data: '#FCEAED', query_bills: '#EAF3FD',
-  personal_search: '#EEEDFE',
-};
+  (communications?.unreadAlerts || []).forEach((a, i) =>
+    push(`alert-${i}`, a.title, 'Phone alert', null, 'bell', '#E0546E', 'Alert'));
+  (family?.tasks || []).forEach((t, i) =>
+    push(`famtask-${i}`, t.title, `Family task${t.priority ? ' · ' + t.priority : ''}`, t.dueDate, 'users', '#615FF8', 'Family'));
+  (family?.medicationRefills || []).forEach((m, i) =>
+    push(`med-${i}`, `${m.medName} refill`, m.parent, m.refillDate, 'plus-square', '#E0546E', 'Medication'));
+  (family?.petReminders || []).forEach((p, i) =>
+    push(`pet-${i}`, p.title, 'Pet reminder', p.remindAt, 'heart', '#F5A623', 'Pet'));
+  (family?.upcoming || []).forEach((f, i) =>
+    push(`fam-${i}`, `${f.type} (${f.domain})`, 'Family', f.remindAt, 'home', '#9B72FF', 'Family'));
+  (finance?.upcomingBills || []).forEach((b, i) =>
+    push(`bill-${i}`, `${b.name} bill due`, `₹${(b.amount || 0).toLocaleString('en-IN')}`, b.dueDate, 'file-text', '#F5A623', 'Finance'));
+  (finance?.upcomingPayments || []).forEach((p, i) =>
+    push(`pay-${i}`, `${p.name} payment`, `₹${(p.amount || 0).toLocaleString('en-IN')}`, p.dueDate, 'credit-card', '#4FA6E8', 'Finance'));
+  (finance?.upcomingSubscriptions || []).forEach((s, i) =>
+    push(`sub-${i}`, `${s.name} renewal`, `₹${(s.amount || 0).toLocaleString('en-IN')}`, s.dueDate, 'repeat', '#9B72FF', 'Finance'));
+  (finance?.maturingFixedDeposits || []).forEach((f, i) =>
+    push(`fd-${i}`, `${f.name} matures`, `₹${(f.amount || 0).toLocaleString('en-IN')}`, f.maturityDate, 'lock', '#06B6D4', 'Finance'));
+
+  return items;
+}
 
 function FocusRing({ percent, theme, styles }) {
   const progress = RING_CIRC - (percent / 100) * RING_CIRC;
@@ -7569,10 +7569,10 @@ export default function Home({ navigation }) {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [recentNotifs, setRecentNotifs] = useState([]);
-  const [diaryToday, setDiaryToday] = useState([]);
   const [phoneAlerts, setPhoneAlerts] = useState([]);
   const [brief, setBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(true);
+  const [autoSummary, setAutoSummary] = useState(null);
   const [localPriorities, setLocalPriorities] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [weather, setWeather] = useState(null);
@@ -7585,6 +7585,7 @@ export default function Home({ navigation }) {
   const [allTasks, setAllTasks] = useState([]);
   const [calendarItems, setCalendarItems] = useState([]);
   const [doneMeetingIds, setDoneMeetingIds] = useState(new Set());
+  const [confirmedPendingIds, setConfirmedPendingIds] = useState(new Set());
   const [profilePct, setProfilePct] = useState(null);
   const [profileCity, setProfileCity] = useState(null);
   const notificationBriefRefreshRef = useRef(null);
@@ -8132,29 +8133,26 @@ export default function Home({ navigation }) {
     };
   }, [on]);
 
-  // Twin Diary widget — today's AI-executed actions only. This replaces the
-  // old Recent Inbox card; the full past/present/future history still lives
-  // unfiltered on the Twin Diary screen itself.
+  // Cross-module analysis (bills, EMIs, subscriptions, medication refills,
+  // pet reminders, family items) — the same feed Priorities.js's "AI
+  // DETECTED TODAY" section uses. Without this, "Today's Priorities" could
+  // show all-clear while Priorities itself still had real items to show.
+  const hasRealAutoSummaryRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
-    const filterToday = (entries) => (entries || []).filter(e => e?.status !== 'failed' && isSameLocalDay(e.ts));
-
     (async () => {
-      const cached = await peekCachedResponse('/api/twin/diary').catch(() => null);
-      if (!cancelled && cached) setDiaryToday(filterToday(cached.entries));
+      const cached = await peekCachedResponse('/api/dashboard/full-summary').catch(() => null);
+      if (!cancelled && !hasRealAutoSummaryRef.current && cached) setAutoSummary(cached);
     })();
-
-    apiFetch('/api/twin/diary')
-      .then((data) => { if (!cancelled) setDiaryToday(filterToday(data?.entries)); })
+    apiFetch('/api/dashboard/full-summary')
+      .then((data) => {
+        if (cancelled) return;
+        hasRealAutoSummaryRef.current = true;
+        setAutoSummary(data);
+      })
       .catch(() => {});
-
-    const offDiaryLedger = on('ledger:updated', (entry) => {
-      if (!entry?.id || entry.status === 'failed' || !isSameLocalDay(entry.ts)) return;
-      setDiaryToday(prev => prev.find(e => e.id === entry.id) ? prev : [entry, ...prev]);
-    });
-
-    return () => { cancelled = true; offDiaryLedger?.(); };
-  }, [on]);
+    return () => { cancelled = true; };
+  }, []);
 
   // Polling fallback — silently refresh notifications every 30s
   useEffect(() => {
@@ -8593,32 +8591,96 @@ export default function Home({ navigation }) {
       !reminderTitles.has((task.title || "").trim().toLowerCase())
     );
   });
+  // Same cross-module feed as Priorities.js's "AI DETECTED TODAY" section —
+  // bills, EMIs, subscriptions, medication refills, pet reminders, family
+  // items — plus the urgent emails / meeting requests the brief already
+  // fetches but this card previously never surfaced.
+  const autoItems = buildAutoItems(autoSummary);
+  const autoToday = autoItems.filter(
+    (it) => !it.date || isToday(it.date, todayStart, todayEnd),
+  );
+  const urgentEmailItems = brief?.urgentEmails || [];
+  const suggestedMeetingItems = brief?.suggestedMeetings || [];
+
   const doneTaskCount = todayReminders.filter((item) =>
     doneMeetingIds.has(item.id),
   ).length;
   const pendingTaskCount =
     todayTaskItems.length +
-    todayReminders.filter((item) => !doneMeetingIds.has(item.id)).length;
-  const totalTaskCount = todayTaskItems.length + todayReminders.length;
-  // This is deliberately built from the same two lists used by Priorities.
-  // Do not use the dashboard/ledger feed here: it can contain historical AI
-  // actions, which would make this card disagree with the Today tab.
+    todayReminders.filter((item) => !doneMeetingIds.has(item.id)).length +
+    autoToday.length +
+    urgentEmailItems.length +
+    suggestedMeetingItems.length;
+  const totalTaskCount = pendingTaskCount + doneTaskCount;
+  // Mirrors Priorities.js's TODAY tab exactly (same priority order: meeting
+  // requests, urgent emails, tasks, reminders, then AI-detected items) so
+  // this card never disagrees with what Priorities itself shows.
   const dashboardPriorityItems = [
+    ...suggestedMeetingItems.map((mtg, i) => ({
+      id: `suggest_${mtg.emailId || i}`,
+      title: `${mtg.senderName} wants to meet`,
+      detail: mtg.subject,
+      done: false,
+      icon: "calendar",
+      kind: "suggested_meeting",
+    })),
+    ...urgentEmailItems.map((email, i) => ({
+      id: `urgent_${email.id || i}`,
+      title: email.subject,
+      detail: `Urgent · From ${(email.from || "").replace(/<.*>/, "").trim()}`,
+      done: false,
+      icon: "alert-circle",
+      kind: "urgent_email",
+    })),
     ...todayTaskItems.map((task) => ({
       id: `task_${task.id}`,
       title: task.title,
       detail: task.description || "Pending · AI tracked",
       done: false,
       icon: "clock",
+      kind: "task",
     })),
     ...todayReminders.map((reminder) => ({
       id: `reminder_${reminder.id}`,
+      rawId: reminder.id,
       title: reminder.title,
       detail: formatPriorityReminderTime(reminder.start),
       done: doneMeetingIds.has(reminder.id),
       icon: "bell",
+      kind: "reminder",
+      start: reminder.start,
+    })),
+    ...autoToday.map((item) => ({
+      id: `auto_${item.id}`,
+      title: item.title,
+      detail: item.subtitle,
+      done: false,
+      icon: item.icon,
+      kind: "auto",
     })),
   ];
+
+  // Mirrors Priorities.js: once a reminder's scheduled time has passed, ask
+  // whether it actually happened instead of leaving a static "NEW" badge.
+  const handleCheckDashboardReminder = async (reminderId, reminderTitle) => {
+    if (doneMeetingIds.has(reminderId)) return;
+    setDoneMeetingIds((prev) => new Set([...prev, reminderId]));
+    try {
+      await apiFetch("/api/tasks/meeting-done", {
+        method: "POST",
+        body: { meetingId: reminderId, meetingTitle: reminderTitle },
+      });
+    } catch {
+      setDoneMeetingIds((prev) => {
+        const s = new Set(prev);
+        s.delete(reminderId);
+        return s;
+      });
+    }
+  };
+  const handleConfirmDashboardPending = (itemId) => {
+    setConfirmedPendingIds((prev) => new Set([...prev, itemId]));
+  };
   // Calendar reminders are the source of truth for the scheduled time shown
   // in Priorities. Match a dashboard log to that record before falling back
   // to the ledger timestamp supplied by the API.
@@ -8956,32 +9018,61 @@ export default function Home({ navigation }) {
               </Text>
 
               {/* Render the same current-day task/reminder data as Priorities. */}
-              {dashboardPriorityItems.slice(0, 3).map((item) => (
-                <View key={item.id} style={styles.briefingItemRow}>
-                  <View style={styles.briefingIconWrap}>
-                    <Feather
-                      name={item.done ? "check" : item.icon}
-                      size={12}
-                      color={theme.accent}
-                    />
-                  </View>
-                  <View style={styles.briefingItemTextWrap}>
-                    <Text style={styles.briefingItemText} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    {!!item.detail && (
-                      <Text style={styles.briefingItemDetail} numberOfLines={1}>
-                        {item.detail}
+              {dashboardPriorityItems.slice(0, 3).map((item) => {
+                const confirmedPending = confirmedPendingIds.has(item.id);
+                // Only reminders carry a scheduled time — a plain task has
+                // nothing to be "overdue" against, so it always keeps the
+                // static badge (mirrors Priorities.js's TaskCard vs MeetingCard).
+                const isPast = item.kind === "reminder" && item.start && new Date(item.start).getTime() < Date.now();
+                const awaitingConfirmation = isPast && !item.done && !confirmedPending;
+                return (
+                  <View key={item.id} style={styles.briefingItemRow}>
+                    <View style={styles.briefingIconWrap}>
+                      <Feather
+                        name={item.done ? "check" : awaitingConfirmation ? "help-circle" : item.icon}
+                        size={12}
+                        color={theme.accent}
+                      />
+                    </View>
+                    <View style={styles.briefingItemTextWrap}>
+                      <Text style={styles.briefingItemText} numberOfLines={1}>
+                        {item.title}
                       </Text>
+                      {!!item.detail && (
+                        <Text style={styles.briefingItemDetail} numberOfLines={1}>
+                          {item.detail}
+                        </Text>
+                      )}
+                      {awaitingConfirmation && (
+                        <Text style={styles.briefingConfirmPrompt}>Did you complete this?</Text>
+                      )}
+                    </View>
+                    {awaitingConfirmation ? (
+                      <View style={styles.briefingConfirmBtnRow}>
+                        <TouchableOpacity
+                          style={styles.briefingConfirmNoBtn}
+                          onPress={() => handleConfirmDashboardPending(item.id)}
+                        >
+                          <Text style={styles.briefingConfirmNoText}>No</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.briefingConfirmYesBtn}
+                          onPress={() => handleCheckDashboardReminder(item.rawId, item.title)}
+                        >
+                          <Feather name="check" size={11} color={theme.accent} />
+                          <Text style={styles.briefingConfirmYesText}>Yes</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.briefingItemBadge}>
+                        <Text style={styles.briefingItemBadgeText}>
+                          {item.done ? "DONE" : confirmedPending ? "PENDING" : "NEW"}
+                        </Text>
+                      </View>
                     )}
                   </View>
-                  <View style={styles.briefingItemBadge}>
-                    <Text style={styles.briefingItemBadgeText}>
-                      {item.done ? "DONE" : "NEW"}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
 
               {dashboardPriorityItems.length === 0 && (
                 <View style={styles.briefingEmptyRow}>
@@ -9076,83 +9167,6 @@ export default function Home({ navigation }) {
               </TouchableOpacity>
             ))}
           </View>
-        )}
-
-        {/* Twin Diary — today only. Full past/present/future history lives
-            on the Twin Diary screen itself, unfiltered. */}
-        {diaryToday.length > 0 && (
-          <>
-            <View
-              style={[
-                styles.sectionHeaderRow,
-                { marginTop: 8, marginBottom: 12 },
-              ]}
-            >
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 7 }}
-              >
-                <View style={styles.inboxDot} />
-                <Text style={styles.sectionHeader}>TWIN DIARY — TODAY</Text>
-                <View style={styles.inboxCountBadge}>
-                  <Text style={styles.inboxCountText}>
-                    {diaryToday.length}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {diaryToday.slice(0, 4).map((entry) => {
-              const icon = DIARY_TOOL_ICONS[entry.tool] || "zap";
-              const color = DIARY_TOOL_COLORS[entry.tool] || theme.accentAlt;
-              const bg = DIARY_TOOL_BG[entry.tool] || (theme.isDark ? 'rgba(129,128,255,0.16)' : "#EEEDFE");
-              const timeStr = entry.ts
-                ? new Date(entry.ts).toLocaleTimeString("en-IN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: true,
-                  })
-                : "";
-              const statusLabel = entry.status === "completed"
-                ? "Completed"
-                : entry.status === "pending_approval"
-                ? "Awaiting approval"
-                : (entry.status || "").replace(/_/g, " ");
-              return (
-                <TouchableOpacity
-                  key={entry.id}
-                  style={styles.notifCard}
-                  activeOpacity={0.75}
-                  onPress={() => navigation?.navigate?.("TwinDiary")}
-                >
-                  <View
-                    style={[styles.notifIconWrap, { backgroundColor: bg }]}
-                  >
-                    <Feather name={icon} size={16} color={color} />
-                  </View>
-                  <View style={styles.notifTextWrap}>
-                    <View style={styles.notifTitleRow}>
-                      <Text style={styles.notifTitle} numberOfLines={1}>
-                        {(entry.tool || "Action").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                      </Text>
-                      <Text style={styles.notifTime}>{timeStr}</Text>
-                    </View>
-                    <Text style={styles.notifBody} numberOfLines={1}>
-                      {statusLabel}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-
-            <TouchableOpacity
-              style={styles.inboxViewAllBtn}
-              onPress={() => navigation?.navigate?.("TwinDiary")}
-            >
-              <Feather name="book-open" size={13} color={theme.accentAlt} />
-              <Text style={styles.inboxViewAllText}>Open full Twin Diary</Text>
-              <Feather name="arrow-right" size={13} color={theme.accentAlt} />
-            </TouchableOpacity>
-          </>
         )}
 
         {/* Finance + Health summary */}
@@ -9810,6 +9824,33 @@ const createStyles = (theme) => StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: 0.4,
   },
+  // Past-due Yes/No confirmation on the dashboard's Today's Priorities card
+  // — mirrors the same prompt on the Priorities screen's meeting/reminder
+  // cards, styled for this card's white-on-color gradient background.
+  briefingConfirmPrompt: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  briefingConfirmBtnRow: { flexDirection: "row", gap: 6, flexShrink: 0 },
+  briefingConfirmNoBtn: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  briefingConfirmNoText: { fontSize: 11, fontWeight: "700", color: "#FFFFFF" },
+  briefingConfirmYesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  briefingConfirmYesText: { fontSize: 11, fontWeight: "800", color: theme.accent },
   briefingSuggestBtn: {
     flexDirection: "row",
     alignItems: "center",

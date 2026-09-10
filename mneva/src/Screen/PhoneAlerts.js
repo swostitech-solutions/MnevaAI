@@ -103,16 +103,16 @@ export default function PhoneAlerts({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFC' },
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 14 },
-  backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', marginRight: 12 },
-  headerCopy: { flex: 1 }, title: { fontSize: 22, fontWeight: '800', color: '#14171F' }, subtitle: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  list: { paddingHorizontal: 20, paddingTop: 4 }, loadingWrap: { paddingHorizontal: 20, paddingTop: 8 }, skeleton: { height: 116, borderRadius: 16, backgroundColor: '#FFFFFF', marginBottom: 10 },
-  alertCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', padding: 13, marginBottom: 10, gap: 11 }, alertCardRead: { opacity: 0.68 },
-  alertIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: '#FFF7E6' }, alertIconUrgent: { backgroundColor: '#FEF3F2' }, alertCopy: { flex: 1 },
-  alertTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, appName: { color: '#1F7A54', fontSize: 11, fontWeight: '800' }, time: { color: '#9AA1AE', fontSize: 10.5 },
-  alertTitle: { color: '#14171F', fontSize: 14, fontWeight: '800', lineHeight: 19, marginTop: 3 }, alertBody: { color: '#6B7280', fontSize: 12, lineHeight: 17, marginTop: 3 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 7 }, priorityBadge: { backgroundColor: '#FFF7E6', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 }, priorityBadgeUrgent: { backgroundColor: '#FEF3F2' }, priorityText: { color: '#9A6700', fontSize: 9.5, fontWeight: '800' }, priorityTextUrgent: { color: '#B42318' }, newDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#1F9A5A' },
-  emptyList: { flexGrow: 1 }, empty: { alignItems: 'center', paddingHorizontal: 35, paddingTop: 100 }, emptyIcon: { width: 70, height: 70, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }, emptyTitle: { color: '#14171F', fontSize: 17, fontWeight: '800', marginTop: 16 }, emptyText: { color: '#6B7280', fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 7 },
+  backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.card, marginRight: 12 },
+  headerCopy: { flex: 1 }, title: { fontSize: 22, fontWeight: '800', color: theme.text }, subtitle: { fontSize: 12, color: theme.textSecondary, marginTop: 2 },
+  list: { paddingHorizontal: 20, paddingTop: 4 }, loadingWrap: { paddingHorizontal: 20, paddingTop: 8 }, skeleton: { height: 116, borderRadius: 16, backgroundColor: theme.card, marginBottom: 10 },
+  alertCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 16, borderWidth: 1, borderColor: theme.border, padding: 13, marginBottom: 10, gap: 11 }, alertCardRead: { opacity: 0.68 },
+  alertIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FFF7E6' }, alertIconUrgent: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FEF3F2' }, alertCopy: { flex: 1 },
+  alertTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, appName: { color: theme.accent, fontSize: 11, fontWeight: '800' }, time: { color: theme.faint, fontSize: 10.5 },
+  alertTitle: { color: theme.text, fontSize: 14, fontWeight: '800', lineHeight: 19, marginTop: 3 }, alertBody: { color: theme.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 3 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 7 }, priorityBadge: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FFF7E6', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 }, priorityBadgeUrgent: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FEF3F2' }, priorityText: { color: theme.warning, fontSize: 9.5, fontWeight: '800' }, priorityTextUrgent: { color: theme.danger }, newDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: theme.accent },
+  emptyList: { flexGrow: 1 }, empty: { alignItems: 'center', paddingHorizontal: 35, paddingTop: 100 }, emptyIcon: { width: 70, height: 70, borderRadius: 22, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' }, emptyTitle: { color: theme.text, fontSize: 17, fontWeight: '800', marginTop: 16 }, emptyText: { color: theme.textSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 7 },
 });

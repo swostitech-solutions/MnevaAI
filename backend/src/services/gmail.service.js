@@ -238,6 +238,43 @@ export async function listEmails(user, filter = 'all', limit = 20) {
   return result
 }
 
+// Free-text keyword search across the inbox — used by the global search
+// feature. Unlike listEmails (which only offers fixed filter presets),
+// Gmail's own search syntax already handles arbitrary keywords, so this
+// hands the query straight through rather than building a fixed `q`.
+export async function searchEmails(user, query, limit = 8) {
+  const authClient = await getAuthenticatedGmailClient(user)
+  const gmail = google.gmail({ version: 'v1', auth: authClient })
+
+  const listResponse = await gmail.users.messages.list({
+    userId: 'me',
+    q: query,
+    maxResults: Math.min(limit, 20),
+  })
+
+  const messages = listResponse.data.messages || []
+  return Promise.all(messages.map(async (message) => {
+    const messageData = await gmail.users.messages.get({
+      userId: 'me',
+      id: message.id,
+      format: 'metadata',
+      metadataHeaders: ['Subject', 'From', 'Date'],
+    })
+    const payload = messageData.data.payload || {}
+    const from = getHeaderValue(payload.headers, 'From')
+    const subject = getHeaderValue(payload.headers, 'Subject')
+    const internalDate = messageData.data.internalDate
+    const date = internalDate ? new Date(Number(internalDate)).toISOString() : new Date().toISOString()
+    return {
+      id: message.id,
+      subject: subject || '(No subject)',
+      from: from || 'Unknown sender',
+      snippet: messageData.data.snippet || '',
+      date,
+    }
+  }))
+}
+
 export async function getEmailBody(user, messageId) {
   const authClient = await getAuthenticatedGmailClient(user)
   const gmail = google.gmail({ version: 'v1', auth: authClient })

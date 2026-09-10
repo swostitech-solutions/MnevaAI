@@ -1276,6 +1276,7 @@ import {
   listEmails,
   getEmailBody,
   sendEmail,
+  searchEmails,
 } from "../services/gmail.service.js";
 import { createEventIfConnected } from "../services/calendar.service.js";
 import multer from "multer";
@@ -3201,55 +3202,116 @@ trustRouter.patch("/settings", async (req, res) => {
   res.json({ success: true, preferences: prefs });
 });
 
-// search.js
+// search.js — a genuinely global search: fans out across every domain the
+// app stores data in (tasks, family tasks, finance records, medications,
+// pets, notifications, AI action history, memory) plus live Gmail/Google
+// Contacts lookups when those are connected. Each domain runs independently
+// via allSettled so one missing connection (e.g. Gmail not linked) never
+// breaks search for everything else — it's simply omitted.
 export const searchRouter = express.Router();
 searchRouter.get("/", async (req, res) => {
-  const q = String(req.query.q || "");
+  const q = String(req.query.q || "").trim();
   if (q.length < 2) return res.json({ query: q, results: [], total: 0 });
 
-  const [notifications, ledgers, memories] = await Promise.all([
+  const userId = req.user.id;
+  const ci = { contains: q, mode: "insensitive" };
+
+  const domains = await Promise.allSettled([
+    prisma.task.findMany({
+      where: { userId, OR: [{ title: ci }, { description: ci }] },
+      take: 8,
+    }),
     prisma.notification.findMany({
-      where: {
-        userId: req.user.id,
-        OR: [
-          { title: { contains: q, mode: "insensitive" } },
-          { message: { contains: q, mode: "insensitive" } },
-        ],
-      },
-      take: 10,
+      where: { userId, OR: [{ title: ci }, { message: ci }] },
+      take: 8,
     }),
     prisma.agentLedger.findMany({
-      where: {
-        userId: req.user.id,
-        OR: [
-          { tool: { contains: q, mode: "insensitive" } },
-          { action: { contains: q, mode: "insensitive" } },
-        ],
-      },
-      take: 10,
+      where: { userId, OR: [{ tool: ci }, { action: ci }] },
+      take: 8,
     }),
-    memoryService.recall(q, req.user.id, 5),
+    memoryService.recall(q, userId, 5),
+    prisma.familyTask.findMany({
+      where: {
+        OR: [{ creatorId: userId }, { assigneeId: userId }],
+        AND: { OR: [{ title: ci }, { description: ci }] },
+      },
+      take: 8,
+    }),
+    prisma.loan.findMany({ where: { userId, OR: [{ name: ci }, { lenderName: ci }, { purpose: ci }] }, take: 5 }),
+    prisma.emi.findMany({ where: { userId, OR: [{ name: ci }, { provider: ci }, { description: ci }] }, take: 5 }),
+    prisma.subscription.findMany({ where: { userId, OR: [{ name: ci }, { provider: ci }, { description: ci }] }, take: 5 }),
+    prisma.bill.findMany({ where: { userId, OR: [{ name: ci }, { provider: ci }, { description: ci }] }, take: 5 }),
+    prisma.fixedDeposit.findMany({ where: { userId, OR: [{ name: ci }, { bankName: ci }] }, take: 5 }),
+    prisma.parentMedication.findMany({ where: { userId, OR: [{ medName: ci }, { parent: ci }, { doctor: ci }] }, take: 5 }),
+    prisma.pet.findMany({ where: { userId, OR: [{ name: ci }, { breed: ci }, { species: ci }] }, take: 5 }),
+    prisma.petReminder.findMany({ where: { userId, OR: [{ title: ci }, { notes: ci }] }, take: 5 }),
+    (async () => {
+      const user = await userStore.getById(userId);
+      if (!user?.preferences?.gmail?.tokens?.refresh_token) return [];
+      return searchEmails(user, q, 6);
+    })(),
+    (async () => {
+      const user = await userStore.getById(userId);
+      const cfg = user?.preferences?.googleContacts;
+      if (cfg?.disconnected || !(cfg?.tokens?.refresh_token || cfg?.tokens?.access_token)) return [];
+      const { listContacts } = await import("../services/googleContacts.service.js");
+      const { contacts } = await listContacts(user, { query: q, pageSize: 5 });
+      return contacts;
+    })(),
   ]);
 
+  const settled = (i) => (domains[i].status === "fulfilled" ? domains[i].value || [] : []);
+  const [
+    tasks, notifications, ledgers, memories, familyTasks,
+    loans, emis, subscriptions, bills, fixedDeposits,
+    medications, pets, petReminders, emails, contacts,
+  ] = domains.map((_, i) => settled(i));
+
   const results = [
+    ...tasks.map((t) => ({
+      type: "task", title: t.title, snippet: t.description || `Status: ${t.status}`, date: t.createdAt.toISOString(),
+    })),
     ...notifications.map((n) => ({
-      type: "notification",
-      title: n.title,
-      snippet: n.message,
-      date: n.createdAt.toISOString(),
+      type: "notification", title: n.title, snippet: n.message, date: n.createdAt.toISOString(),
     })),
     ...ledgers.map((l) => ({
-      type: "ledger",
-      title: l.tool,
-      snippet: l.action,
-      date: l.createdAt.toISOString(),
+      type: "ledger", title: l.tool, snippet: l.action, date: l.createdAt.toISOString(),
     })),
     ...memories.map((item) => ({
-      type: "memory",
-      title: item.payload?.type || "memory",
-      snippet: item.payload?.text || "",
-      date: item.payload?.createdAt || new Date().toISOString(),
-      score: item.score,
+      type: "memory", title: item.payload?.type || "memory", snippet: item.payload?.text || "", date: item.payload?.createdAt || new Date().toISOString(), score: item.score,
+    })),
+    ...familyTasks.map((t) => ({
+      type: "family", title: t.title, snippet: t.description || `Family task · ${t.status}`, date: t.createdAt.toISOString(),
+    })),
+    ...loans.map((l) => ({
+      type: "payment", title: l.name, snippet: `Loan · ${l.lenderName} · ₹${l.outstandingAmount.toLocaleString("en-IN")} outstanding`, date: l.updatedAt.toISOString(),
+    })),
+    ...emis.map((e) => ({
+      type: "payment", title: e.name, snippet: `EMI · ${e.provider} · ₹${e.emiAmount.toLocaleString("en-IN")}/${e.frequency.toLowerCase()}`, date: e.updatedAt.toISOString(),
+    })),
+    ...subscriptions.map((s) => ({
+      type: "payment", title: s.name, snippet: `Subscription · ₹${s.amount.toLocaleString("en-IN")}/${s.billingCycle.toLowerCase()}`, date: s.updatedAt.toISOString(),
+    })),
+    ...bills.map((b) => ({
+      type: "payment", title: b.name, snippet: `Bill · ${b.category} · ${b.status}`, date: b.updatedAt.toISOString(),
+    })),
+    ...fixedDeposits.map((f) => ({
+      type: "payment", title: f.name, snippet: `Fixed Deposit · ${f.bankName} · ${f.status}`, date: f.updatedAt.toISOString(),
+    })),
+    ...medications.map((m) => ({
+      type: "health", title: `${m.medName} · ${m.parent}`, snippet: `${m.dosage} · ${m.frequency}`, date: m.createdAt.toISOString(),
+    })),
+    ...pets.map((p) => ({
+      type: "health", title: p.name, snippet: `${p.species}${p.breed ? " · " + p.breed : ""}`, date: p.createdAt.toISOString(),
+    })),
+    ...petReminders.map((r) => ({
+      type: "health", title: r.title, snippet: r.notes || `Pet reminder · ${r.type}`, date: r.createdAt.toISOString(),
+    })),
+    ...emails.map((e) => ({
+      type: "email", title: e.subject, snippet: `${e.from.replace(/<.*>/, "").trim()} · ${e.snippet}`, date: e.date,
+    })),
+    ...contacts.map((c) => ({
+      type: "contact", title: c.displayName, snippet: [c.email, c.phone].filter(Boolean).join(" · "), date: new Date().toISOString(),
     })),
   ];
 
