@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, useWindowDimensions, Animated,
+  RefreshControl, useWindowDimensions, Animated, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -10,6 +10,17 @@ import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
+
+// Human-readable labels for the failure reasons /api/twin/verify can return —
+// each one points at a specific, real check (chain linkage, hash content,
+// or the Ed25519 signature) rather than a generic "verification failed".
+const VERIFY_FAIL_LABELS = {
+  unchained_entry: 'an entry is missing from the chain',
+  chain_broken: 'the chain link between two entries doesn’t match',
+  content_tampered: 'an entry’s content doesn’t match its hash',
+  signature_invalid: 'an entry’s signature doesn’t match',
+  network_error: 'could not reach the server',
+};
 
 const TOKEN_MAP = {
   '#4FA6E8': 'info',
@@ -308,6 +319,7 @@ export default function TwinDiary({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  const [verifyState, setVerifyState] = useState(null); // null | 'checking' | { valid, checked, total, reason }
   const isMountedRef = useRef(false);
 
   const hasRealDataRef = useRef(false);
@@ -320,6 +332,20 @@ export default function TwinDiary({ navigation }) {
       setEntries(uniqueEntries(data.entries));
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
+  };
+
+  // Re-walks the whole hash chain server-side and recomputes every hash and
+  // signature from scratch — this is what actually backs the "tamper-proof"
+  // claim below, rather than the claim just being static copy.
+  const handleVerify = async () => {
+    if (verifyState === 'checking') return;
+    setVerifyState('checking');
+    try {
+      const result = await apiFetch('/api/twin/verify');
+      setVerifyState(result);
+    } catch (err) {
+      setVerifyState({ valid: false, reason: 'network_error', checked: 0, total: 0 });
+    }
   };
 
   // Paint last known diary entries immediately from cache — otherwise this
@@ -406,11 +432,29 @@ export default function TwinDiary({ navigation }) {
           </View>
         </View>
 
-        {/* Security note */}
-        <View style={styles.securityNote}>
+        {/* Security note — tappable. This isn't decorative copy: it calls
+            the server to recompute every entry's hash, its link to the
+            previous entry, and its Ed25519 signature from scratch. */}
+        <TouchableOpacity style={styles.securityNote} onPress={handleVerify} activeOpacity={0.75} disabled={verifyState === 'checking'}>
           <Feather name="lock" size={13} color={theme.accentAlt} />
-          <Text style={styles.securityNoteText}>  All actions are SHA-256 signed and tamper-proof</Text>
-        </View>
+          <Text style={styles.securityNoteText}>  Every action is SHA-256 hash-chained &amp; Ed25519-signed</Text>
+          {verifyState === 'checking' ? (
+            <ActivityIndicator size="small" color={theme.accentAlt} />
+          ) : (
+            <Text style={styles.securityNoteAction}>Verify</Text>
+          )}
+        </TouchableOpacity>
+
+        {verifyState && verifyState !== 'checking' && (
+          <View style={[styles.verifyResult, verifyState.valid ? styles.verifyResultOk : styles.verifyResultFail]}>
+            <Feather name={verifyState.valid ? 'check-circle' : 'alert-triangle'} size={14} color={verifyState.valid ? theme.accent : theme.danger} />
+            <Text style={[styles.verifyResultText, { color: verifyState.valid ? theme.accent : theme.danger }]}>
+              {verifyState.valid
+                ? `Chain intact — ${verifyState.checked} action${verifyState.checked === 1 ? '' : 's'} verified against the server's public key`
+                : `Verification failed (${VERIFY_FAIL_LABELS[verifyState.reason] || verifyState.reason}) — checked ${verifyState.checked}/${verifyState.total}`}
+            </Text>
+          </View>
+        )}
 
         {/* Timeline — Future → Present → Past, exactly how an agent thinks
             about its own work: what it's watching for you, what it's doing
@@ -505,8 +549,13 @@ const createStyles = (theme) => StyleSheet.create({
   statCard: { flex: 1, alignItems: 'center', paddingVertical: 16 },
   statValue: { fontSize: 24, fontWeight: '800', color: theme.text, marginBottom: 4 },
   statLabel: { fontSize: 11, fontWeight: '600', color: theme.faint },
-  securityNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE', borderRadius: 12, padding: 12, marginBottom: 20 },
-  securityNoteText: { fontSize: 12, color: theme.accentAlt, fontWeight: '600' },
+  securityNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE', borderRadius: 12, padding: 12, marginBottom: 10 },
+  securityNoteText: { flex: 1, fontSize: 12, color: theme.accentAlt, fontWeight: '600' },
+  securityNoteAction: { fontSize: 12, fontWeight: '800', color: theme.accentAlt, textDecorationLine: 'underline' },
+  verifyResult: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, padding: 12, marginBottom: 20 },
+  verifyResultOk: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' },
+  verifyResultFail: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED' },
+  verifyResultText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 17 },
   entrySkeleton: { height: 68, backgroundColor: theme.card, borderRadius: 16, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: theme.textSecondary },

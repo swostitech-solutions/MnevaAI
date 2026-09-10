@@ -1283,6 +1283,7 @@ import multer from "multer";
 import { createDeviceToken, hashToken } from "./deviceNotifications.js";
 import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
+import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2762,6 +2763,48 @@ twinRouter.get("/diary", async (req, res) =>
 twinRouter.get("/ledger", async (req, res) =>
   res.json({ entries: await ledger.getByUser(req.user.id) }),
 );
+
+// Re-walks the caller's whole chain server-side and recomputes every hash
+// and signature from scratch — the actual, checkable version of "tamper
+// proof" rather than a label. Backs the "Verify integrity" action in the
+// Twin Diary screen.
+twinRouter.get("/verify", async (req, res) => {
+  try {
+    const result = await ledger.verifyChain(req.user.id);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ valid: false, error: err.message });
+  }
+});
+
+// Everything needed to verify the ledger independently of Mneva's server —
+// the full chained/signed entries plus the Ed25519 public key. Anyone can
+// take this JSON and, using only standard crypto (SHA-256 + Ed25519), redo
+// the same check /verify does above without trusting Mneva going forward.
+twinRouter.get("/export", async (req, res) => {
+  try {
+    const entries = await prisma.agentLedger.findMany({
+      where: { userId: req.user.id },
+      orderBy: { seq: "asc" },
+      select: {
+        id: true, userId: true, tool: true, status: true, action: true,
+        createdAt: true, seq: true, prevHash: true, hash: true, signature: true,
+      },
+    });
+    res.json({
+      exportedAt: new Date().toISOString(),
+      algorithm: { hash: "sha256", signature: "ed25519" },
+      publicKey: LEDGER_PUBLIC_KEY_PEM,
+      entries,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+twinRouter.get("/public-key", (_req, res) => {
+  res.json({ algorithm: "ed25519", publicKey: LEDGER_PUBLIC_KEY_PEM });
+});
 
 // notifications.js
 export const notifRouter = express.Router();

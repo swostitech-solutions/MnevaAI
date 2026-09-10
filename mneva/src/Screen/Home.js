@@ -8799,12 +8799,6 @@ export default function Home({ navigation }) {
           </View>
           <View style={styles.headerRight}>
             <TouchableOpacity
-              style={styles.searchIconBtn}
-              onPress={() => navigation?.navigate?.("Search")}
-            >
-              <Feather name="search" size={20} color={theme.muted} />
-            </TouchableOpacity>
-            <TouchableOpacity
               style={styles.logoutBtn}
               onPress={() => setLogoutVisible(true)}
             >
@@ -9521,9 +9515,6 @@ const createStyles = (theme) => StyleSheet.create({
     gap: 10,
   },
   logoutBtn: {
-    padding: 6,
-  },
-  searchIconBtn: {
     padding: 6,
   },
   logoutOverlay: {

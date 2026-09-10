@@ -314,11 +314,24 @@ model AgentLedger {
   action    String
   tool      String
   status    String
+  // seq/prevHash/hash form a per-user hash chain (each entry's hash covers
+  // the previous entry's hash), and `signature` is a real Ed25519 signature
+  // of `hash` — see ledgerSigning.js. All three are nullable because rows
+  // written before this existed are backfilled in place by
+  // ledgerBackfill.js rather than migrated destructively.
+  seq       Int?
+  prevHash  String?
+  hash      String?
   signature String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // A partial unique index on (userId, seq) WHERE seq IS NOT NULL is added
+  // via raw SQL in the migration (see 20260910_add_ledger_chain) — Prisma's
+  // declarative @@unique can't express the WHERE clause, and a plain unique
+  // constraint would fail immediately against existing NULL-seq rows.
   @@index([userId])
+  @@index([userId, seq])
 }
 
 model FamilyConnection {

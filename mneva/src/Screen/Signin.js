@@ -10,10 +10,11 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch, BASE_URL } from '../api/client';
 import { saveAuth } from '../storage/auth';
 import { resetSocket, getSocket } from '../services/socket';
@@ -27,7 +28,8 @@ export default function Signin({ navigation }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [alert, setAlert] = useState(null);
+  const alertAnim = useRef(new Animated.Value(0)).current;
   const warmupDoneRef = useRef(false);
 
   // Warmup on mount (catches case where App.js warmup hasn't resolved yet)
@@ -37,10 +39,66 @@ export default function Signin({ navigation }) {
     fetch(`${BASE_URL}/api/health`, { method: 'GET' }).catch(() => {});
   }, []);
 
+  // Reads what actually went wrong (no response at all, wrong credentials,
+  // server temporarily down, bad input) and turns it into an alert an agent
+  // would actually give you — specific about what happened and what to do
+  // next, not a flat "invalid email or password" no matter the cause.
+  const showAlert = (info) => {
+    setAlert(info);
+    alertAnim.setValue(0);
+    Animated.spring(alertAnim, { toValue: 1, useNativeDriver: true, tension: 180, friction: 14 }).start();
+  };
+
+  const classifySigninError = (err) => {
+    if (!err?.status) {
+      return {
+        icon: 'wifi-off',
+        tone: 'warning',
+        title: "Can't reach Mneva",
+        message: 'Check your internet connection and try again.',
+      };
+    }
+    if (err.status === 401) {
+      return {
+        icon: 'shield-off',
+        tone: 'danger',
+        title: 'Incorrect email or password',
+        message: "That combination doesn't match our records. Double-check and try again.",
+      };
+    }
+    if (err.status === 503 || err.status === 504) {
+      return {
+        icon: 'server',
+        tone: 'warning',
+        title: 'Mneva is waking up',
+        message: err.message || 'Our servers are temporarily unavailable — please try again in a moment.',
+      };
+    }
+    if (err.status === 400) {
+      return {
+        icon: 'alert-circle',
+        tone: 'danger',
+        title: 'Check your details',
+        message: err.message || 'Please enter a valid email and password.',
+      };
+    }
+    return {
+      icon: 'alert-triangle',
+      tone: 'danger',
+      title: 'Sign-in failed',
+      message: err.message || 'Something went wrong. Please try again.',
+    };
+  };
+
   const handleSignin = async () => {
-    setError('');
+    setAlert(null);
     if (!email.trim() || !password) {
-      setError('Please enter both email and password');
+      showAlert({
+        icon: 'edit-3',
+        tone: 'warning',
+        title: 'Missing details',
+        message: 'Enter both your email and password to continue.',
+      });
       return;
     }
 
@@ -63,7 +121,7 @@ export default function Signin({ navigation }) {
       if (err.status === 403) {
         navigation.navigate('VerifyOtp', { email: email.trim().toLowerCase() });
       } else {
-        setError(err.message || 'Invalid email or password');
+        showAlert(classifySigninError(err));
       }
     } finally {
       setLoading(false);
@@ -91,7 +149,26 @@ export default function Signin({ navigation }) {
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to continue to Mneva AI</Text>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {alert && (
+          <Animated.View
+            style={[
+              styles.alertCard,
+              alert.tone === 'danger' ? styles.alertCardDanger : styles.alertCardWarning,
+              {
+                opacity: alertAnim,
+                transform: [{ translateY: alertAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+              },
+            ]}
+          >
+            <View style={[styles.alertIconWrap, alert.tone === 'danger' ? styles.alertIconWrapDanger : styles.alertIconWrapWarning]}>
+              <Feather name={alert.icon} size={16} color={alert.tone === 'danger' ? theme.danger : theme.warning} />
+            </View>
+            <View style={styles.alertTextWrap}>
+              <Text style={styles.alertTitle}>{alert.title}</Text>
+              <Text style={styles.alertMessage}>{alert.message}</Text>
+            </View>
+          </Animated.View>
+        )}
 
         <View style={styles.inputWrapper}>
           <Text style={styles.label}>Email</Text>
@@ -189,11 +266,50 @@ const createStyles = (theme) => StyleSheet.create({
     color: theme.muted,
     marginBottom: 28,
   },
-  errorText: {
-    color: theme.danger,
-    fontSize: 13,
-    marginBottom: 16,
-    textAlign: 'center',
+  alertCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 20,
+    gap: 11,
+  },
+  alertCardDanger: {
+    backgroundColor: theme.isDark ? 'rgba(241,113,134,0.10)' : '#FFF5F7',
+    borderColor: theme.isDark ? 'rgba(241,113,134,0.3)' : '#FBD5DD',
+  },
+  alertCardWarning: {
+    backgroundColor: theme.isDark ? 'rgba(255,184,77,0.10)' : '#FFF8EA',
+    borderColor: theme.isDark ? 'rgba(255,184,77,0.3)' : '#F5E0AD',
+  },
+  alertIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  alertIconWrapDanger: {
+    backgroundColor: theme.isDark ? 'rgba(241,113,134,0.18)' : '#FCEAED',
+  },
+  alertIconWrapWarning: {
+    backgroundColor: theme.isDark ? 'rgba(255,184,77,0.18)' : '#FEF3C7',
+  },
+  alertTextWrap: { flex: 1 },
+  alertTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: theme.text,
+    marginBottom: 2,
+  },
+  alertMessage: {
+    fontSize: 12.5,
+    color: theme.textSecondary,
+    lineHeight: 17,
   },
   inputWrapper: {
     width: '100%',
