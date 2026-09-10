@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 import { prisma } from '../config/prisma.js'
+import { applyModelCompat } from './openaiCompat.js'
 
 // listEmails does 1 list call + one messages.get per message + 1 label
 // count — for a 40-email inbox that's ~42 live round-trips to Gmail's API,
@@ -294,28 +295,108 @@ export function detectMeetingRequest(subject, snippet, from) {
   return { senderName, senderEmail, keyword: hit }
 }
 
-// Urgency keywords — subject/snippet match raises score
-const URGENT_KEYWORDS = [
-  'urgent', 'asap', 'action required', 'action needed', 'immediate', 'immediately',
-  'deadline', 'due today', 'overdue', 'past due', 'final notice', 'last chance',
-  'meeting', 'interview', 'appointment', 'call scheduled', 'zoom', 'google meet',
-  'invoice', 'payment due', 'payment failed', 'transaction', 'otp', 'verification',
-  'confirm', 'approval needed', 'approve', 'sign', 'contract', 'offer letter',
-  'follow up', 'follow-up', 'reminder', 'important', 'priority', 'critical',
-  'alert', 'warning', 'security', 'password', 'account', 'suspended', 'blocked',
+// Fallback keyword heuristic — used ONLY when the real AI classification
+// below is unavailable (no/invalid OPENAI_API_KEY, or the call fails).
+// The old version scored every email on a single flat keyword list that
+// included generic words like "account", "confirm", "important", and
+// "sign" — common in marketing footers ("create your Ads Manager account"),
+// so promotional mail routinely got flagged as urgent. This version
+// requires a real actionable signal and lets obvious promotional/bulk
+// signals veto a match outright, regardless of keyword hits.
+const STRONG_URGENT_KEYWORDS = [
+  'urgent', 'asap', 'action required', 'action needed', 'deadline', 'due today',
+  'overdue', 'past due', 'final notice', 'payment due', 'payment failed',
+  'otp', 'verification code', 'account suspended', 'account compromised',
+  'security alert', 'unauthorized access', 'contract', 'offer letter', 'interview',
+]
+const WEAK_URGENT_KEYWORDS = [
+  'meeting', 'appointment', 'call scheduled', 'zoom', 'google meet', 'invoice',
+  'approval needed', 'approve', 'please sign', 'follow up', 'follow-up', 'reminder',
+]
+const PROMO_SIGNALS = [
+  'unsubscribe', 'view in browser', 'view this email in your browser', '% off',
+  'limited time offer', 'shop now', 'sale ends', 'newsletter',
+  'no-reply@', 'noreply@', 'marketing@', 'ads-noreply@', 'ads manager',
 ]
 
-function scoreEmail(subject, snippet) {
+function scoreEmailByKeywords(subject, snippet, from) {
   const text = `${subject} ${snippet}`.toLowerCase()
+  const fromLower = (from || '').toLowerCase()
+  if (PROMO_SIGNALS.some(kw => text.includes(kw) || fromLower.includes(kw))) return 0
   let score = 0
-  for (const kw of URGENT_KEYWORDS) {
-    if (text.includes(kw)) score += 1
-  }
-  // Boost for multiple keyword hits
+  for (const kw of STRONG_URGENT_KEYWORDS) if (text.includes(kw)) score += 2
+  for (const kw of WEAK_URGENT_KEYWORDS) if (text.includes(kw)) score += 1
   return score
 }
 
-// Fetch today's unread primary emails and return only urgent ones (score >= 1)
+// Real urgency analysis — one batched AI call classifies every candidate
+// email together, using sender + subject + snippet, so it can tell a
+// genuine "sign this contract today" request from a marketing email that
+// happens to contain the same trigger words. Returns null (triggering the
+// keyword fallback above) if OpenAI isn't configured or the call fails.
+async function classifyUrgencyWithAI(emails) {
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey || apiKey.includes('replace') || !apiKey.startsWith('sk-')) return null
+  try {
+    const payload = applyModelCompat({
+      model: process.env.OPENAI_MODEL || 'gpt-5-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You classify a busy professional\'s unread inbox emails by genuine urgency. Mark "urgent": true ONLY when the email needs the recipient\'s personal action or response within about 24 hours — deadlines, payments due/failed, contracts needing signature, direct requests from real people, security/account-compromise alerts, scheduled meetings or interviews. Mark "urgent": false for marketing, promotions, newsletters, product announcements, social/platform updates, and generic automated notifications — even if they contain words like "account", "confirm", "important", "offer", or "sign up". Score urgency 1 (not urgent) to 5 (extremely urgent).',
+        },
+        {
+          role: 'user',
+          content: `Classify each email:\n${JSON.stringify(emails.map(e => ({ id: e.id, from: e.from, subject: e.subject, snippet: e.snippet })))}`,
+        },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'email_urgency',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              results: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    urgent: { type: 'boolean' },
+                    score: { type: 'integer', minimum: 1, maximum: 5 },
+                    reason: { type: 'string' },
+                  },
+                  required: ['id', 'urgent', 'score', 'reason'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['results'],
+            additionalProperties: false,
+          },
+        },
+      },
+    }, { temperature: 0, maxTokens: 1200 })
+
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload),
+    })
+    if (!resp.ok) return null
+    const data = await resp.json()
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}')
+    if (!Array.isArray(parsed.results)) return null
+    return new Map(parsed.results.map(r => [r.id, r]))
+  } catch {
+    return null
+  }
+}
+
+// Fetch today's unread primary emails and return only the genuinely urgent
+// ones, ranked by urgency.
 export async function getUrgentEmails(user, maxResults = 20) {
   try {
     const authClient = await getAuthenticatedGmailClient(user)
@@ -348,13 +429,27 @@ export async function getUrgentEmails(user, maxResults = 20) {
       const internalDate = data.data.internalDate
       const ts = internalDate ? Number(internalDate) : Date.now()
       const time = new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
-      const urgencyScore = scoreEmail(subject, snippet)
-      return { id: msg.id, subject, from, snippet, time, urgencyScore }
+      return { id: msg.id, subject, from, snippet, time }
     }))
 
-    // Return only emails with at least 1 urgency keyword hit, sorted by score desc
+    // Prefer real AI classification — falls back to the keyword heuristic
+    // only if OpenAI isn't configured or the call fails, so a misconfigured
+    // key never silently means "flag everything" again.
+    const aiResults = await classifyUrgencyWithAI(emails)
+    if (aiResults) {
+      return emails
+        .map(e => {
+          const ai = aiResults.get(e.id)
+          return { ...e, urgencyScore: ai?.score ?? 0, urgent: ai?.urgent ?? false, reason: ai?.reason || null }
+        })
+        .filter(e => e.urgent)
+        .sort((a, b) => b.urgencyScore - a.urgencyScore)
+        .slice(0, 5)
+    }
+
     return emails
-      .filter(e => e.urgencyScore >= 1)
+      .map(e => ({ ...e, urgencyScore: scoreEmailByKeywords(e.subject, e.snippet, e.from) }))
+      .filter(e => e.urgencyScore >= 2)
       .sort((a, b) => b.urgencyScore - a.urgencyScore)
       .slice(0, 5)
   } catch {
