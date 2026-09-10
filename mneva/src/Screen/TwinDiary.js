@@ -394,15 +394,15 @@ export default function TwinDiary({ navigation }) {
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={[styles.statValue, { color: theme.accentAlt }]}>{loading ? '—' : futureEntries.length}</Text>
-            <Text style={styles.statLabel}>Future</Text>
+            <Text style={styles.statLabel}>Upcoming</Text>
           </View>
           <View style={[styles.statCard, { borderLeftWidth: 1, borderRightWidth: 1, borderColor: theme.border }]}>
             <Text style={[styles.statValue, { color: theme.accent }]}>{loading ? '—' : presentEntries.length}</Text>
-            <Text style={styles.statLabel}>Present</Text>
+            <Text style={styles.statLabel}>Today</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={[styles.statValue, { color: theme.muted }]}>{loading ? '—' : pastEntries.length}</Text>
-            <Text style={styles.statLabel}>Past</Text>
+            <Text style={styles.statLabel}>History</Text>
           </View>
         </View>
 
@@ -426,7 +426,7 @@ export default function TwinDiary({ navigation }) {
         ) : (
           <>
             <TimelineSection
-              title="FUTURE"
+              title="UPCOMING"
               subtitle="What your twin is watching for you"
               icon="compass"
               color={theme.accentAlt}
@@ -438,7 +438,7 @@ export default function TwinDiary({ navigation }) {
               styles={styles}
             />
             <TimelineSection
-              title="PRESENT"
+              title="TODAY"
               subtitle="Happening today"
               icon="radio"
               color={theme.accent}
@@ -451,7 +451,7 @@ export default function TwinDiary({ navigation }) {
               styles={styles}
             />
             <TimelineSection
-              title="PAST"
+              title="HISTORY"
               subtitle="Everything your twin has already done"
               icon="archive"
               color={theme.muted}
