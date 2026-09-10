@@ -2,6 +2,7 @@ import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
 import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
+import { applyModelCompat } from '../services/openaiCompat.js'
 
 function validTimeZone(value) {
   try {
@@ -261,7 +262,7 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
   const apiKey = process.env.OPENAI_API_KEY?.trim()
   if (!isOpenAIConfigured(apiKey)) return null
 
-  const payload = {
+  let payload = {
     model,
     messages: [
       ...(system ? [{ role: 'system', content: system }] : []),
@@ -277,8 +278,8 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
             : ''),
       })),
     ],
-    temperature: 0.2,
   }
+  payload = applyModelCompat(payload, { temperature: 0.2 })
 
   if (Array.isArray(tools) && tools.length) {
     payload.tools = tools.map(tool => ({
@@ -1058,7 +1059,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     }
   }
 
-  const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini'
+  const model = process.env.OPENAI_MODEL?.trim() || 'gpt-5-mini'
   const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
   const topMemory = recentMemory.slice(0, 3)
   const agentMsgs = [...messages]

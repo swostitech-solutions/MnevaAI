@@ -59,6 +59,7 @@ import { startWorkflowWorker } from "./queues/workflow.queue.js";
 import { startDailyDigestWorker, scheduleDailyDigest } from "./queues/dailyDigest.queue.js";
 import { startAdvanceReminderWorker, scheduleAdvanceReminderScan } from "./queues/advanceReminder.queue.js";
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
+import { applyModelCompat } from "./services/openaiCompat.js";
 
 const app = express();
 // React Native does not maintain the browser cache required to replay a 304
@@ -282,14 +283,13 @@ app.get("/api/debug/openai", async (_req, res) => {
         .status(400)
         .json({ ok: false, message: "OPENAI_API_KEY not set" });
 
-    const model = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+    const model = process.env.OPENAI_MODEL?.trim() || "gpt-5-mini";
 
-    const payload = {
+    const payload = applyModelCompat({
       model,
       messages: [{ role: "user", content: "Health check: say pong" }],
       stream: false,
-      temperature: 0.0,
-    };
+    }, { temperature: 0.0, maxTokens: 20 });
 
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

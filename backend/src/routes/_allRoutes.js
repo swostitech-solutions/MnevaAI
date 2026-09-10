@@ -1281,6 +1281,7 @@ import { createEventIfConnected } from "../services/calendar.service.js";
 import multer from "multer";
 import { createDeviceToken, hashToken } from "./deviceNotifications.js";
 import { sendPushToUser } from "../services/pushService.js";
+import { applyModelCompat } from "../services/openaiCompat.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1489,7 +1490,7 @@ agentRouter.post("/draft", async (req, res) => {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) return res.status(503).json({ error: "AI not configured" });
     const content = `From: ${from || ""}\nSubject: ${subject || ""}\n\n${body || preview || ""}`;
-    const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    const model = process.env.OPENAI_MODEL || "gpt-5-mini";
 
     // Build schedule context — check tasks and reminders for conflicts
     let scheduleContext = "";
@@ -1547,7 +1548,7 @@ agentRouter.post("/draft", async (req, res) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
+      body: JSON.stringify(applyModelCompat({
         model,
         messages: [
           {
@@ -1556,8 +1557,7 @@ agentRouter.post("/draft", async (req, res) => {
           },
           { role: "user", content },
         ],
-        temperature: 0.4,
-      }),
+      }, { temperature: 0.4 })),
     });
     const data = await r.json().catch(() => ({}));
     const draft = data.choices?.[0]?.message?.content?.trim() || "";

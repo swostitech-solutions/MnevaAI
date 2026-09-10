@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
 import { sendEmail } from './gmail.service.js'
 import { sendPushToUser } from './pushService.js'
+import { applyModelCompat } from './openaiCompat.js'
 
 const activePollers = new Map()
 const POLL_INTERVAL_MS = 60_000
@@ -46,8 +47,8 @@ async function generateReplyDraft(email, userName, userId) {
     } catch { /* schedule context is best-effort */ }
 
     const body = (email.body || email.preview || '').slice(0, 1500)
-    const payload = {
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    const payload = applyModelCompat({
+      model: process.env.OPENAI_MODEL || 'gpt-5-mini',
       messages: [
         {
           role: 'system',
@@ -58,8 +59,7 @@ async function generateReplyDraft(email, userName, userId) {
           content: `From: ${email.from}\nSubject: ${email.subject}\n\n${body}`,
         },
       ],
-      temperature: 0.4,
-    }
+    }, { temperature: 0.4 })
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },

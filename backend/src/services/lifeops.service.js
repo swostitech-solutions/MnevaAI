@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { applyModelCompat } from './openaiCompat.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -61,12 +62,10 @@ Return a JSON array of exactly 3 restaurant suggestions. Each object must have:
 - totalAmount (number, sum of item prices)
 Respond with ONLY the JSON array, no markdown.`;
 
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    const res = await openai.chat.completions.create(applyModelCompat({
+      model: process.env.OPENAI_MODEL || 'gpt-5-mini',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 600,
-    });
+    }, { temperature: 0.7, maxTokens: 600 }));
 
     const suggestions = JSON.parse(res.choices[0].message.content.trim());
     return { suggestions };
