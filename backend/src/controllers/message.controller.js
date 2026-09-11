@@ -57,6 +57,39 @@ export async function createMessage(req, res) {
   }
 }
 
+// Deletes one message and everything after it in the same conversation —
+// backs the Ask AI screen's "edit a sent question" feature: editing a past
+// message must actually remove the stale question + its old reply from
+// history, not just hide them client-side, or they reappear the next time
+// this conversation loads from the server.
+export async function deleteMessagesFrom(req, res) {
+  try {
+    const { conversationId, messageId } = req.params
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId: req.user.id },
+    })
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' })
+    }
+
+    const anchor = await prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+    })
+    if (!anchor) {
+      return res.status(404).json({ message: 'Message not found' })
+    }
+
+    await prisma.message.deleteMany({
+      where: { conversationId, createdAt: { gte: anchor.createdAt } },
+    })
+
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+}
+
 export async function getMessages(req, res) {
   try {
     const { conversationId } = req.params

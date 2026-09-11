@@ -7,6 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
@@ -19,7 +20,15 @@ const PARENTS     = ['Dad', 'Mom', 'Both'];
 const parentColor = (p) => p === 'Dad' ? '#4FA6E8' : p === 'Mom' ? '#E0546E' : '#9B72FF';
 const parentBg    = (p) => p === 'Dad' ? '#EAF3FD' : p === 'Mom' ? '#FCEAED' : '#F3EFFE';
 
-const EMPTY_FORM = { medName: '', dosage: '', frequency: '', mealTime: '', parent: '', startDate: '', duration: '', doctor: '', notes: '', refillDate: '' };
+// "HH:mm" (24-hour) -> "8:00 AM" for display
+function formatDoseTime(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+const EMPTY_FORM = { medName: '', dosage: '', frequency: '', mealTime: '', parent: '', startDate: '', duration: '', doctor: '', notes: '', refillDate: '', doseTimes: [] };
 
 export default function ParentMedication({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -90,6 +99,13 @@ export default function ParentMedication({ navigation }) {
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
   const canSave = form.medName.trim() && form.dosage.trim() && form.frequency && form.parent;
+
+  const [showDoseTimePicker, setShowDoseTimePicker] = useState(false);
+  const addDoseTime = (date) => {
+    const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    setForm(f => f.doseTimes.includes(hhmm) ? f : { ...f, doseTimes: [...f.doseTimes, hhmm].sort() });
+  };
+  const removeDoseTime = (hhmm) => setForm(f => ({ ...f, doseTimes: f.doseTimes.filter(t => t !== hhmm) }));
 
   const saveMedication = async () => {
     if (!canSave || saving) return;
@@ -202,6 +218,12 @@ export default function ParentMedication({ navigation }) {
                     <Text style={styles.medDosage}>{med.dosage} · {med.frequency}</Text>
                     {med.mealTime ? <Text style={styles.medMeta}>{med.mealTime}</Text> : null}
                     <View style={styles.medTagRow}>
+                      {(med.doseTimes || []).map(t => (
+                        <View key={t} style={styles.doseTimeTag}>
+                          <Feather name="clock" size={10} color={theme.danger} />
+                          <Text style={styles.doseTimeTagText}>{formatDoseTime(t)}</Text>
+                        </View>
+                      ))}
                       {med.refillDate ? (
                         <View style={styles.refillTag}>
                           <Feather name="refresh-cw" size={10} color={theme.warning} />
@@ -278,6 +300,40 @@ export default function ParentMedication({ navigation }) {
                 ))}
               </View>
 
+              <Text style={styles.fieldLabel}>Reminder times</Text>
+              <Text style={styles.fieldHint}>Mneva sends a "time to take" alert at each time below — separate from the refill reminder.</Text>
+              <View style={styles.chipRow}>
+                {form.doseTimes.map(t => (
+                  <View key={t} style={styles.doseTimeChip}>
+                    <Feather name="clock" size={12} color={theme.danger} />
+                    <Text style={styles.doseTimeChipText}>{formatDoseTime(t)}</Text>
+                    <TouchableOpacity onPress={() => removeDoseTime(t)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                      <Feather name="x" size={12} color={theme.faint} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity style={styles.addDoseTimeBtn} onPress={() => setShowDoseTimePicker(true)}>
+                  <Feather name="plus" size={13} color={theme.danger} />
+                  <Text style={styles.addDoseTimeBtnText}>Add time</Text>
+                </TouchableOpacity>
+              </View>
+              {showDoseTimePicker && (
+                <DateTimePicker
+                  value={new Date()}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(e, date) => {
+                    setShowDoseTimePicker(Platform.OS === 'ios');
+                    if (date && e.type !== 'dismissed') addDoseTime(date);
+                  }}
+                />
+              )}
+              {Platform.OS === 'ios' && showDoseTimePicker && (
+                <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setShowDoseTimePicker(false)}>
+                  <Text style={styles.pickerDoneBtnText}>Done</Text>
+                </TouchableOpacity>
+              )}
+
               <View style={styles.rowFields}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>Start Date</Text>
@@ -337,6 +393,7 @@ export default function ParentMedication({ navigation }) {
                   { label: 'Dosage',       value: selectedMed.dosage,                                    icon: 'droplet' },
                   { label: 'Frequency',    value: selectedMed.frequency,                                 icon: 'clock' },
                   { label: 'When to take', value: selectedMed.mealTime,                                  icon: 'coffee' },
+                  { label: 'Reminder times', value: (selectedMed.doseTimes || []).map(formatDoseTime).join(', '), icon: 'bell' },
                   { label: 'Start Date',   value: selectedMed.startDate,                                 icon: 'calendar' },
                   { label: 'Duration',     value: selectedMed.duration,                                  icon: 'bar-chart-2' },
                   { label: 'Next Refill',  value: selectedMed.refillDate,                                icon: 'refresh-cw' },
@@ -418,6 +475,8 @@ const createStyles = (theme) => StyleSheet.create({
   medTagRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   refillTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
   refillTagText: { fontSize: 10, fontWeight: '700', color: theme.warning },
+  doseTimeTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
+  doseTimeTagText: { fontSize: 10, fontWeight: '700', color: theme.danger },
   doctorTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
   doctorTagText: { fontSize: 10, fontWeight: '600', color: theme.muted },
   toggleBtn: { padding: 6 },
@@ -433,7 +492,14 @@ const createStyles = (theme) => StyleSheet.create({
   deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
 
   fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
+  fieldHint: { fontSize: 11, color: theme.faint, marginBottom: 10, marginTop: -4, lineHeight: 15 },
   required: { color: theme.danger },
+  doseTimeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  doseTimeChipText: { fontSize: 12.5, fontWeight: '700', color: theme.danger },
+  addDoseTimeBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: theme.danger, borderStyle: 'dashed' },
+  addDoseTimeBtnText: { fontSize: 12.5, fontWeight: '700', color: theme.danger },
+  pickerDoneBtn: { alignSelf: 'flex-end', marginTop: 6, marginBottom: 12, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: theme.danger, borderRadius: 10 },
+  pickerDoneBtnText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
   input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
   rowFields: { flexDirection: 'row' },

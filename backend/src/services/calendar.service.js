@@ -98,6 +98,12 @@ export async function createMeetingWithGoogleMeet(userId, { title, start, end, d
     end: { dateTime: new Date(end).toISOString(), timeZone: 'Asia/Kolkata' },
     conferenceData: { createRequest: { requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } },
     extendedProperties: { private: { mnevaSource: 'meeting' } },
+    // Without this, Google Calendar applies the user's own default reminder
+    // and alerts them natively — a second, uncontrolled notification on top
+    // of the ones Mneva schedules itself at the user's configured lead
+    // times. This event exists so the meeting is visible on their calendar,
+    // not so Google Calendar can also alert them independently.
+    reminders: { useDefault: false, overrides: [] },
     ...(attendees.length && { attendees: attendees.map(email => ({ email })) }),
   }
 

@@ -665,6 +665,11 @@ model ParentMedication {
   doctor     String?
   notes      String?
   refillDate String?
+  // Array of "HH:mm" 24-hour wall-clock times (Asia/Kolkata) the user
+  // should actually take this medicine — e.g. ["08:00","20:00"] for twice
+  // daily. Distinct from refillDate, which is when the supply runs out, not
+  // when to take a dose. medicationDosePoller.js checks this every minute.
+  doseTimes  Json     @default("[]")
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

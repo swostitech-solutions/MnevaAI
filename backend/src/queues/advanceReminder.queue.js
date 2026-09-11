@@ -8,7 +8,9 @@ import { getDueSoonItems } from '../services/fullSummary.js'
 const CRON_PATTERN = '*/5 * * * *' // every 5 minutes
 const REPEAT_JOB_ID = 'advance-reminder-main'
 const SCAN_WINDOW_MS = 6 * 60 * 1000 // slightly wider than the 5-min cadence so a slow tick never skips a lead time
-const DEFAULT_LEAD_TIMES = [30, 5]
+// Matches what Settings > Notifications tells the user their default is:
+// one alert, 30 minutes ahead, unless they've customized notificationLeadTimes.
+const DEFAULT_LEAD_TIMES = [30]
 
 let queue
 

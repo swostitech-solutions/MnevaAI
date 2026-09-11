@@ -241,9 +241,16 @@ const fmtMed = (m) => ({
   id: m.id, medName: m.medName, dosage: m.dosage, frequency: m.frequency,
   mealTime: m.mealTime, parent: m.parent, startDate: m.startDate,
   duration: m.duration, doctor: m.doctor, notes: m.notes,
-  refillDate: m.refillDate, active: m.active,
+  refillDate: m.refillDate, doseTimes: Array.isArray(m.doseTimes) ? m.doseTimes : [], active: m.active,
   createdAt: m.createdAt, updatedAt: m.updatedAt,
 })
+
+// "HH:mm" 24-hour strings only — anything else is silently dropped rather
+// than stored malformed, since the poller does a literal string match.
+function cleanDoseTimes(value) {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t))))].sort()
+}
 
 async function syncMedMemory(userId, prismaClient) {
   const meds = await prismaClient.parentMedication.findMany({
@@ -278,7 +285,7 @@ familyRouter.get('/parent-medications', async (req, res) => {
 
 familyRouter.post('/parent-medications', async (req, res) => {
   try {
-    const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate } = req.body
+    const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, doseTimes } = req.body
     if (!medName?.trim() || !dosage?.trim() || !frequency || !parent) {
       return res.status(400).json({ error: 'medName, dosage, frequency and parent are required' })
     }
@@ -290,6 +297,7 @@ familyRouter.post('/parent-medications', async (req, res) => {
         startDate: startDate?.trim() || null, duration: duration?.trim() || null,
         doctor: doctor?.trim() || null, notes: notes?.trim() || null,
         refillDate: refillDate?.trim() || null,
+        doseTimes: cleanDoseTimes(doseTimes),
       },
     })
     await syncMedMemory(req.user.id, prisma)
@@ -304,7 +312,7 @@ familyRouter.patch('/parent-medications/:id', async (req, res) => {
     const med = await prisma.parentMedication.findUnique({ where: { id: req.params.id } })
     if (!med) return res.status(404).json({ error: 'Not found' })
     if (med.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
-    const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, active } = req.body
+    const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, doseTimes, active } = req.body
     const updated = await prisma.parentMedication.update({
       where: { id: req.params.id },
       data: {
@@ -318,6 +326,7 @@ familyRouter.patch('/parent-medications/:id', async (req, res) => {
         ...(doctor     !== undefined && { doctor: doctor?.trim() || null }),
         ...(notes      !== undefined && { notes: notes?.trim() || null }),
         ...(refillDate !== undefined && { refillDate: refillDate?.trim() || null }),
+        ...(doseTimes  !== undefined && { doseTimes: cleanDoseTimes(doseTimes) }),
         ...(active     !== undefined && { active: Boolean(active) }),
       },
     })

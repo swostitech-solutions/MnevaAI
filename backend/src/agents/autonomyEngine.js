@@ -3,6 +3,7 @@ import { ledger } from '../services/ledgerService.js'
 import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
+import { memoryService } from '../services/memory.service.js'
 
 function validTimeZone(value) {
   try {
@@ -221,6 +222,12 @@ function calendarDayKey(value, timeZone) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date(value))
+}
+
+function formatLeadMinutes(minutes) {
+  if (minutes < 60) return `${minutes} min`
+  if (minutes % 60 === 0) return `${minutes / 60} hr${minutes / 60 !== 1 ? 's' : ''}`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
 function formatTodaySchedule(schedule = [], timeZone = 'Asia/Kolkata') {
@@ -577,17 +584,32 @@ export async function executeTool(name, input, userId) {
         }),
       ])
 
-      let job = null
+      // How many advance-warning pushes fire before this reminder is due,
+      // and how many minutes ahead each one fires — the same
+      // notificationLeadTimes preference Settings > Notifications writes,
+      // defaulting to a single alert 30 minutes ahead if the user hasn't
+      // customized it. Previously this always sent exactly one push at the
+      // exact due moment, ignoring that preference entirely.
+      const userRecord = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
+      const leadTimes = Array.isArray(userRecord?.preferences?.notificationLeadTimes) && userRecord.preferences.notificationLeadTimes.length
+        ? userRecord.preferences.notificationLeadTimes
+        : [30]
+
+      let jobs = []
       let queueError = null
       try {
         const { enqueueReminder } = await import('../queues/reminder.queue.js')
-        job = await enqueueReminder({
-          userId,
-          message: input.message,
-          time: scheduled,
-          domain: input.domain || 'general',
-          repeat: input.repeat || 'once',
-        })
+        jobs = await Promise.all(leadTimes.map((leadMinutes) => {
+          const fireAt = new Date(scheduledAt.getTime() - leadMinutes * 60 * 1000)
+          const body = leadMinutes > 0 ? `${input.message} — in ${formatLeadMinutes(leadMinutes)}` : input.message
+          return enqueueReminder({
+            userId,
+            message: body,
+            time: fireAt.toISOString(),
+            domain: input.domain || 'general',
+            repeat: input.repeat || 'once',
+          })
+        }))
       } catch (err) {
         // Retain the reminder for every in-app view and report the delivery
         // issue accurately instead of rolling its record back.
@@ -606,18 +628,26 @@ export async function executeTool(name, input, userId) {
             description: 'Reminder set via Mneva AI',
             start: { dateTime: startDt.toISOString() },
             end: { dateTime: endDt.toISOString() },
+            // Without this, Google Calendar applies the user's own default
+            // reminder to this event and fires its own native notification —
+            // a second, uncontrolled alert alongside the ones Mneva's push
+            // system just sent at the user's configured lead times. This
+            // event exists so the reminder is visible on their calendar,
+            // not so Google Calendar can also alert them independently.
+            reminders: { useDefault: false, overrides: [] },
             extendedProperties: { private: { mnevaSource: 'reminder' } },
           })
         }
       } catch { /* calendar push is best-effort */ }
       return {
         success: true,
-        reminderId: job?.id || reminderTask.id,
+        reminderId: jobs[0]?.id || reminderTask.id,
         taskId: reminderTask.id,
         scheduled,
         message: input.message,
         repeat: input.repeat || 'once',
-        queued: Boolean(job),
+        alertsScheduled: leadTimes,
+        queued: jobs.length > 0,
         queueError,
       }
     }
@@ -666,7 +696,28 @@ export async function executeTool(name, input, userId) {
         emitToUser(userId, 'meeting:created', { ...meeting, title: input.title, start: startDt.toISOString(), end: endDt.toISOString() })
         // Delay task:created so DB write is committed before clients query
         setTimeout(() => emitToUser(userId, 'task:created', meetingTask), 300)
-        return { success: true, taskId: meetingTask.id, scheduled: startDt.toISOString(), calendarSaved: !calendarError, calendarError, ...meeting }
+
+        // Same lead-time-based advance alerts as set_reminder — a meeting's
+        // own calendar event has its Google Calendar reminders disabled
+        // (see createMeetingWithGoogleMeet) specifically so these Mneva
+        // pushes are the only alert the user gets, honoring their
+        // configured lead times instead of Google Calendar's own default.
+        const userRecord = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
+        const leadTimes = Array.isArray(userRecord?.preferences?.notificationLeadTimes) && userRecord.preferences.notificationLeadTimes.length
+          ? userRecord.preferences.notificationLeadTimes
+          : [30]
+        try {
+          const { enqueueReminder } = await import('../queues/reminder.queue.js')
+          await Promise.all(leadTimes.map((leadMinutes) => {
+            const fireAt = new Date(startDt.getTime() - leadMinutes * 60 * 1000)
+            const body = leadMinutes > 0 ? `${input.title} — in ${formatLeadMinutes(leadMinutes)}` : input.title
+            return enqueueReminder({ userId, message: body, time: fireAt.toISOString(), domain: 'meeting' })
+          }))
+        } catch (err) {
+          logger.warn(`Meeting scheduled but advance-alert queue failed: ${err.message}`)
+        }
+
+        return { success: true, taskId: meetingTask.id, scheduled: startDt.toISOString(), calendarSaved: !calendarError, calendarError, alertsScheduled: leadTimes, ...meeting }
       } catch (err) {
         return { success: false, error: err.message }
       }
@@ -715,7 +766,13 @@ export async function executeTool(name, input, userId) {
     }
     case 'personal_search': {
       const q = input.query || ''
-      const [notifications, ledgers] = await Promise.all([
+      // Was previously notifications + ledger only, despite the tool's own
+      // description promising "documents" too — uploaded document/photo
+      // content lives in the memory store (memoryService.store, written by
+      // the /api/documents/upload background indexer), not in either of
+      // those two tables, so a question that fell through to this tool
+      // instead of the automatic per-turn memory recall could never find it.
+      const [notifications, ledgers, memories] = await Promise.all([
         prisma.notification.findMany({
           where: { userId, OR: [{ title: { contains: q, mode: 'insensitive' } }, { message: { contains: q, mode: 'insensitive' } }] },
           take: 10,
@@ -724,8 +781,21 @@ export async function executeTool(name, input, userId) {
           where: { userId, OR: [{ tool: { contains: q, mode: 'insensitive' } }, { action: { contains: q, mode: 'insensitive' } }] },
           take: 10,
         }),
+        memoryService.recall(q, userId, 10),
       ])
-      return { query: q, results: [...notifications, ...ledgers], total: notifications.length + ledgers.length }
+      const documents = memories
+        .filter(m => m.payload?.type === 'document')
+        .map(m => ({
+          fileName: m.payload?.metadata?.fileName || 'document',
+          text: m.payload?.text,
+          score: m.score,
+        }))
+      return {
+        query: q,
+        results: [...notifications, ...ledgers],
+        documents,
+        total: notifications.length + ledgers.length + documents.length,
+      }
     }
     default:                     return { error: `Unknown tool: ${name}` }
   }

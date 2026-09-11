@@ -19,9 +19,11 @@ import {
   InteractionManager,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as Speech from "expo-speech";
+import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -41,6 +43,16 @@ const INITIAL_MESSAGES = [
   },
 ];
 
+// Shown only on a fresh conversation — the same "here's what I can actually
+// do" onboarding pattern real agent products use, instead of a blank input
+// box and a wall of text the user has to guess how to use.
+const QUICK_PROMPTS = [
+  { icon: "calendar",     label: "Schedule a meeting",  prompt: "Schedule a meeting for tomorrow at 5pm" },
+  { icon: "credit-card",  label: "Check my finances",   prompt: "Give me a summary of my finances" },
+  { icon: "heart",        label: "Health summary",      prompt: "What's my health summary for today?" },
+  { icon: "mail",         label: "Check my emails",     prompt: "Do I have any urgent emails today?" },
+];
+
 const DURATIONS = [
   { label: "30 min", value: "30" },
   { label: "1 hr",   value: "60" },
@@ -50,9 +62,52 @@ const DURATIONS = [
 
 function AiAvatar({ theme, styles }) {
   return (
-    <View style={styles.aiAvatar}>
-      <Feather name="sun" size={14} color={theme.accent} />
+    <LinearGradient
+      colors={[theme.accentAlt, theme.accent]}
+      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      style={styles.aiAvatar}
+    >
+      <Feather name="cpu" size={13} color="#FFFFFF" />
+    </LinearGradient>
+  );
+}
+
+// A small pulsing "the agent is live" cue next to the header subtitle — the
+// same visual language used on Priorities/Twin Diary, so this reads as one
+// always-on assistant rather than a static screen you send messages into.
+function LiveDot({ theme }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.8, duration: 700, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scale]);
+  return (
+    <View style={{ width: 12, height: 12, alignItems: "center", justifyContent: "center", marginRight: 6 }}>
+      <Animated.View style={{ position: "absolute", width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent, opacity: 0.35, transform: [{ scale }] }} />
+      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: theme.accent }} />
     </View>
+  );
+}
+
+// Fades + slides in once per message the first time it mounts — since each
+// message keeps the same `key`, this never replays on later re-renders, but
+// it does play once for messages loaded from history too, which is fine:
+// the whole list settling in together reads as intentional, not glitchy.
+function FadeInMessage({ children }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+  }, [anim]);
+  return (
+    <Animated.View style={{ opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
+      {children}
+    </Animated.View>
   );
 }
 
@@ -107,13 +162,175 @@ function RichText({ text, isUser, styles }) {
   );
 }
 
-function MessageBubble({ message, theme, styles }) {
-  const isUser = message.sender === "user";
+// Reveals a fresh AI reply a few characters at a time instead of dumping the
+// whole block instantly — this is what actually reads as "the agent is
+// composing this", the same cue every real chat-agent product uses. Only
+// ever runs once per message (keyed by mount, not by re-render), so history
+// loaded from the server renders instantly rather than replaying.
+function TypewriterText({ text, isUser, styles, onDone }) {
+  const [revealedLen, setRevealedLen] = useState(0);
+  useEffect(() => {
+    let i = 0;
+    const CHARS_PER_TICK = 3;
+    const interval = setInterval(() => {
+      i += CHARS_PER_TICK;
+      if (i >= text.length) {
+        setRevealedLen(text.length);
+        clearInterval(interval);
+        onDone?.();
+      } else {
+        setRevealedLen(i);
+      }
+    }, 20);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <RichText text={text.slice(0, revealedLen)} isUser={isUser} styles={styles} />;
+}
+
+// Cycles a few "the agent is actively working" phrases while waiting on a
+// reply — a plain spinner reads as "frozen"; this reads as "still with you".
+const THINKING_PHRASES = ["Thinking…", "Working on it…", "Almost there…"];
+
+function ThinkingDots({ theme }) {
+  const anims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+  useEffect(() => {
+    const loops = anims.map((val, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 140),
+          Animated.timing(val, { toValue: 1, duration: 320, useNativeDriver: true }),
+          Animated.timing(val, { toValue: 0, duration: 320, useNativeDriver: true }),
+          Animated.delay((2 - i) * 140),
+        ]),
+      ),
+    );
+    loops.forEach(l => l.start());
+    return () => loops.forEach(l => l.stop());
+  }, [anims]);
   return (
-    <View style={[styles.bubbleRow, isUser ? styles.bubbleRowUser : styles.bubbleRowAi]}>
-      {!isUser && <AiAvatar theme={theme} styles={styles} />}
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
-        <RichText text={message.text} isUser={isUser} styles={styles} />
+    <View style={{ flexDirection: "row", gap: 4 }}>
+      {anims.map((val, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 6, height: 6, borderRadius: 3, backgroundColor: theme.accent,
+            opacity: val.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
+            transform: [{ translateY: val.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+function ThinkingBubble({ theme, styles }) {
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setPhraseIdx(i => (i + 1) % THINKING_PHRASES.length), 2600);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <View style={[styles.bubbleRow, styles.bubbleRowAi]}>
+      <AiAvatar theme={theme} styles={styles} />
+      <View style={[styles.bubble, styles.bubbleAi, styles.thinkingBubble]}>
+        <ThinkingDots theme={theme} />
+        <Text style={styles.thinkingText}>{THINKING_PHRASES[phraseIdx]}</Text>
+      </View>
+    </View>
+  );
+}
+
+function MessageBubble({ message, theme, styles, animate, onDoneTyping, isEditing, editText, onChangeEditText, onStartEdit, onSaveEdit, onCancelEdit }) {
+  const isUser = message.sender === "user";
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await Clipboard.setStringAsync(message.text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  if (isEditing) {
+    return (
+      <View style={[styles.bubbleRow, styles.bubbleRowUser]}>
+        <View style={[styles.bubble, styles.bubbleUser, styles.bubbleEditing]}>
+          <TextInput
+            style={styles.editInput}
+            value={editText}
+            onChangeText={onChangeEditText}
+            multiline
+            autoFocus
+          />
+          <View style={styles.editActionsRow}>
+            <TouchableOpacity style={styles.editCancelBtn} onPress={onCancelEdit}>
+              <Text style={styles.editCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.editSaveBtn} onPress={onSaveEdit}>
+              <Feather name="corner-down-left" size={12} color={theme.accent} />
+              <Text style={styles.editSaveText}>Save &amp; resend</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const isImageAttachment = message.attachment?.type === "image";
+
+  return (
+    <View>
+      <View style={[styles.bubbleRow, isUser ? styles.bubbleRowUser : styles.bubbleRowAi]}>
+        {!isUser && <AiAvatar theme={theme} styles={styles} />}
+        <View style={[
+          styles.bubble,
+          isUser ? styles.bubbleUser : styles.bubbleAi,
+          isImageAttachment && styles.bubbleImageWrap,
+        ]}>
+          {!!message.attachment && <AttachmentPreview attachment={message.attachment} theme={theme} styles={styles} />}
+          {!!message.text && (
+            animate
+              ? <TypewriterText text={message.text} isUser={isUser} styles={styles} onDone={onDoneTyping} />
+              : <RichText text={message.text} isUser={isUser} styles={styles} />
+          )}
+        </View>
+      </View>
+      {/* Always-visible Edit/Copy actions on messages you sent — explicit
+          icons instead of a hidden long-press gesture, so the option is
+          obvious rather than something the user has to discover. Doesn't
+          apply to an attachment-only bubble — there's no text to edit/copy. */}
+      {isUser && !!message.text && (
+        <View style={styles.msgActionsRow}>
+          <TouchableOpacity style={styles.msgActionBtn} onPress={() => onStartEdit(message)}>
+            <Feather name="edit-2" size={12} color={theme.faint} />
+            <Text style={styles.msgActionText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.msgActionBtn} onPress={handleCopy}>
+            <Feather name={copied ? "check" : "copy"} size={12} color={copied ? theme.accent : theme.faint} />
+            <Text style={[styles.msgActionText, copied && { color: theme.accent }]}>{copied ? "Copied" : "Copy"}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Shows what was actually picked — an inline thumbnail for a photo, a
+// filename/type card for a document — instead of only a text confirmation
+// once the upload finishes.
+function AttachmentPreview({ attachment, theme, styles }) {
+  if (attachment.type === "image") {
+    return <Image source={{ uri: attachment.uri }} style={styles.attachmentImage} resizeMode="cover" />;
+  }
+  const ext = (attachment.name || "").split(".").pop()?.toUpperCase().slice(0, 4) || "FILE";
+  return (
+    <View style={styles.attachmentFileCard}>
+      <View style={styles.attachmentFileIconWrap}>
+        <Feather name="file-text" size={18} color="#FFFFFF" />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.attachmentFileName} numberOfLines={1}>{attachment.name}</Text>
+        <Text style={styles.attachmentFileType}>{ext} file</Text>
       </View>
     </View>
   );
@@ -325,6 +542,9 @@ export default function AskAI({ navigation }) {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [speaking, setSpeaking] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // { id, summary, tool, args }
+  const [liveTypingId, setLiveTypingId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState("");
   const voiceEnabledRef = useRef(true);
   const conversationIdRef = useRef(null);
   const aiLoadingRef = useRef(false);
@@ -527,13 +747,18 @@ export default function AskAI({ navigation }) {
     };
   }, [navigation]);
 
-  const handleSend = async (text) => {
+  // `historyBase` lets an edited-and-resent message rebuild from a truncated
+  // history instead of the current `messages` state — needed because the
+  // truncation from handleSaveEdit is a scheduled state update, not yet
+  // visible to this closure if we read `messages` directly right after it.
+  const handleSend = async (text, historyBase) => {
     const content = (text || input).trim();
     if (!content || aiLoading) return;
     if (!text) setInput("");
 
+    const baseMessages = historyBase || messages;
     const userMsg = { id: String(Date.now()), sender: "user", text: content, ts: new Date().toISOString() };
-    const updatedMessages = [...messages, userMsg];
+    const updatedMessages = [...baseMessages, userMsg];
     setMessages(updatedMessages);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     await persistMessage("user", content);
@@ -554,7 +779,9 @@ export default function AskAI({ navigation }) {
         timeoutMs: 60000,
       });
       const aiText = res.response || res.reply || res.message || res.content || "I processed your request.";
-      addMessage({ id: String(Date.now() + 1), sender: "ai", text: aiText, ts: new Date().toISOString() });
+      const aiMsgId = String(Date.now() + 1);
+      addMessage({ id: aiMsgId, sender: "ai", text: aiText, ts: new Date().toISOString() });
+      setLiveTypingId(aiMsgId);
       await persistMessage("assistant", aiText);
       speakText(aiText);
       setAiLoading(false);
@@ -564,6 +791,37 @@ export default function AskAI({ navigation }) {
       addMessage({ id: String(Date.now() + 1), sender: "ai", text: "Sorry, I could not connect to the AI right now. Please try again." });
       setAiLoading(false);
     }
+  };
+
+  // ── Edit a sent question — truncates local + server history from that
+  // point on, then resends the edited text as a fresh turn ──────────────────
+  const handleStartEdit = (message) => {
+    if (aiLoading) return;
+    Speech.stop();
+    setSpeaking(false);
+    setEditingId(message.id);
+    setEditingText(message.text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingText("");
+  };
+
+  const handleSaveEdit = async () => {
+    const newText = editingText.trim();
+    if (!newText) return;
+    const idx = messages.findIndex(m => m.id === editingId);
+    if (idx === -1) { handleCancelEdit(); return; }
+    const targetId = editingId;
+    const truncated = messages.slice(0, idx);
+    setMessages(truncated);
+    handleCancelEdit();
+    const convId = conversationIdRef.current;
+    if (convId) {
+      apiFetch(`/api/messages/${convId}/from/${targetId}`, { method: "DELETE" }).catch(() => {});
+    }
+    await handleSend(newText, truncated);
   };
 
   // ── Voice recording (expo-audio → backend transcription) ──────────────────
@@ -622,7 +880,17 @@ export default function AskAI({ navigation }) {
   const uploadFile = async (uri, name, mimeType) => {
     setUploading(true);
     setAttachModal(false);
-    addMessage({ id: String(Date.now()), sender: "ai", text: `Uploading ${name}\u2026` });
+    const isImage = (mimeType || "").startsWith("image/");
+    // Show what was actually picked as its own message bubble \u2014 previously
+    // the only feedback was a text line ("Uploading X\u2026"), with no visual
+    // trace of the file/photo itself anywhere in the conversation.
+    addMessage({
+      id: String(Date.now()),
+      sender: "user",
+      attachment: { type: isImage ? "image" : "document", uri, name, mimeType },
+      ts: new Date().toISOString(),
+    });
+    addMessage({ id: String(Date.now() + 1), sender: "ai", text: `Uploading ${name}\u2026` });
     try {
       // Read file as base64 and send as JSON — avoids React Native FormData binary issues
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
@@ -754,34 +1022,49 @@ export default function AskAI({ navigation }) {
       >
         {/* Header */}
         <View style={[styles.header, { paddingHorizontal: horizontalPad }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Ask Mneva</Text>
-            <Text style={styles.headerSubtitle}>Voice, docs, or type — I'm ready</Text>
-          </View>
-          {/* Stop speaking button — only visible while speaking */}
-          {speaking && (
-            <TouchableOpacity
-              style={[styles.scheduleBtn, { marginRight: 8, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : 'rgba(224,84,110,0.1)', borderColor: theme.isDark ? 'rgba(241,113,134,0.4)' : 'rgba(224,84,110,0.3)' }]}
-              onPress={stopSpeaking}
+          <View style={styles.headerBrandRow}>
+            <LinearGradient
+              colors={[theme.accentAlt, theme.accent]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={styles.headerBadge}
             >
-              <Feather name="square" size={13} color={theme.danger} />
-              <Text style={[styles.scheduleBtnText, { color: theme.danger }]}>Stop</Text>
+              <Feather name="cpu" size={18} color="#FFFFFF" />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Ask Mneva</Text>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <LiveDot theme={theme} />
+                <Text style={styles.headerSubtitle}>Voice, docs, or type — I'm ready</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.headerActionsRow}>
+            {/* Stop speaking button — only visible while speaking */}
+            {speaking && (
+              <TouchableOpacity
+                style={[styles.scheduleBtn, { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : 'rgba(224,84,110,0.1)', borderColor: theme.isDark ? 'rgba(241,113,134,0.4)' : 'rgba(224,84,110,0.3)' }]}
+                onPress={stopSpeaking}
+              >
+                <Feather name="square" size={13} color={theme.danger} />
+                <Text style={[styles.scheduleBtnText, { color: theme.danger }]}>Stop</Text>
+              </TouchableOpacity>
+            )}
+            {/* Voice toggle */}
+            <TouchableOpacity
+              style={[styles.scheduleBtn, { backgroundColor: voiceEnabled ? (theme.isDark ? 'rgba(52,199,123,0.16)' : 'rgba(31,154,90,0.1)') : (theme.isDark ? 'rgba(154,161,174,0.16)' : 'rgba(155,161,174,0.1)'), borderColor: voiceEnabled ? (theme.isDark ? 'rgba(52,199,123,0.4)' : 'rgba(31,154,90,0.3)') : (theme.isDark ? 'rgba(154,161,174,0.4)' : 'rgba(155,161,174,0.3)') }]}
+              onPress={() => { toggleVoice(); }}
+            >
+              <Feather name={voiceEnabled ? "volume-2" : "volume-x"} size={13} color={voiceEnabled ? theme.accent : theme.faint} />
+              <Text style={[styles.scheduleBtnText, { color: voiceEnabled ? theme.accent : theme.faint }]}>
+                {voiceEnabled ? 'Voice On' : 'Voice Off'}
+              </Text>
             </TouchableOpacity>
-          )}
-          {/* Voice toggle */}
-          <TouchableOpacity
-            style={[styles.scheduleBtn, { marginRight: 8, backgroundColor: voiceEnabled ? (theme.isDark ? 'rgba(52,199,123,0.16)' : 'rgba(31,154,90,0.1)') : (theme.isDark ? 'rgba(154,161,174,0.16)' : 'rgba(155,161,174,0.1)'), borderColor: voiceEnabled ? (theme.isDark ? 'rgba(52,199,123,0.4)' : 'rgba(31,154,90,0.3)') : (theme.isDark ? 'rgba(154,161,174,0.4)' : 'rgba(155,161,174,0.3)') }]}
-            onPress={() => { toggleVoice(); }}
-          >
-            <Feather name={voiceEnabled ? "volume-2" : "volume-x"} size={13} color={voiceEnabled ? theme.accent : theme.faint} />
-            <Text style={[styles.scheduleBtnText, { color: voiceEnabled ? theme.accent : theme.faint }]}>
-              {voiceEnabled ? 'Voice On' : 'Voice Off'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.scheduleBtn} onPress={() => setMeetModal(true)}>
-            <Feather name="calendar" size={14} color={theme.accent} />
-            <Text style={styles.scheduleBtnText}>Schedule</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={styles.scheduleBtn} onPress={() => setMeetModal(true)}>
+              <Feather name="calendar" size={14} color={theme.accent} />
+              <Text style={styles.scheduleBtnText}>Schedule</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Messages */}
@@ -804,23 +1087,51 @@ export default function AskAI({ navigation }) {
               new Date(m.ts).toDateString() !== new Date(prev.ts).toDateString()) ||
               (!prev.ts && m.ts);
             return (
-              <View key={m.id}>
+              <FadeInMessage key={m.id}>
                 {showDate && <DateSeparator ts={m.ts} styles={styles} />}
-                <MessageBubble message={m} theme={theme} styles={styles} />
-              </View>
+                <MessageBubble
+                  message={m}
+                  theme={theme}
+                  styles={styles}
+                  animate={m.id === liveTypingId}
+                  onDoneTyping={() => setLiveTypingId(null)}
+                  isEditing={m.id === editingId}
+                  editText={editingText}
+                  onChangeEditText={setEditingText}
+                  onStartEdit={handleStartEdit}
+                  onSaveEdit={handleSaveEdit}
+                  onCancelEdit={handleCancelEdit}
+                />
+              </FadeInMessage>
             );
           })}
-          {(aiLoading || transcribing) && (
+          {messages.length === 1 && !aiLoading && !transcribing && (
+            <View style={styles.suggestWrap}>
+              <Text style={styles.suggestLabel}>TRY ASKING</Text>
+              <View style={styles.suggestGrid}>
+                {QUICK_PROMPTS.map(q => (
+                  <TouchableOpacity key={q.label} style={styles.suggestChip} onPress={() => handleSend(q.prompt)}>
+                    <View style={styles.suggestIconWrap}>
+                      <Feather name={q.icon} size={14} color={theme.accent} />
+                    </View>
+                    <Text style={styles.suggestChipText}>{q.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+          {transcribing && (
             <View style={[styles.bubbleRow, styles.bubbleRowAi]}>
               <AiAvatar theme={theme} styles={styles} />
               <View style={[styles.bubble, styles.bubbleAi, { paddingVertical: 16, paddingHorizontal: 20 }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <ActivityIndicator size="small" color={theme.accent} />
-                  {transcribing && <Text style={{ fontSize: 12, color: theme.faint }}>Transcribing…</Text>}
+                  <Text style={{ fontSize: 12, color: theme.faint }}>Transcribing…</Text>
                 </View>
               </View>
             </View>
           )}
+          {aiLoading && !transcribing && <ThinkingBubble theme={theme} styles={styles} />}
         </ScrollView>
 
         {/* Input bar */}
@@ -851,11 +1162,23 @@ export default function AskAI({ navigation }) {
           </Animated.View>
 
           <TouchableOpacity
-            style={[styles.sendButton, (!input.trim() || aiLoading) && styles.sendButtonDisabled]}
+            style={styles.sendButton}
             onPress={() => handleSend()}
             disabled={!input.trim() || aiLoading}
           >
-            <Feather name="arrow-up" size={18} color={input.trim() ? "#FFFFFF" : theme.disabled} />
+            {input.trim() && !aiLoading ? (
+              <LinearGradient
+                colors={[theme.accentAlt, theme.accent]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={styles.sendButtonInner}
+              >
+                <Feather name="arrow-up" size={18} color="#FFFFFF" />
+              </LinearGradient>
+            ) : (
+              <View style={[styles.sendButtonInner, styles.sendButtonDisabled]}>
+                <Feather name="arrow-up" size={18} color={theme.disabled} />
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -971,11 +1294,16 @@ const createStyles = (theme) => StyleSheet.create({
   header: {
     paddingTop: 16,
     paddingBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
   },
-  headerTitle: { fontSize: 32, fontWeight: "800", color: theme.text, marginBottom: 4 },
-  headerSubtitle: { fontSize: 14, color: theme.faint },
+  headerBrandRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+  headerBadge: {
+    width: 44, height: 44, borderRadius: 14,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: theme.accentAlt, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3,
+  },
+  headerActionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  headerTitle: { fontSize: 26, fontWeight: "800", color: theme.text, marginBottom: 4, letterSpacing: -0.4 },
+  headerSubtitle: { fontSize: 13, color: theme.faint },
   scheduleBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -995,15 +1323,33 @@ const createStyles = (theme) => StyleSheet.create({
   bubbleRowUser: { justifyContent: "flex-end" },
   aiAvatar: {
     width: 26, height: 26, borderRadius: 13,
-    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : "#EFFDF6",
     alignItems: "center", justifyContent: "center",
     marginRight: 8,
+    shadowColor: theme.accentAlt, shadowOpacity: 0.35, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  bubble: { maxWidth: "86%", borderRadius: 20, paddingHorizontal: 18, paddingVertical: 14 },
-  bubbleAi: { backgroundColor: theme.card, borderBottomLeftRadius: 6 },
+  bubble: {
+    maxWidth: "86%", borderRadius: 20, paddingHorizontal: 18, paddingVertical: 14,
+    shadowColor: "#0F1720", shadowOpacity: 0.05, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  bubbleAi: { backgroundColor: theme.card, borderBottomLeftRadius: 6, borderWidth: 1, borderColor: theme.border },
   bubbleUser: { backgroundColor: theme.accent, borderBottomRightRadius: 6 },
   bubbleTextAi: { fontSize: 14.5, lineHeight: 21, color: theme.textSecondary },
   bubbleTextUser: { fontSize: 14.5, lineHeight: 21, color: "#FFFFFF" },
+
+  // ── Attachment preview (what was actually uploaded) ───────────────────────
+  bubbleImageWrap: { padding: 4 },
+  attachmentImage: { width: 200, height: 200, borderRadius: 16 },
+  attachmentFileCard: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 14, padding: 10, minWidth: 190,
+  },
+  attachmentFileIconWrap: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center", justifyContent: "center",
+  },
+  attachmentFileName: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
+  attachmentFileType: { fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 1 },
   linkAi: {
     fontSize: 14.5, lineHeight: 21,
     color: theme.accent,
@@ -1016,6 +1362,43 @@ const createStyles = (theme) => StyleSheet.create({
     fontWeight: "700",
     textDecorationLine: "underline",
   },
+
+  // ── Thinking indicator ─────────────────────────────────────────────────────
+  thinkingBubble: {
+    flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 15, paddingHorizontal: 18,
+    backgroundColor: theme.isDark ? "rgba(52,199,123,0.10)" : "#F5FBF8",
+    borderColor: theme.isDark ? "rgba(52,199,123,0.25)" : "#DFF3E7",
+  },
+  thinkingText: { fontSize: 12.5, fontWeight: "600", color: theme.faint },
+
+  // ── Edit-and-resend (explicit Edit/Copy row under a sent message) ─────────
+  bubbleEditing: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" },
+  editInput: { fontSize: 14.5, lineHeight: 21, color: "#FFFFFF", minHeight: 40, padding: 0 },
+  editActionsRow: { flexDirection: "row", justifyContent: "flex-end", gap: 14, marginTop: 10 },
+  editCancelBtn: { paddingVertical: 4, paddingHorizontal: 4 },
+  editCancelText: { fontSize: 12.5, fontWeight: "700", color: "rgba(255,255,255,0.75)" },
+  editSaveBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#FFFFFF", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10 },
+  editSaveText: { fontSize: 12.5, fontWeight: "800", color: theme.accent },
+  msgActionsRow: { flexDirection: "row", justifyContent: "flex-end", gap: 14, marginTop: 5, marginBottom: 4 },
+  msgActionBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 3, paddingHorizontal: 2 },
+  msgActionText: { fontSize: 11, fontWeight: "600", color: theme.faint },
+
+  // ── Quick-prompt suggestions (fresh conversation only) ────────────────────
+  suggestWrap: { marginTop: 4, marginBottom: 8 },
+  suggestLabel: { fontSize: 11, fontWeight: "800", color: theme.faint, letterSpacing: 0.8, marginBottom: 10, marginLeft: 34 },
+  suggestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginLeft: 34 },
+  suggestChip: {
+    flexDirection: "row", alignItems: "center", gap: 7,
+    backgroundColor: theme.card, borderRadius: 20, paddingVertical: 9, paddingHorizontal: 13,
+    borderWidth: 1, borderColor: theme.border,
+  },
+  suggestIconWrap: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: theme.isDark ? "rgba(52,199,123,0.16)" : "#EFFDF6",
+    alignItems: "center", justifyContent: "center",
+  },
+  suggestChipText: { fontSize: 12.5, fontWeight: "600", color: theme.textSecondary },
+
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1033,6 +1416,8 @@ const createStyles = (theme) => StyleSheet.create({
     color: theme.text,
     maxHeight: 100,
     marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   micButton: {
     width: 36, height: 36, borderRadius: 18,
@@ -1043,11 +1428,14 @@ const createStyles = (theme) => StyleSheet.create({
   micButtonActive: { backgroundColor: theme.danger },
   sendButton: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: theme.accent,
-    alignItems: "center", justifyContent: "center",
     marginLeft: 8,
+    shadowColor: theme.accent, shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  sendButtonDisabled: { backgroundColor: theme.border },
+  sendButtonInner: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: "center", justifyContent: "center",
+  },
+  sendButtonDisabled: { backgroundColor: theme.border, shadowOpacity: 0 },
   tabBar: {
     flexDirection: "row",
     backgroundColor: theme.card,

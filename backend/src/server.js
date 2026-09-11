@@ -61,6 +61,7 @@ import { startAdvanceReminderWorker, scheduleAdvanceReminderScan } from "./queue
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
 import { applyModelCompat } from "./services/openaiCompat.js";
 import { backfillLedgerChain } from "./services/ledgerBackfill.js";
+import { startMedicationDosePoller } from "./services/medicationDosePoller.js";
 
 const app = express();
 // React Native does not maintain the browser cache required to replay a 304
@@ -497,6 +498,7 @@ server.on("listening", () => {
     if (dbOk) {
       startPetReminderPoller(io);
       startFamilyReminderPoller(io);
+      startMedicationDosePoller();
       // Fire-and-forget: chains + signs any ledger rows written before the
       // Twin Diary's hash-chain existed. Runs every boot but is a no-op once
       // the table is fully backfilled, so it never delays startup noticeably.
