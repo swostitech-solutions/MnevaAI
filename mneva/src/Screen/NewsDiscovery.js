@@ -41,6 +41,7 @@ async function fetchNewsFromAI(type, filter) {
   const res = await apiFetch("/api/agent/chat", {
     method: "POST",
     body: { messages: [{ role: "user", content: prompts[type] || prompts.foryou }] },
+    timeoutMs: 45000,
   });
   const text = res.response || res.reply || res.message || res.content || "";
   const match = text.match(/\[\s*\{[\s\S]*?\}\s*\]/);

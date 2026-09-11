@@ -134,8 +134,16 @@ export async function pingBackend(timeoutMs = 8000) {
 
 export async function apiFetch(path, options = {}) {
   // `retry: false` is used by higher-level recovery loops which already own
-  // their retry/backoff policy. Do not pass this app-only option to fetch.
-  const { retry, ...fetchOptions } = options;
+  // their retry/backoff policy. `timeoutMs` overrides the default 15s abort
+  // window — the AI chat/draft endpoints run an agent loop of up to 10
+  // sequential tool-calling iterations against OpenAI plus real tool
+  // execution (Gmail, Calendar, Contacts...) per turn, which can genuinely
+  // take longer than 15s on a complex request even when nothing is actually
+  // wrong; the previous fixed timeout meant those calls could get aborted
+  // client-side mid-flight and show "could not connect to the AI" even
+  // though the server was still working (and could even complete the
+  // action server-side after the client had already given up on it).
+  const { retry, timeoutMs, ...fetchOptions } = options;
   const { token, cacheNamespace } = await getAuthContext();
   const cacheable = (fetchOptions.method || 'GET').toUpperCase() === 'GET';
 
@@ -183,7 +191,7 @@ export async function apiFetch(path, options = {}) {
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs || 15000);
       try {
         const res = await fetch(`${BASE_URL}${path}`, {
           ...fetchOptions,

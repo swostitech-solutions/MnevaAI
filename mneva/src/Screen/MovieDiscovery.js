@@ -263,6 +263,7 @@ Keep it concise. User request: ${content}`;
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
         body: { messages: [{ role: "user", content: prompt }] },
+        timeoutMs: 45000,
       });
 
       const aiText = res.response || res.reply || res.message || res.content || "Here are some picks for you!";

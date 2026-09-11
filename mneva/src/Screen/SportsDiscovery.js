@@ -37,6 +37,7 @@ Rules:
   const res = await apiFetch("/api/agent/chat", {
     method: "POST",
     body: { messages: [{ role: "user", content: prompt }] },
+    timeoutMs: 45000,
   });
 
   const text = res.response || res.reply || res.message || res.content || "";
@@ -258,6 +259,7 @@ User question: ${content}`;
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
         body: { messages: [{ role: "user", content: prompt }] },
+        timeoutMs: 45000,
       });
       const aiText = res.response || res.reply || res.message || res.content || "Let me check that for you!";
       setMessages(prev => [...prev, { id: String(Date.now() + 1), sender: "ai", text: aiText }]);

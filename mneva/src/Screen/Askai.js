@@ -547,6 +547,11 @@ export default function AskAI({ navigation }) {
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
         body: { messages: apiMessages },
+        // The agent loop can run up to 10 sequential tool-calling iterations
+        // against OpenAI plus real tool execution per turn — the default 15s
+        // timeout could abort a genuinely-still-working request and show a
+        // false "could not connect" for a complex, multi-step ask.
+        timeoutMs: 60000,
       });
       const aiText = res.response || res.reply || res.message || res.content || "I processed your request.";
       addMessage({ id: String(Date.now() + 1), sender: "ai", text: aiText, ts: new Date().toISOString() });

@@ -156,6 +156,9 @@ export default function Communications({ navigation }) {
       const res = await apiFetch('/api/agent/draft', {
         method: 'POST',
         body: { subject: thread.subject || '', from: thread.from || '', preview: threadBody || thread.preview || '' },
+        // A single LLM call, not the multi-iteration agent loop, but still
+        // longer than the 15s default is worth having for a slow model turn.
+        timeoutMs: 30000,
       });
       setDraft(res.draft || '');
       setDraftReady(true);

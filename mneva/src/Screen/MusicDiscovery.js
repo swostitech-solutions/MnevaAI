@@ -283,6 +283,7 @@ Keep it concise. User request: ${content}`;
             { role: "user", content: prompt },
           ],
         },
+        timeoutMs: 45000,
       });
 
       const aiText = res.response || res.reply || res.message || res.content || "Here are some picks for you!";

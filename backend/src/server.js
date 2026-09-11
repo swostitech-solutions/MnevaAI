@@ -209,23 +209,23 @@ app.use(
     // for that user until the window reset — indistinguishable from "the
     // server went offline" from the app's side. Widened with real headroom.
     max: +process.env.RATE_LIMIT_MAX || 6000,
-    // Keyed by token alone, every device signed into the same account shared
-    // one bucket — a handful of devices on one account (family sharing, or
-    // just testing) could exhaust it within minutes from combined normal
-    // polling, 429-ing every device on that account at once until the window
-    // reset. That looked exactly like "the whole app goes offline, then
-    // recovers on its own" (see the 05:59-06:00 log storm on one account).
-    // Keying by token+IP gives each device its own budget.
-    keyGenerator: (req) => {
-      const tokenKey = req.headers["authorization"]?.slice(-16);
-      return tokenKey ? `${tokenKey}:${req.ip}` : req.ip;
-    },
+    // Keyed by token alone. A previous version appended `:${req.ip}` to give
+    // each device its own budget — but `trust proxy` is never set on this
+    // app, so req.ip is Render's own internal proxy hop, not the client.
+    // That hop rotates across a small pool of internal addresses per
+    // request, so the *same* device's requests kept landing in *different*
+    // token+ip buckets, each hitting its own 429 independently — visible in
+    // production as the same token key paired with several different
+    // 10.x.x.x addresses, all rate-limited within the same minute. The
+    // token itself is already unique per login/device (a fresh JWT is
+    // minted every sign-in), so it alone already gives each device its own
+    // budget without needing an IP component at all.
+    keyGenerator: (req) => req.headers["authorization"]?.slice(-16) || req.ip,
     skip: (req) => req.path === "/api/health",
     standardHeaders: true,
     legacyHeaders: false,
     handler: (req, res) => {
-      const tokenKey = req.headers["authorization"]?.slice(-16);
-      const key = tokenKey ? `${tokenKey}:${req.ip}` : req.ip;
+      const key = req.headers["authorization"]?.slice(-16) || req.ip;
       logger.warn(`Rate limit exceeded — ${req.method} ${req.originalUrl} — key: ${key}`);
       res.status(429).json({ error: "Too many requests — please wait a moment" });
     },
@@ -234,7 +234,15 @@ app.use(
 const agentLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  // req.user is NOT set yet at this point — authMiddleware runs later, on
+  // the /api/agent mount below, after this path-specific limiter. So
+  // `req.user?.id` was always undefined here and this silently fell back to
+  // the same unstable req.ip as the global limiter above (no `trust proxy`,
+  // Render's internal proxy hop rotates per request) — on a much tighter
+  // 60/min window, this was the more likely of the two bugs to actually
+  // 429 a real request, and it sits directly in front of Ask AI's chat and
+  // email-draft endpoints.
+  keyGenerator: (req) => req.headers["authorization"]?.slice(-16) || req.ip,
   message: { error: "Too many requests — please wait a moment" },
   standardHeaders: true,
   legacyHeaders: false,

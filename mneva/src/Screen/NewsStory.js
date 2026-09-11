@@ -53,6 +53,7 @@ Return ONLY the JSON object.`;
   const res = await apiFetch("/api/agent/chat", {
     method: "POST",
     body: { messages: [{ role: "user", content: prompt }] },
+    timeoutMs: 45000,
   });
   const text = res.response || res.reply || res.message || res.content || "";
   const match = text.match(/\{[\s\S]*\}/);
@@ -97,6 +98,7 @@ Answer this question concisely (3-5 sentences max): ${content}`;
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
         body: { messages: [{ role: "user", content: prompt }] },
+        timeoutMs: 45000,
       });
       const aiText = res.response || res.reply || res.message || res.content || "Let me think about that!";
       setMessages(prev => [...prev, { id: String(Date.now() + 1), sender: "ai", text: aiText }]);
