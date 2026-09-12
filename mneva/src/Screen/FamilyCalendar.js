@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
+import DateField from './finance/DateField';
 
 const EVENT_TYPES = ['Birthday', 'Anniversary', 'School', 'Medical', 'Travel', 'Festival', 'Meeting', 'Other'];
 const MEMBERS     = ['Dad', 'Mom', 'Self', 'Spouse', 'Child', 'All'];
@@ -137,7 +138,7 @@ export default function FamilyCalendar({ navigation }) {
 
       {/* Add Event Modal */}
       <Modal visible={modal} transparent animationType="slide" onRequestClose={() => setModal(false)}>
-        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setModal(false)}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
           <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
@@ -168,8 +169,7 @@ export default function FamilyCalendar({ navigation }) {
               </View>
               <View style={styles.rowFields}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Date * (YYYY-MM-DD)</Text>
-                  <TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor={theme.placeholder} value={form.date} onChangeText={v => setForm(f => ({ ...f, date: v }))} keyboardType="numeric" />
+                  <DateField label="Date" required value={form.date} onChange={v => setForm(f => ({ ...f, date: v.slice(0, 10) }))} />
                 </View>
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>

@@ -134,7 +134,7 @@ export default function SmartReplyCard({ notif, onSend, onSkip, emit, on, inline
       </TouchableWithoutFeedback>
       <KeyboardAvoidingView
         style={styles.sheetWrap}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {content}
       </KeyboardAvoidingView>

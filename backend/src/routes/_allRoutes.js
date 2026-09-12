@@ -2248,6 +2248,13 @@ healthRouter.post("/sync", async (req, res) => {
       where: { id: req.user.id },
       data: { preferences: prefs },
     });
+    ledger.add({
+      userId: req.user.id,
+      tool: "health_data_synced",
+      input: { fields: Object.keys(req.body || {}) },
+      result: { date: today },
+      status: "completed",
+    }).catch(() => {});
     res.json({ success: true, synced });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2292,6 +2299,13 @@ healthRouter.put("/log/:date", async (req, res) => {
       where: { id: req.user.id },
       data: { preferences: prefs },
     });
+    ledger.add({
+      userId: req.user.id,
+      tool: "health_log_updated",
+      input: { date, fields: Object.keys(req.body || {}) },
+      result: { date },
+      status: "completed",
+    }).catch(() => {});
     res.json({ success: true, entry: prefs.healthLog[date] });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2309,6 +2323,13 @@ healthRouter.delete("/log/:date", async (req, res) => {
       where: { id: req.user.id },
       data: { preferences: prefs },
     });
+    ledger.add({
+      userId: req.user.id,
+      tool: "health_log_deleted",
+      input: { date },
+      result: { date },
+      status: "completed",
+    }).catch(() => {});
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

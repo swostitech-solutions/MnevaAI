@@ -1,6 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { sendPushToUser } from '../services/pushService.js'
+import { ledger } from '../services/ledgerService.js'
 
 export const petRouter = express.Router()
 
@@ -70,6 +71,13 @@ petRouter.post('/', async (req, res) => {
     await syncPetMemory(req.user.id, prisma)
     const formatted = fmtPet(pet)
     emit(req.app.get('io'), req.user.id, 'pet:created', formatted)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'pet_created',
+      input: { name: formatted.name, species: formatted.species },
+      result: { petId: pet.id },
+      status: 'completed',
+    }).catch(() => {})
     res.status(201).json({ pet: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -105,6 +113,13 @@ petRouter.patch('/:id', async (req, res) => {
     await syncPetMemory(req.user.id, prisma)
     const formatted = fmtPet(updated)
     emit(req.app.get('io'), req.user.id, 'pet:updated', formatted)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'pet_updated',
+      input: { name: formatted.name, changedFields: Object.keys(req.body || {}) },
+      result: { petId: updated.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ pet: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -116,6 +131,13 @@ petRouter.delete('/:id', async (req, res) => {
     await prisma.pet.delete({ where: { id: req.params.id } })
     await syncPetMemory(req.user.id, prisma)
     emit(req.app.get('io'), req.user.id, 'pet:deleted', { id: req.params.id })
+    ledger.add({
+      userId: req.user.id,
+      tool: 'pet_deleted',
+      input: { name: pet.name, species: pet.species },
+      result: { petId: pet.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -150,6 +172,13 @@ petRouter.post('/:petId/reminders', async (req, res) => {
     })
     const formatted = fmtReminder(reminder)
     emit(req.app.get('io'), req.user.id, 'pet:reminder:created', { ...formatted, petName: pet.name })
+    ledger.add({
+      userId: req.user.id,
+      tool: 'pet_reminder_created',
+      input: { petName: pet.name, title: formatted.title, type: formatted.type },
+      result: { reminderId: reminder.id },
+      status: 'completed',
+    }).catch(() => {})
     res.status(201).json({ reminder: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

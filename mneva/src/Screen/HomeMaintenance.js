@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
+import DateField from './finance/DateField';
 
 const TASK_TYPES = ['Plumbing', 'Electrical', 'Cleaning', 'Painting', 'Carpentry', 'AC Service', 'Pest Control', 'Other'];
 const PRIORITY   = ['High', 'Medium', 'Low'];
@@ -177,7 +178,7 @@ export default function HomeMaintenance({ navigation }) {
           ))}
         </View>
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><FLabel styles={styles}>Due Date (YYYY-MM-DD)</FLabel><TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor={theme.placeholder} value={taskForm.dueDate} onChangeText={v => setTaskForm(f => ({ ...f, dueDate: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Due Date" value={taskForm.dueDate} onChange={v => setTaskForm(f => ({ ...f, dueDate: v.slice(0, 10) }))} /></View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><FLabel styles={styles}>Time (HH:MM)</FLabel><TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={taskForm.time} onChangeText={v => setTaskForm(f => ({ ...f, time: v }))} keyboardType="numeric" /></View>
         </View>
@@ -203,9 +204,9 @@ export default function HomeMaintenance({ navigation }) {
         <FLabel styles={styles}>Brand</FLabel>
         <TextInput style={styles.input} placeholder="e.g. LG, Samsung" placeholderTextColor={theme.placeholder} value={warrantyForm.brand} onChangeText={v => setWarrantyForm(f => ({ ...f, brand: v }))} />
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><FLabel styles={styles}>Purchase Date</FLabel><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={warrantyForm.purchaseDate} onChangeText={v => setWarrantyForm(f => ({ ...f, purchaseDate: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Purchase Date" value={warrantyForm.purchaseDate} onChange={v => setWarrantyForm(f => ({ ...f, purchaseDate: v.slice(0, 10) }))} /></View>
           <View style={{ width: 12 }} />
-          <View style={{ flex: 1 }}><FLabel styles={styles}>Expiry Date</FLabel><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={warrantyForm.expiryDate} onChangeText={v => setWarrantyForm(f => ({ ...f, expiryDate: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Expiry Date" value={warrantyForm.expiryDate} onChange={v => setWarrantyForm(f => ({ ...f, expiryDate: v.slice(0, 10) }))} /></View>
         </View>
         <SaveBtn onPress={saveWarranty} disabled={!warrantyForm.item.trim()} colors={['#D97706', '#B45309']} label="Save Warranty" styles={styles} />
       </SheetModal>
@@ -238,7 +239,7 @@ function FLabel({ children, styles }) { return <Text style={styles.fieldLabel}>{
 function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, theme, styles }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
           <View style={styles.sheetHandle} />

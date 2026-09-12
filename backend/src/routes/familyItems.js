@@ -1,6 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { sendPushToUser } from '../services/pushService.js'
+import { ledger } from '../services/ledgerService.js'
 
 export const familyItemsRouter = express.Router()
 
@@ -86,6 +87,13 @@ familyItemsRouter.post('/:domain', async (req, res) => {
     await syncFamilyMemory(req.user.id, req.params.domain, prisma)
     const formatted = fmt(item)
     emit(req.app.get('io'), req.user.id, `family:${req.params.domain}:created`, formatted)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'family_item_created',
+      input: { domain: req.params.domain, type },
+      result: { itemId: item.id },
+      status: 'completed',
+    }).catch(() => {})
     res.status(201).json({ item: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -112,6 +120,13 @@ familyItemsRouter.patch('/:domain/:id', async (req, res) => {
     await syncFamilyMemory(req.user.id, req.params.domain, prisma)
     const formatted = fmt(updated)
     emit(req.app.get('io'), req.user.id, `family:${req.params.domain}:updated`, formatted)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'family_item_updated',
+      input: { domain: req.params.domain, type: existing.type },
+      result: { itemId: updated.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ item: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -124,6 +139,13 @@ familyItemsRouter.delete('/:domain/:id', async (req, res) => {
     await prisma.familyItem.delete({ where: { id: req.params.id } })
     await syncFamilyMemory(req.user.id, req.params.domain, prisma)
     emit(req.app.get('io'), req.user.id, `family:${req.params.domain}:deleted`, { id: req.params.id })
+    ledger.add({
+      userId: req.user.id,
+      tool: 'family_item_deleted',
+      input: { domain: req.params.domain, type: existing.type },
+      result: { itemId: existing.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

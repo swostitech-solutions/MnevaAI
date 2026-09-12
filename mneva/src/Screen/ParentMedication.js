@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import DateField from './finance/DateField';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
@@ -250,7 +251,7 @@ export default function ParentMedication({ navigation }) {
 
       {/* ── Add Medication Modal ── */}
       <Modal visible={modal} transparent animationType="slide" onRequestClose={() => setModal(false)}>
-        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
@@ -336,8 +337,7 @@ export default function ParentMedication({ navigation }) {
 
               <View style={styles.rowFields}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Start Date</Text>
-                  <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={form.startDate} onChangeText={v => setField('startDate', v)} keyboardType="numeric" />
+                  <DateField label="Start Date" value={form.startDate} onChange={v => setField('startDate', v.slice(0, 10))} />
                 </View>
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>
@@ -346,8 +346,7 @@ export default function ParentMedication({ navigation }) {
                 </View>
               </View>
 
-              <Text style={styles.fieldLabel}>Next Refill Date</Text>
-              <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={form.refillDate} onChangeText={v => setField('refillDate', v)} keyboardType="numeric" />
+              <DateField label="Next Refill Date" value={form.refillDate} onChange={v => setField('refillDate', v.slice(0, 10))} />
 
               <Text style={styles.fieldLabel}>Doctor Name</Text>
               <TextInput style={styles.input} placeholder="e.g. Dr. Sharma" placeholderTextColor={theme.placeholder} value={form.doctor} onChangeText={v => setField('doctor', v)} />
@@ -368,7 +367,7 @@ export default function ParentMedication({ navigation }) {
 
       {/* ── Detail Modal ── */}
       <Modal visible={detailModal} transparent animationType="slide" onRequestClose={() => setDetailModal(false)}>
-        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setDetailModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>

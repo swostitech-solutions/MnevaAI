@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch } from '../../api/client';
 import { useTheme } from '../../context/ThemeContext';
 import { usePet } from './PetContext';
+import DateField from '../finance/DateField';
 
 const VACCINE_STATUS = ['Up to date', 'Due soon', 'Overdue'];
 const statusColor = (s, theme) => s === 'Up to date' ? theme.accent : s === 'Due soon' ? theme.warning : theme.danger;
@@ -156,9 +157,9 @@ export default function PetHealthTab({ horizontalPad, insets }) {
         <Text style={styles.fieldLabel}>Vaccine Name <Text style={styles.req}>*</Text></Text>
         <TextInput style={styles.input} placeholder="e.g. Rabies, Parvovirus" placeholderTextColor={theme.placeholder} value={vForm.name} onChangeText={v => setVForm(f => ({ ...f, name: v }))} />
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><Text style={styles.fieldLabel}>Date Given</Text><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={vForm.date} onChangeText={v => setVForm(f => ({ ...f, date: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Date Given" value={vForm.date} onChange={v => setVForm(f => ({ ...f, date: v.slice(0, 10) }))} /></View>
           <View style={{ width: 12 }} />
-          <View style={{ flex: 1 }}><Text style={styles.fieldLabel}>Next Due</Text><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={vForm.next} onChangeText={v => setVForm(f => ({ ...f, next: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Next Due" value={vForm.next} onChange={v => setVForm(f => ({ ...f, next: v.slice(0, 10) }))} /></View>
         </View>
         <Text style={styles.fieldLabel}>Status</Text>
         <View style={styles.chipRow}>
@@ -181,9 +182,9 @@ export default function PetHealthTab({ horizontalPad, insets }) {
           <View style={{ flex: 1 }}><Text style={styles.fieldLabel}>Frequency</Text><TextInput style={styles.input} placeholder="e.g. Daily" placeholderTextColor={theme.placeholder} value={mForm.freq} onChangeText={v => setMForm(f => ({ ...f, freq: v }))} /></View>
         </View>
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><Text style={styles.fieldLabel}>Start Date</Text><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={mForm.start} onChangeText={v => setMForm(f => ({ ...f, start: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Start Date" value={mForm.start} onChange={v => setMForm(f => ({ ...f, start: v.slice(0, 10) }))} /></View>
           <View style={{ width: 12 }} />
-          <View style={{ flex: 1 }}><Text style={styles.fieldLabel}>End Date</Text><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={mForm.end} onChangeText={v => setMForm(f => ({ ...f, end: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="End Date" value={mForm.end} onChange={v => setMForm(f => ({ ...f, end: v.slice(0, 10) }))} /></View>
         </View>
         <SaveBtn onPress={addMed} disabled={!mForm.name.trim()} colors={['#E0546E', '#C8405A']} label="Save Medication" styles={styles} />
       </SheetModal>
@@ -197,9 +198,9 @@ export default function PetHealthTab({ horizontalPad, insets }) {
         <Text style={styles.fieldLabel}>Phone</Text>
         <TextInput style={styles.input} placeholder="+91 98765 43210" placeholderTextColor={theme.placeholder} value={vetForm.phone} onChangeText={v => setVetForm(f => ({ ...f, phone: v }))} keyboardType="phone-pad" />
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><Text style={styles.fieldLabel}>Last Visit</Text><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={vetForm.lastVisit} onChangeText={v => setVetForm(f => ({ ...f, lastVisit: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Last Visit" value={vetForm.lastVisit} onChange={v => setVetForm(f => ({ ...f, lastVisit: v.slice(0, 10) }))} /></View>
           <View style={{ width: 12 }} />
-          <View style={{ flex: 1 }}><Text style={styles.fieldLabel}>Next Visit</Text><TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder} value={vetForm.nextVisit} onChangeText={v => setVetForm(f => ({ ...f, nextVisit: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Next Visit" value={vetForm.nextVisit} onChange={v => setVetForm(f => ({ ...f, nextVisit: v.slice(0, 10) }))} /></View>
         </View>
         <SaveBtn onPress={saveVet} disabled={!vetForm.name.trim()} colors={['#4FA6E8', '#2E86C8']} label="Save Vet Info" styles={styles} />
       </SheetModal>
@@ -235,7 +236,7 @@ function EmptyRow({ icon, text, theme, styles }) {
 function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
           <View style={styles.sheetHandle} />

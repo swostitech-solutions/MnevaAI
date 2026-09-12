@@ -114,7 +114,7 @@ function LogDataSheet({ visible, onClose, onSynced, bottomInset, theme, styles }
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.sheetOverlay} />
       </TouchableWithoutFeedback>
-      <KeyboardAvoidingView style={styles.sheetWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.sheetWrap} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.sheetContent, { paddingBottom: 20 + bottomInset }]}>
           <View style={styles.sheetHandle} />
 

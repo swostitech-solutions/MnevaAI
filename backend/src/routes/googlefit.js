@@ -2,6 +2,7 @@ import express from 'express'
 import { createFitAuthUrl, exchangeFitCode, saveFitTokens, clearFitTokens, getHealthData } from '../services/googleFit.service.js'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
+import { ledger } from '../services/ledgerService.js'
 
 const router = express.Router()
 
@@ -41,6 +42,13 @@ export async function googleFitCallbackHandler(req, res) {
 
     await saveFitTokens(user.id, tokens, email)
     logger.info(`Google Fit connected for user ${user.id}`)
+    ledger.add({
+      userId: user.id,
+      tool: 'account_connected',
+      input: { service: 'googleFit' },
+      result: { email },
+      status: 'completed',
+    }).catch(() => {})
     // Support mobile deep link: if state contains platform=mobile, redirect to app scheme
     const isMobile = decoded.platform === 'mobile'
     const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
@@ -86,6 +94,13 @@ router.get('/status', async (req, res) => {
 router.post('/disconnect', async (req, res) => {
   try {
     await clearFitTokens(req.user.id)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'account_disconnected',
+      input: { service: 'googleFit' },
+      result: {},
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

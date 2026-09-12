@@ -53,6 +53,13 @@ export async function calendarCallbackHandler(req, res) {
 
     await saveCalendarTokens(user.id, tokens, calendarEmail)
     logger.info('Calendar tokens saved', { userId: user.id, hasRefresh: !!tokens.refresh_token, tokenKeys: Object.keys(tokens || {}) })
+    ledger.add({
+      userId: user.id,
+      tool: 'account_connected',
+      input: { service: 'calendar' },
+      result: { email: calendarEmail },
+      status: 'completed',
+    }).catch(() => {})
     const isMobile = decoded.platform === 'mobile'
     const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
     if (isMobile) return res.redirect(`${mobileScheme}://settings?calendar=connected`)
@@ -94,6 +101,13 @@ router.get('/status', async (req, res) => {
 router.post('/disconnect', async (req, res) => {
   try {
     await clearCalendarConnection(req.user.id)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'account_disconnected',
+      input: { service: 'calendar' },
+      result: {},
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })

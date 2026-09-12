@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
+import DateField from './finance/DateField';
 
 const OCCASION_TYPES = ['Birthday', 'Anniversary', 'Festival', 'Wedding', 'Graduation', 'Baby Shower', 'Other'];
 const GIFT_STATUS    = ['Idea', 'Ordered', 'Delivered', 'Given'];
@@ -157,7 +158,7 @@ export default function CelebrationGifting({ navigation }) {
         <FLabel styles={styles}>Person / Name *</FLabel>
         <TextInput style={styles.input} placeholder="e.g. Mom's Birthday" placeholderTextColor={theme.placeholder} value={occForm.person} onChangeText={v => setOccForm(f => ({ ...f, person: v }))} />
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><FLabel styles={styles}>Date (YYYY-MM-DD)</FLabel><TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor={theme.placeholder} value={occForm.date} onChangeText={v => setOccForm(f => ({ ...f, date: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Date" value={occForm.date} onChange={v => setOccForm(f => ({ ...f, date: v.slice(0, 10) }))} /></View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><FLabel styles={styles}>Time (HH:MM)</FLabel><TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={occForm.time} onChangeText={v => setOccForm(f => ({ ...f, time: v }))} keyboardType="numeric" /></View>
         </View>
@@ -216,7 +217,7 @@ function FLabel({ children, styles }) { return <Text style={styles.fieldLabel}>{
 function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
           <View style={styles.sheetHandle} />

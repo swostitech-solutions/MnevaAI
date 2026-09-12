@@ -429,7 +429,7 @@ export default function LifeOps({ navigation }) {
 
       {/* Cab Modal */}
       <Modal visible={cabModal} transparent animationType="slide" onRequestClose={() => setCabModal(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setCabModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
@@ -556,7 +556,7 @@ export default function LifeOps({ navigation }) {
 
       {/* Flight Modal */}
       <Modal visible={flightModal} transparent animationType="slide" onRequestClose={() => setFlightModal(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setFlightModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
@@ -787,7 +787,7 @@ export default function LifeOps({ navigation }) {
 
       {/* Hotel Modal */}
       <Modal visible={hotelModal} transparent animationType="slide" onRequestClose={() => setHotelModal(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setHotelModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
@@ -1035,7 +1035,7 @@ export default function LifeOps({ navigation }) {
 
       {/* Track Orders Modal */}
       <Modal visible={trackModal} transparent animationType="slide" onRequestClose={() => setTrackModal(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setTrackModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
@@ -1110,7 +1110,7 @@ export default function LifeOps({ navigation }) {
 
       {/* Movie Booking Modal */}
       <Modal visible={movieModal} transparent animationType="slide" onRequestClose={() => setMovieModal(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setMovieModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
@@ -1271,7 +1271,7 @@ export default function LifeOps({ navigation }) {
 
       {/* Food Modal */}
       <Modal visible={foodModal} transparent animationType="slide" onRequestClose={() => setFoodModal(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setFoodModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>

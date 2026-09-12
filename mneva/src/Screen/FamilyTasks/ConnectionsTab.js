@@ -262,7 +262,7 @@ function RequestSheet({ visible, onClose, insets, onSubmit, theme, styles }) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={[styles.sheet, { paddingBottom: 16 + insets.bottom }]}>
           <View style={styles.sheetHandle} />

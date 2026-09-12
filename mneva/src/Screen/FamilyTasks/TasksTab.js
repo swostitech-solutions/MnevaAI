@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { useFamilyTask, TASK_STATUSES, PRIORITIES, CATEGORIES, RECURRENCES } from './FamilyTaskContext';
+import DateField from '../finance/DateField';
 
 const FILTERS = ['All', 'Draft', 'Pending', 'In Progress', 'Completed'];
 const FILTER_MAP = {
@@ -258,7 +259,7 @@ function CreateTaskModal({ visible, onClose, insets, connections, theme, styles 
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={[styles.sheet, { paddingBottom: 16 + insets.bottom }]}>
           <View style={styles.sheetHandle} />
@@ -357,8 +358,7 @@ function CreateTaskModal({ visible, onClose, insets, connections, theme, styles 
             {/* Due date + Recurrence side by side */}
             <View style={styles.twoCol}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Due Date</Text>
-                <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor={theme.placeholder} value={dueDate} onChangeText={setDueDate} />
+                <DateField label="Due Date" value={dueDate} onChange={v => setDueDate(v.slice(0, 10))} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Repeat</Text>

@@ -10,6 +10,7 @@ import { apiFetch } from '../../api/client';
 import { useTheme } from '../../context/ThemeContext';
 import { usePet } from './PetContext';
 import { useSocket } from '../../services/socket';
+import DateField from '../finance/DateField';
 
 const REMINDER_TYPES = ['Vaccination', 'Medication', 'Grooming', 'Vet Appointment', 'Feeding'];
 const GROOM_TYPES    = ['Bath', 'Hair Trimming', 'Nail Trimming', 'Dental Care', 'Ear Cleaning'];
@@ -297,15 +298,11 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         </View>
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Last Done</Text>
-            <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder}
-              value={groomForm.lastDate} onChangeText={v => setGroomForm(f => ({ ...f, lastDate: v }))} keyboardType="numeric" />
+            <DateField label="Last Done" value={groomForm.lastDate} onChange={v => setGroomForm(f => ({ ...f, lastDate: v.slice(0, 10) }))} />
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Next Due</Text>
-            <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.placeholder}
-              value={groomForm.nextDate} onChangeText={v => setGroomForm(f => ({ ...f, nextDate: v }))} keyboardType="numeric" />
+            <DateField label="Next Due" value={groomForm.nextDate} onChange={v => setGroomForm(f => ({ ...f, nextDate: v.slice(0, 10) }))} />
           </View>
         </View>
         <Text style={styles.fieldLabel}>Notes</Text>
@@ -365,9 +362,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
           value={remForm.title} onChangeText={v => setRemForm(f => ({ ...f, title: v }))} />
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Date (YYYY-MM-DD)</Text>
-            <TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor={theme.placeholder}
-              value={remForm.date} onChangeText={v => setRemForm(f => ({ ...f, date: v }))} keyboardType="numeric" />
+            <DateField label="Date" value={remForm.date} onChange={v => setRemForm(f => ({ ...f, date: v.slice(0, 10) }))} />
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
@@ -409,7 +404,7 @@ function EmptyRow({ icon, text, theme, styles }) {
 function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
           <View style={styles.sheetHandle} />

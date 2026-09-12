@@ -1,6 +1,7 @@
 import express from 'express'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
+import { ledger } from '../services/ledgerService.js'
 
 const router = express.Router()
 
@@ -61,6 +62,13 @@ export async function gdriveCallbackHandler(req, res) {
     const { prisma } = await import('../config/prisma.js')
     await prisma.user.update({ where: { id: user.id }, data: { preferences: prefs } })
     logger.info(`Google Drive connected for user ${user.id}`)
+    ledger.add({
+      userId: user.id,
+      tool: 'account_connected',
+      input: { service: 'drive' },
+      result: { email },
+      status: 'completed',
+    }).catch(() => {})
 
     if (decoded.platform === 'mobile') {
       const fromParam = decoded.from ? `&from=${decoded.from}` : ''
@@ -116,6 +124,13 @@ router.post('/disconnect', async (req, res) => {
     delete prefs.googleDrive
     const { prisma } = await import('../config/prisma.js')
     await prisma.user.update({ where: { id: req.user.id }, data: { preferences: prefs } })
+    ledger.add({
+      userId: req.user.id,
+      tool: 'account_disconnected',
+      input: { service: 'drive' },
+      result: {},
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

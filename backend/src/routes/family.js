@@ -159,6 +159,13 @@ familyRouter.post('/tasks', async (req, res) => {
       // the screen that just created this.
       sendPushToUser(assigneeId, { title: 'New family task', body: title, data: { type: 'family_task', taskId: task.id } })
     }
+    ledger.add({
+      userId: myId,
+      tool: 'family_task_created',
+      input: { title, assigneeId },
+      result: { taskId: task.id },
+      status: 'completed',
+    }).catch(() => {})
     res.status(201).json({ task: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -179,6 +186,13 @@ familyRouter.patch('/tasks/:id/status', async (req, res) => {
     const io = req.app.get('io')
     emit(io, task.creatorId,  'family:task:updated', formatted)
     emit(io, task.assigneeId, 'family:task:updated', formatted)
+    ledger.add({
+      userId: myId,
+      tool: 'family_task_status_changed',
+      input: { status, title: task.title },
+      result: { taskId: task.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ task: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -232,6 +246,13 @@ familyRouter.delete('/tasks/:id', async (req, res) => {
     const io = req.app.get('io')
     emit(io, task.creatorId,  'family:task:deleted', { id: req.params.id })
     emit(io, task.assigneeId, 'family:task:deleted', { id: req.params.id })
+    ledger.add({
+      userId: myId,
+      tool: 'family_task_deleted',
+      input: { title: task.title },
+      result: { taskId: task.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

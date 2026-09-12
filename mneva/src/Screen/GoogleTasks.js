@@ -93,6 +93,20 @@ export default function GoogleTasksScreen({ navigation }) {
     } catch {}
   };
 
+  // Google's /list only ever returns non-completed tasks (showCompleted:
+  // false), so once this succeeds the task won't come back on the next
+  // refresh — removing it locally now just avoids the visual lag of waiting
+  // for that refresh.
+  const handleComplete = async (item) => {
+    if (!item.listId) return;
+    setTasks(prev => prev.filter(t => t.id !== item.id));
+    try {
+      await apiFetch(`/api/gtasks/${item.listId}/${item.id}/complete`, { method: 'PATCH' });
+    } catch {
+      loadTasks();
+    }
+  };
+
   if (connected === false) {
     return (
       <SafeAreaView style={styles.safe} edges={['top','left','right']}>
@@ -150,9 +164,14 @@ export default function GoogleTasksScreen({ navigation }) {
             const due = item.due ? new Date(item.due).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : null;
             return (
               <View style={[styles.taskRow, isDone && styles.taskRowDone]}>
-                <View style={[styles.taskCheck, isDone && styles.taskCheckDone]}>
+                <TouchableOpacity
+                  style={[styles.taskCheck, isDone && styles.taskCheckDone]}
+                  onPress={() => !isDone && handleComplete(item)}
+                  disabled={isDone}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
                   {isDone && <Feather name="check" size={12} color="#FFFFFF" />}
-                </View>
+                </TouchableOpacity>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.taskTitle, isDone && styles.taskTitleDone]} numberOfLines={2}>{item.title}</Text>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 3 }}>

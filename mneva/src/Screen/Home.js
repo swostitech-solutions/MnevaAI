@@ -6926,7 +6926,7 @@ function QuickCaptureSheet({ visible, onClose, onSubmit, bottomInset, theme, sty
     >
       <KeyboardAvoidingView
         style={styles.sheetOverlay}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <TouchableWithoutFeedback onPress={handleClose}>
           <View style={StyleSheet.absoluteFill} />

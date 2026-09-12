@@ -384,7 +384,7 @@ export default function SportsDiscovery({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
 
       {/* ── Header ── */}
       <View style={styles.header}>

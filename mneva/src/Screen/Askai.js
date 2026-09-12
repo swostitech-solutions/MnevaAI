@@ -382,7 +382,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.modalOverlay} />
       </TouchableWithoutFeedback>
-      <KeyboardAvoidingView style={styles.modalSheet} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={styles.modalSheet} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={[styles.modalContent, { paddingBottom: 20 + bottomInset }]}>
           <View style={styles.sheetHandle} />
 

@@ -97,7 +97,7 @@ export default function VerifyOtp({ route, navigation }) {
   return (
     <KeyboardAvoidingView
       style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <StatusBar style={theme.statusBarStyle} />
 

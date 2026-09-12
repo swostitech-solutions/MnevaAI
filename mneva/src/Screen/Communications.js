@@ -194,7 +194,7 @@ export default function Communications({ navigation }) {
     const color = avatarColor(thread.from);
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
           {/* Thread header */}
           <View style={[styles.threadHeader, { paddingHorizontal: hPad }]}>
@@ -213,7 +213,7 @@ export default function Communications({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <FlatList
               data={[{ key: 'content' }]}
               keyExtractor={i => i.key}

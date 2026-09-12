@@ -1,6 +1,7 @@
 import express from 'express'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
+import { ledger } from '../services/ledgerService.js'
 
 const router = express.Router()
 
@@ -56,6 +57,13 @@ export async function gtasksCallbackHandler(req, res) {
     const { prisma } = await import('../config/prisma.js')
     await prisma.user.update({ where: { id: user.id }, data: { preferences: prefs } })
     logger.info(`Google Tasks connected for user ${user.id}`)
+    ledger.add({
+      userId: user.id,
+      tool: 'account_connected',
+      input: { service: 'tasks' },
+      result: { email },
+      status: 'completed',
+    }).catch(() => {})
 
     if (decoded.platform === 'mobile') return res.redirect(`${mobileScheme}://settings?tasks=connected`)
     return res.redirect(`${frontendUrl}/settings?tasks=connected`)
@@ -104,6 +112,13 @@ router.post('/disconnect', async (req, res) => {
     delete prefs.googleTasks
     const { prisma } = await import('../config/prisma.js')
     await prisma.user.update({ where: { id: req.user.id }, data: { preferences: prefs } })
+    ledger.add({
+      userId: req.user.id,
+      tool: 'account_disconnected',
+      input: { service: 'tasks' },
+      result: {},
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -126,9 +141,39 @@ router.get('/list', async (req, res) => {
     const allTasks = []
     for (const list of lists.data.items || []) {
       const result = await tasks.tasks.list({ tasklist: list.id, maxResults: 20, showCompleted: false })
-      allTasks.push(...(result.data.items || []).map(t => ({ ...t, listTitle: list.title })))
+      allTasks.push(...(result.data.items || []).map(t => ({ ...t, listTitle: list.title, listId: list.id })))
     }
     res.json({ tasks: allTasks })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+router.patch('/:listId/:taskId/complete', async (req, res) => {
+  try {
+    const user = await userStore.getById(req.user.id)
+    const cfg = user?.preferences?.googleTasks
+    if (!cfg?.tokens) return res.status(409).json({ error: 'tasks_not_connected' })
+
+    const { google } = await import('googleapis')
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      getRedirectUri(),
+    )
+    oauth2Client.setCredentials(cfg.tokens)
+    const tasks = google.tasks({ version: 'v1', auth: oauth2Client })
+    const result = await tasks.tasks.patch({
+      tasklist: req.params.listId,
+      task: req.params.taskId,
+      requestBody: { status: 'completed' },
+    })
+    ledger.add({
+      userId: req.user.id,
+      tool: 'google_task_completed',
+      input: { taskId: req.params.taskId, title: result.data.title },
+      result: { status: 'completed' },
+      status: 'completed',
+    }).catch(() => {})
+    res.json({ task: result.data })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 

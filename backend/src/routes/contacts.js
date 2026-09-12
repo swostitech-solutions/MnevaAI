@@ -5,6 +5,7 @@ import {
 } from '../services/googleContacts.service.js';
 import { userStore } from '../models/userStore.js';
 import { logger } from '../config/logger.js';
+import { ledger } from '../services/ledgerService.js';
 
 const router = express.Router();
 
@@ -47,6 +48,13 @@ export async function googleContactsCallbackHandler(req, res) {
 
     await saveContactsTokens(user.id, tokens, email);
     logger.info(`Google Contacts connected for user ${user.id}`);
+    ledger.add({
+      userId: user.id,
+      tool: 'account_connected',
+      input: { service: 'contacts' },
+      result: { email },
+      status: 'completed',
+    }).catch(() => {});
 
     // Emit real-time socket event so mobile/web updates instantly
     try {
@@ -94,6 +102,13 @@ router.get('/status', async (req, res) => {
 router.post('/disconnect', async (req, res) => {
   try {
     await clearContactsTokens(req.user.id);
+    ledger.add({
+      userId: req.user.id,
+      tool: 'account_disconnected',
+      input: { service: 'contacts' },
+      result: {},
+      status: 'completed',
+    }).catch(() => {});
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

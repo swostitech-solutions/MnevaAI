@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
+import DateField from './finance/DateField';
 
 const ACTIVITY_TYPES = ['School', 'Sports', 'Music', 'Dance', 'Art', 'Tuition', 'Other'];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -203,7 +204,7 @@ export default function ChildrenActivities({ navigation }) {
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}><FLabel styles={styles}>Child</FLabel><TextInput style={styles.input} placeholder="Child's name" placeholderTextColor={theme.placeholder} value={eventForm.child} onChangeText={v => setEventForm(f => ({ ...f, child: v }))} /></View>
           <View style={{ width: 12 }} />
-          <View style={{ flex: 1 }}><FLabel styles={styles}>Date (YYYY-MM-DD)</FLabel><TextInput style={styles.input} placeholder="2025-08-15" placeholderTextColor={theme.placeholder} value={eventForm.date} onChangeText={v => setEventForm(f => ({ ...f, date: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><DateField label="Date" value={eventForm.date} onChange={v => setEventForm(f => ({ ...f, date: v.slice(0, 10) }))} /></View>
         </View>
         <FLabel styles={styles}>Time (HH:MM) — for reminder</FLabel>
         <TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={eventForm.time} onChangeText={v => setEventForm(f => ({ ...f, time: v }))} keyboardType="numeric" />
@@ -240,7 +241,7 @@ function FLabel({ children, styles }) { return <Text style={styles.fieldLabel}>{
 function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, theme, styles }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
           <View style={styles.sheetHandle} />

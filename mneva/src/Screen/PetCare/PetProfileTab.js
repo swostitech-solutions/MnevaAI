@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch } from '../../api/client';
 import { useTheme } from '../../context/ThemeContext';
 import { usePet } from './PetContext';
+import DateField from '../finance/DateField';
 
 const SPECIES    = ['Dog', 'Cat', 'Bird', 'Rabbit', 'Fish', 'Other'];
 const SEX        = ['Male', 'Female'];
@@ -164,7 +165,7 @@ export default function PetProfileTab({ horizontalPad, insets }) {
       </ScrollView>
 
       <Modal visible={modal} transparent animationType="slide" onRequestClose={() => setModal(false)}>
-        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableWithoutFeedback onPress={() => setModal(false)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
@@ -206,8 +207,7 @@ export default function PetProfileTab({ horizontalPad, insets }) {
 
               <View style={styles.rowFields}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Date of Birth</Text>
-                  <TextInput style={styles.input} placeholder="DD/MM/YYYY" placeholderTextColor={theme.faint} value={form.dob} onChangeText={v => setField('dob', v)} keyboardType="numeric" />
+                  <DateField label="Date of Birth" value={form.dob} onChange={v => setField('dob', v.slice(0, 10))} />
                 </View>
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>

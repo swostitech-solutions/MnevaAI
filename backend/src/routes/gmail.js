@@ -3,6 +3,7 @@ import { decodeGmailState, createGmailAuthUrl, exchangeCodeForTokens, saveGmailT
 import { saveCalendarTokens, clearCalendarConnection } from '../services/calendar.service.js'
 import { logger } from '../config/logger.js'
 import { userStore } from '../models/userStore.js'
+import { ledger } from '../services/ledgerService.js'
 
 const router = express.Router()
 
@@ -41,6 +42,13 @@ export async function gmailCallbackHandler(req, res) {
     await saveGmailTokens(user.id, tokens, gmailEmail)
     await saveCalendarTokens(user.id, tokens, gmailEmail)
     logger.info('Combined Gmail+Calendar tokens saved for user', { userId: user.id })
+    ledger.add({
+      userId: user.id,
+      tool: 'account_connected',
+      input: { service: 'gmail' },
+      result: { email: gmailEmail },
+      status: 'completed',
+    }).catch(() => {})
 
     const isMobile = decoded.platform === 'mobile'
     const mobileScheme = process.env.MOBILE_APP_SCHEME || 'mneva'
@@ -88,6 +96,13 @@ router.post('/disconnect', async (req, res) => {
   try {
     await clearGmailConnection(req.user.id)
     await clearCalendarConnection(req.user.id)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'account_disconnected',
+      input: { service: 'gmail' },
+      result: {},
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })

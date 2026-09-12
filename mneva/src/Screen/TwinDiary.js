@@ -97,6 +97,22 @@ const TOOL_ICONS = {
   parent_medication_deleted: 'trash-2',
   trust_level_changed: 'sliders',
   autonomy_toggle_changed: 'toggle-right',
+  family_task_created: 'plus-circle',
+  family_task_status_changed: 'check-circle',
+  family_task_deleted: 'trash-2',
+  pet_created: 'plus-circle',
+  pet_updated: 'edit-2',
+  pet_deleted: 'trash-2',
+  pet_reminder_created: 'bell',
+  family_item_created: 'plus-circle',
+  family_item_updated: 'edit-2',
+  family_item_deleted: 'trash-2',
+  health_data_synced: 'activity',
+  health_log_updated: 'edit-2',
+  health_log_deleted: 'trash-2',
+  account_connected: 'link',
+  account_disconnected: 'unlock',
+  google_task_completed: 'check-square',
 };
 
 const TOOL_COLORS = {
@@ -121,6 +137,22 @@ const TOOL_COLORS = {
   parent_medication_deleted: '#E0546E',
   trust_level_changed: '#615FF8',
   autonomy_toggle_changed: '#4FA6E8',
+  family_task_created: '#9B72FF',
+  family_task_status_changed: '#9B72FF',
+  family_task_deleted: '#E0546E',
+  pet_created: '#9B72FF',
+  pet_updated: '#9B72FF',
+  pet_deleted: '#E0546E',
+  pet_reminder_created: '#9B72FF',
+  family_item_created: '#9B72FF',
+  family_item_updated: '#9B72FF',
+  family_item_deleted: '#E0546E',
+  health_data_synced: '#E0546E',
+  health_log_updated: '#E0546E',
+  health_log_deleted: '#E0546E',
+  account_connected: '#615FF8',
+  account_disconnected: '#4FA6E8',
+  google_task_completed: '#4FA6E8',
 };
 
 const TOOL_BG = {
@@ -145,18 +177,35 @@ const TOOL_BG = {
   parent_medication_deleted: '#FCEAED',
   trust_level_changed: '#EEEDFE',
   autonomy_toggle_changed: '#EAF3FD',
+  family_task_created: '#F3EFFE',
+  family_task_status_changed: '#F3EFFE',
+  family_task_deleted: '#FCEAED',
+  pet_created: '#F3EFFE',
+  pet_updated: '#F3EFFE',
+  pet_deleted: '#FCEAED',
+  pet_reminder_created: '#F3EFFE',
+  family_item_created: '#F3EFFE',
+  family_item_updated: '#F3EFFE',
+  family_item_deleted: '#FCEAED',
+  health_data_synced: '#FCEAED',
+  health_log_updated: '#FCEAED',
+  health_log_deleted: '#FCEAED',
+  account_connected: '#EEEDFE',
+  account_disconnected: '#EAF3FD',
+  google_task_completed: '#EAF3FD',
 };
 
 // Product-domain sections, in display order. "security" (Security & Trust)
 // is rendered separately, above these, since it's a meta-category rather
 // than a product domain — see backend/src/services/ledgerTaxonomy.js.
-const DOMAIN_ORDER = ['communications', 'finance', 'lifeops', 'health', 'family', 'other'];
+const DOMAIN_ORDER = ['communications', 'finance', 'lifeops', 'health', 'family', 'workspace', 'other'];
 const DOMAIN_META = {
   communications: { label: 'Communications', subtitle: 'Emails and messages sent on your behalf', icon: 'mail' },
   finance: { label: 'Finance', subtitle: 'Payments and money actions', icon: 'dollar-sign' },
   lifeops: { label: 'Life Operations', subtitle: 'Bookings, reminders and scheduling', icon: 'navigation' },
   health: { label: 'Health', subtitle: 'Health tracking actions', icon: 'heart' },
   family: { label: 'Family', subtitle: 'Family and care updates', icon: 'users' },
+  workspace: { label: 'Google Workspace', subtitle: 'Actions taken in your connected Google apps', icon: 'briefcase' },
   other: { label: 'Other', subtitle: 'Everything else', icon: 'zap' },
 };
 function domainColor(domain, theme) {
@@ -166,6 +215,7 @@ function domainColor(domain, theme) {
     lifeops: theme.warning,
     health: theme.danger,
     family: theme.accentAlt,
+    workspace: theme.info,
     other: theme.muted,
   }[domain] || theme.muted;
 }
@@ -184,6 +234,7 @@ const AUTONOMY_STAGE_META = {
 
 const TRUST_LEVEL_NAMES = ['', 'Observe', 'Suggest', 'Draft & Prepare', 'Act'];
 const AUTONOMY_TOGGLE_LABELS = { finance: 'Finance', communications: 'Communications', health: 'Health', lifeops: 'Life Ops' };
+const CONNECTED_SERVICE_LABELS = { gmail: 'Gmail', calendar: 'Calendar', drive: 'Google Drive', contacts: 'Contacts', googleFit: 'Google Fit', tasks: 'Google Tasks' };
 
 // A plain-language line for Security & Trust entries — these are account
 // setting changes, not AI actions, so they get a description instead of the
@@ -200,6 +251,10 @@ function describeSecurityEntry(tool, inputData) {
       `${AUTONOMY_TOGGLE_LABELS[key] || key} autonomy ${v?.to ? 'turned on' : 'turned off'}`
     );
     return parts.join(', ') || 'Autonomy settings updated';
+  }
+  if (tool === 'account_connected' || tool === 'account_disconnected') {
+    const service = CONNECTED_SERVICE_LABELS[inputData.service] || inputData.service || 'An account';
+    return tool === 'account_connected' ? `${service} connected` : `${service} disconnected`;
   }
   return (tool || '').replace(/_/g, ' ');
 }

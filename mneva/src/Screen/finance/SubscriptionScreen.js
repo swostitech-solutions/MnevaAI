@@ -146,7 +146,7 @@ export default function SubscriptionScreen({ navigation }) {
       </View>
 
       {showForm ? (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>BASIC INFORMATION</Text>
             <Text style={styles.fieldLabel}>Subscription Name <Text style={styles.required}>*</Text></Text>

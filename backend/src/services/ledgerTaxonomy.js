@@ -15,6 +15,7 @@ export const DOMAIN_LABELS = {
   health: 'Health',
   family: 'Family',
   security: 'Security & Trust',
+  workspace: 'Google Workspace',
 }
 
 export const AUTONOMY_STAGES = {
@@ -36,8 +37,24 @@ const TOOL_META = {
   parent_medication_created: { domain: 'family', autonomyStage: null },
   parent_medication_updated: { domain: 'family', autonomyStage: null },
   parent_medication_deleted: { domain: 'family', autonomyStage: null },
+  family_task_created: { domain: 'family', autonomyStage: null },
+  family_task_status_changed: { domain: 'family', autonomyStage: null },
+  family_task_deleted: { domain: 'family', autonomyStage: null },
+  pet_created: { domain: 'family', autonomyStage: null },
+  pet_updated: { domain: 'family', autonomyStage: null },
+  pet_deleted: { domain: 'family', autonomyStage: null },
+  pet_reminder_created: { domain: 'family', autonomyStage: null },
+  family_item_created: { domain: 'family', autonomyStage: null },
+  family_item_updated: { domain: 'family', autonomyStage: null },
+  family_item_deleted: { domain: 'family', autonomyStage: null },
+  health_data_synced: { domain: 'health', autonomyStage: null },
+  health_log_updated: { domain: 'health', autonomyStage: null },
+  health_log_deleted: { domain: 'health', autonomyStage: null },
   trust_level_changed: { domain: 'security', autonomyStage: null },
   autonomy_toggle_changed: { domain: 'security', autonomyStage: null },
+  account_connected: { domain: 'security', autonomyStage: null },
+  account_disconnected: { domain: 'security', autonomyStage: null },
+  google_task_completed: { domain: 'workspace', autonomyStage: null },
 }
 
 export function getToolMeta(tool) {
