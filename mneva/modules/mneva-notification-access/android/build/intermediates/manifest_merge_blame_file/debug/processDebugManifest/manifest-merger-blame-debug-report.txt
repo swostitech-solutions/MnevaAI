@@ -1,0 +1,39 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.swostitech.mneva.notificationaccess" >
+4
+5    <uses-sdk android:minSdkVersion="23" />
+6    <!--
+7     Android only grants this service access after the user enables it in
+8       Settings > Notification access. It does not request notification data
+9       through a normal runtime permission.
+10    -->
+11    <application>
+11-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:5:3-18:17
+12        <service
+12-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:6:5-17:15
+13            android:name="com.swostitech.mneva.notificationaccess.MnevaNotificationListenerService"
+13-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:7:7-55
+14            android:exported="true"
+14-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:10:7-30
+15            android:label="Mneva notification analysis"
+15-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:8:7-50
+16            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" >
+16-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:9:7-81
+17            <intent-filter>
+17-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:11:7-13:23
+18                <action android:name="android.service.notification.NotificationListenerService" />
+18-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:12:9-91
+18-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:12:17-88
+19            </intent-filter>
+20
+21            <meta-data
+21-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:14:7-16:50
+22                android:name="android.service.notification.default_filter_types"
+22-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:15:9-73
+23                android:value="conversations|alerting" />
+23-->/Users/suryakantabehera/Desktop/mneva-prod/mneva/modules/mneva-notification-access/android/src/main/AndroidManifest.xml:16:9-47
+24        </service>
+25    </application>
+26
+27</manifest>

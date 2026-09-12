@@ -5,6 +5,10 @@ import { body, validationResult } from 'express-validator'
 import { toPublicUser, userStore } from '../models/userStore.js'
 import { prisma } from '../config/prisma.js'
 import { sendOtpEmail } from '../services/email.service.js'
+import { qdrantService } from '../services/qdrant.service.js'
+import { getRedisClient } from '../config/redis.js'
+import { deletePersistedFile } from '../controllers/document.controller.js'
+import { logger } from '../config/logger.js'
 
 const router = express.Router()
 const SECRET = process.env.JWT_SECRET
@@ -221,6 +225,51 @@ router.get('/me', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' })
     res.json(toPublicUser(user))
   } catch { res.status(401).json({ error: 'Invalid token' }) }
+})
+
+// ── Delete account ───────────────────────────────────────────────────────────
+// Every userId foreign key in the schema is declared with onDelete: Cascade,
+// so prisma.user.delete alone removes every row referencing this account
+// (tasks, family data, finance records, notifications, the signed ledger,
+// etc). What cascade can't reach — files on disk/S3 and vector embeddings in
+// Qdrant, since those live outside Postgres — is cleaned up explicitly here
+// first, using the same helpers already used for single-document deletion.
+router.delete('/account', async (req, res) => {
+  const h = req.headers.authorization
+  if (!h) return res.status(401).json({ error: 'No token' })
+  try {
+    const d = jwt.verify(h.split(' ')[1], SECRET)
+    const user = await prisma.user.findUnique({ where: { id: d.id } })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const documents = await prisma.document.findMany({
+      where: { userId: d.id },
+      select: { filePath: true },
+    })
+    for (const doc of documents) {
+      if (doc.filePath) await deletePersistedFile(doc.filePath)
+    }
+
+    await qdrantService.deleteByFilter('mneva_memory', {
+      must: [{ key: 'userId', match: { value: d.id } }],
+    }).catch(() => {})
+
+    const redis = getRedisClient()
+    if (redis) {
+      await redis.del(`user:${d.id}:memory:recent`).catch(() => {})
+      await redis.del(`session:${d.id}`).catch(() => {})
+    }
+
+    await prisma.user.delete({ where: { id: d.id } })
+
+    logger.info(`Account deleted: ${d.id}`)
+    res.json({ success: true })
+  } catch (err) {
+    if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Invalid token' })
+    }
+    res.status(500).json({ error: err.message })
+  }
 })
 
 export default router

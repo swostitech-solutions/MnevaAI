@@ -47,7 +47,7 @@ async function persistFile(file) {
   return localPath
 }
 
-async function deletePersistedFile(filePath) {
+export async function deletePersistedFile(filePath) {
   if (!filePath) return
   if (filePath.startsWith('s3://')) {
     const s3 = await getS3()

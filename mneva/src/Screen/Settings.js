@@ -106,10 +106,17 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
           text: 'Delete', style: 'destructive',
           onPress: async () => {
             try {
-              await apiFetch('/api/auth/delete-account', { method: 'DELETE' });
-            } catch {}
-            await clearAuth();
-            navigation?.reset?.({ index: 0, routes: [{ name: 'Onboarding' }] });
+              // This used to call a route that didn't exist and swallow the
+              // resulting error, so tapping Delete always logged the user out
+              // locally while their account and data stayed on the server
+              // untouched. Now a failure is surfaced instead of hidden, since
+              // silently "succeeding" here would be worse than doing nothing.
+              await apiFetch('/api/auth/account', { method: 'DELETE' });
+              await clearAuth();
+              navigation?.reset?.({ index: 0, routes: [{ name: 'Onboarding' }] });
+            } catch (err) {
+              Alert.alert('Couldn\'t delete account', err?.message || 'Please try again.');
+            }
           },
         },
       ]
