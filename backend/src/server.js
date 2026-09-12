@@ -255,11 +255,91 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(morgan("short", { stream: { write: (m) => logger.info(m.trim()) } }));
 
 // ── Public ──────────────────────────────────────────────────────────────────
-app.get("/privacy", (_, res) =>
-  res.send(
-    "<html><body><h1>Privacy Policy</h1><p>Mneva AI collects only data necessary to provide its services. We use OAuth 2.0 and never store your passwords. Contact: sbehera807@gmail.com</p></body></html>",
-  ),
-);
+// This describes what the app actually does, not boilerplate — every section
+// below traces to a real code path (Gmail/Calendar/Contacts/Fit OAuth scopes,
+// the notification-listener feature, OpenAI/Groq calls, and the account
+// deletion endpoint at DELETE /api/auth/account) so it stays accurate as the
+// source of truth for what Google Play's Data Safety form should say.
+const PRIVACY_POLICY_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Mneva AI</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  .updated { color: #666; font-size: 13px; margin-bottom: 28px; }
+  h2 { font-size: 18px; margin-top: 36px; border-bottom: 1px solid #e5e5e5; padding-bottom: 6px; }
+  h3 { font-size: 15px; margin-top: 20px; }
+  p, li { font-size: 14.5px; color: #2a2a2a; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  th { color: #666; font-weight: 600; }
+  .callout { background: #fff8e6; border: 1px solid #f0dca0; border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
+  code { background: #f2f2f2; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  a { color: #1a56db; }
+</style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Mneva AI · Last updated: ${new Date().toISOString().slice(0, 10)}</p>
+
+  <p>Mneva is a personal AI assistant that connects to your email, calendar, health data, and (optionally) your phone's notifications so it can summarize, prioritize, and act on your behalf. Because it touches sensitive personal information, this page describes exactly what is collected, why, and where it goes — not a generic template.</p>
+
+  <h2>1. Information we collect</h2>
+  <table>
+    <tr><th>Category</th><th>What we collect</th><th>Source</th></tr>
+    <tr><td>Account</td><td>Name, email address, phone number (optional), city</td><td>You, at sign-up</td></tr>
+    <tr><td>Email</td><td>Subject lines, senders, short previews, and — for auto-drafted replies — full message bodies</td><td>Gmail, via your Google sign-in</td></tr>
+    <tr><td>Calendar</td><td>Event titles, times, attendees</td><td>Google Calendar, via your Google sign-in</td></tr>
+    <tr><td>Contacts</td><td>Names, phone numbers, email addresses (read-only)</td><td>Google Contacts, via your Google sign-in</td></tr>
+    <tr><td>Health &amp; fitness</td><td>Steps, heart rate, sleep, calories, weight, height</td><td>Google Fit, or entries you log manually</td></tr>
+    <tr><td>Phone notifications</td><td>If you enable it: the title and body text of notifications from any app on your phone</td><td>Android's Notification Listener, only after you grant this in system settings</td></tr>
+    <tr><td>Photos &amp; camera</td><td>Images you choose to attach for AI analysis</td><td>Your camera or photo library</td></tr>
+    <tr><td>Voice</td><td>Voice messages you record, for transcription</td><td>Your microphone</td></tr>
+    <tr><td>Documents</td><td>Files you upload for the assistant to search or summarize</td><td>Your device</td></tr>
+    <tr><td>Device info</td><td>A push-notification token, so we can deliver alerts</td><td>Your device</td></tr>
+  </table>
+
+  <h2>2. How we use this information</h2>
+  <p>We use the data above to power the assistant's features: summarizing your day, drafting email replies, flagging urgent messages, scheduling and reminding you of events, tracking family and health tasks, and answering questions you ask it. To do this, relevant data is sent to our AI providers as part of generating a response — see the next section.</p>
+
+  <h2>3. Third parties we share data with</h2>
+  <table>
+    <tr><th>Provider</th><th>What's sent</th><th>Why</th></tr>
+    <tr><td>OpenAI</td><td>Your name/email/city; relevant email, calendar, contact, and health snapshots at the time you chat with the assistant; email subject/sender/preview for urgency ranking; full email bodies when auto-drafting a reply; captured notification text (if enabled); uploaded photos and voice recordings</td><td>To generate the assistant's responses, classify what's urgent, and transcribe voice messages</td></tr>
+    <tr><td>Groq</td><td>Voice recordings</td><td>An alternate transcription provider</td></tr>
+    <tr><td>Google</td><td>OAuth tokens you grant; used to read the Gmail/Calendar/Contacts/Fit/Drive/Tasks data listed above</td><td>To connect your Google account's data to the assistant</td></tr>
+  </table>
+  <p>We do not sell your data, and we do not share it with advertisers or data brokers.</p>
+
+  <div class="callout">
+    <h3 style="margin-top:0">A note on phone notification access</h3>
+    <p style="margin-bottom:0">Notification access is <strong>off by default</strong> and requires you to explicitly grant it in Android's system settings. When enabled, Mneva reads the title and text of notifications from apps on your phone, filters out anything that looks like a 4–8 digit code (such as a one-time password) before sending it anywhere, and uses the rest — via the OpenAI processing described above — to decide whether something needs your attention (e.g. a delivery update or a payment reminder). You can turn this off at any time from Settings, which stops new notifications from being sent — though the notification you granted originally will still need to be revoked separately in Android's own Settings app if you want to fully withdraw the OS-level permission.</p>
+  </div>
+
+  <h2>4. Data retention</h2>
+  <p>We keep your data for as long as your account exists, so the assistant can use your history for context (e.g. remembering a past conversation or a recurring reminder). Voice recordings are deleted from our servers immediately after transcription — they are never stored. You can permanently delete your account and all associated data at any time (see below).</p>
+
+  <h2>5. Your rights &amp; deleting your account</h2>
+  <p>You can delete your account permanently from <strong>Settings → Data &amp; Account → Delete Account</strong> inside the app. This removes your account and every record tied to it — tasks, family and health data, financial records, the signed action ledger, uploaded documents (including the files themselves), and your AI memory — immediately and irreversibly. If you'd rather request this by email, contact us at the address below.</p>
+
+  <h2>6. Data security</h2>
+  <p>Data is encrypted in transit (HTTPS) between your device and our servers. Your login session is stored using your device's secure hardware-backed storage (Android Keystore / iOS Keychain), not in plain app storage. Passwords, where used, are hashed and never stored in plain text.</p>
+
+  <h2>7. Children's privacy</h2>
+  <p>Mneva is not directed at children under 13, and we do not knowingly collect data from them.</p>
+
+  <h2>8. Changes to this policy</h2>
+  <p>If how we handle your data changes meaningfully, we'll update this page and change the "Last updated" date above.</p>
+
+  <h2>9. Contact us</h2>
+  <p>Questions, deletion requests, or concerns: <a href="mailto:sbehera807@gmail.com">sbehera807@gmail.com</a></p>
+</body>
+</html>`;
+
+app.get("/privacy", (_, res) => res.type("html").send(PRIVACY_POLICY_HTML));
 app.get("/terms", (_, res) =>
   res.send(
     "<html><body><h1>Terms of Service</h1><p>By using Mneva AI you agree to use the service responsibly. Contact: sbehera807@gmail.com</p></body></html>",
