@@ -2,6 +2,7 @@ import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
 import { sendPushToUser } from '../services/pushService.js'
+import { authMiddleware } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -116,9 +117,13 @@ router.post('/push', async (req, res) => {
 })
 
 // ── Status endpoint — returns userId + webhook URL for setup ─────────────────
-router.get('/setup/:userEmail', async (req, res) => {
+// Requires the caller to be logged in as the account they're asking about —
+// this used to accept ANY email in the URL with no auth at all, letting
+// anyone look up a stranger's internal userId (and confirm their email is a
+// registered account) just by guessing/knowing it.
+router.get('/setup', authMiddleware, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({ where: { email: req.params.userEmail } })
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
     if (!user) return res.status(404).json({ error: 'User not found' })
     const base = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3001}`
     res.json({
