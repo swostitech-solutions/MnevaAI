@@ -3033,12 +3033,19 @@ function classifyType(source, title, body) {
 export const smsRouter = express.Router();
 smsRouter.post("/webhook", async (req, res) => {
   try {
+    // Fail closed: an unset secret used to mean "skip the check entirely",
+    // which left this endpoint open to the internet (anyone could inject a
+    // notification into any userId's account). Now a missing secret refuses
+    // every request instead of silently trusting all of them.
     const secret = process.env.SMS_WEBHOOK_SECRET?.trim();
+    if (!secret) {
+      return res.status(503).json({ error: "SMS webhook not configured" });
+    }
     const incomingSecret =
       req.headers["x-sms-webhook-secret"] ||
       req.body.secret ||
       req.query.secret;
-    if (secret && incomingSecret !== secret) {
+    if (incomingSecret !== secret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
 
@@ -3093,12 +3100,17 @@ smsRouter.post("/webhook", async (req, res) => {
 
 smsRouter.post("/ingest", async (req, res) => {
   try {
+    // Fail closed — see the identical fix on /webhook above for why an
+    // unset secret must refuse requests rather than skip the check.
     const secret = process.env.NOTIFICATION_WEBHOOK_SECRET?.trim();
+    if (!secret) {
+      return res.status(503).json({ error: "Notification webhook not configured" });
+    }
     const incomingSecret =
       req.headers["x-notification-webhook-secret"] ||
       req.body.secret ||
       req.query.secret;
-    if (secret && incomingSecret !== secret) {
+    if (incomingSecret !== secret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
 
