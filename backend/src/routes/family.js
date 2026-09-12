@@ -1,6 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { sendPushToUser } from '../services/pushService.js'
+import { ledger } from '../services/ledgerService.js'
 
 export const familyRouter = express.Router()
 
@@ -303,6 +304,13 @@ familyRouter.post('/parent-medications', async (req, res) => {
     await syncMedMemory(req.user.id, prisma)
     const formatted = fmtMed(med)
     emit(req.app.get('io'), req.user.id, 'parent_med:created', formatted)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'parent_medication_created',
+      input: { medName: formatted.medName, dosage: formatted.dosage, parent: formatted.parent },
+      result: { medicationId: med.id },
+      status: 'completed',
+    }).catch(() => {})
     res.status(201).json({ medication: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -333,6 +341,13 @@ familyRouter.patch('/parent-medications/:id', async (req, res) => {
     await syncMedMemory(req.user.id, prisma)
     const formatted = fmtMed(updated)
     emit(req.app.get('io'), req.user.id, 'parent_med:updated', formatted)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'parent_medication_updated',
+      input: { medName: formatted.medName, changedFields: Object.keys(req.body || {}) },
+      result: { medicationId: updated.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ medication: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -345,6 +360,13 @@ familyRouter.delete('/parent-medications/:id', async (req, res) => {
     await prisma.parentMedication.delete({ where: { id: req.params.id } })
     await syncMedMemory(req.user.id, prisma)
     emit(req.app.get('io'), req.user.id, 'parent_med:deleted', { id: req.params.id })
+    ledger.add({
+      userId: req.user.id,
+      tool: 'parent_medication_deleted',
+      input: { medName: med.medName, parent: med.parent },
+      result: { medicationId: med.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

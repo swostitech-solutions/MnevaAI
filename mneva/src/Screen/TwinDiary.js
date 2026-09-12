@@ -1,15 +1,38 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, useWindowDimensions, Animated, ActivityIndicator,
+  RefreshControl, useWindowDimensions, ActivityIndicator, Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
+
+// A small pulsing dot — the only cue on screen that says "this twin is
+// actively watching right now", next to the header subtitle.
+function LiveDot({ theme }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.8, duration: 700, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scale]);
+  return (
+    <View style={{ width: 12, height: 12, alignItems: 'center', justifyContent: 'center', marginRight: 6 }}>
+      <Animated.View style={{ position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent, opacity: 0.35, transform: [{ scale }] }} />
+      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: theme.accent }} />
+    </View>
+  );
+}
 
 // Human-readable labels for the failure reasons /api/twin/verify can return —
 // each one points at a specific, real check (chain linkage, hash content,
@@ -49,6 +72,9 @@ function mBg(hex, theme) {
   return rgb ? `rgba(${rgb.join(',')},0.16)` : theme.surfaceAlt;
 }
 
+// Per-tool icon/color — every tool the backend can ever log to the ledger
+// (see backend/src/services/ledgerTaxonomy.js) has an entry here so nothing
+// falls back to the generic zap icon.
 const TOOL_ICONS = {
   schedule_event: 'calendar',
   set_reminder: 'bell',
@@ -57,6 +83,8 @@ const TOOL_ICONS = {
   draft_reply: 'edit-2',
   book_cab: 'navigation',
   order_food: 'shopping-bag',
+  book_flight: 'send',
+  book_hotel: 'home',
   get_daily_brief: 'sun',
   get_full_summary: 'cpu',
   get_portfolio: 'trending-up',
@@ -64,6 +92,11 @@ const TOOL_ICONS = {
   get_health_data: 'heart',
   query_bills: 'file-text',
   personal_search: 'search',
+  parent_medication_created: 'plus-circle',
+  parent_medication_updated: 'edit-2',
+  parent_medication_deleted: 'trash-2',
+  trust_level_changed: 'sliders',
+  autonomy_toggle_changed: 'toggle-right',
 };
 
 const TOOL_COLORS = {
@@ -74,6 +107,8 @@ const TOOL_COLORS = {
   draft_reply: '#9B72FF',
   book_cab: '#1F9A5A',
   order_food: '#F5A623',
+  book_flight: '#F5A623',
+  book_hotel: '#F5A623',
   get_daily_brief: '#F5A623',
   get_full_summary: '#615FF8',
   get_portfolio: '#1F9A5A',
@@ -81,6 +116,11 @@ const TOOL_COLORS = {
   get_health_data: '#E0546E',
   query_bills: '#4FA6E8',
   personal_search: '#615FF8',
+  parent_medication_created: '#9B72FF',
+  parent_medication_updated: '#9B72FF',
+  parent_medication_deleted: '#E0546E',
+  trust_level_changed: '#615FF8',
+  autonomy_toggle_changed: '#4FA6E8',
 };
 
 const TOOL_BG = {
@@ -91,6 +131,8 @@ const TOOL_BG = {
   draft_reply: '#F3EFFE',
   book_cab: '#EFFDF6',
   order_food: '#FEF3C7',
+  book_flight: '#FEF3C7',
+  book_hotel: '#FEF3C7',
   get_daily_brief: '#FEF3C7',
   get_full_summary: '#EEEDFE',
   get_portfolio: '#EFFDF6',
@@ -98,7 +140,69 @@ const TOOL_BG = {
   get_health_data: '#FCEAED',
   query_bills: '#EAF3FD',
   personal_search: '#EEEDFE',
+  parent_medication_created: '#F3EFFE',
+  parent_medication_updated: '#F3EFFE',
+  parent_medication_deleted: '#FCEAED',
+  trust_level_changed: '#EEEDFE',
+  autonomy_toggle_changed: '#EAF3FD',
 };
+
+// Product-domain sections, in display order. "security" (Security & Trust)
+// is rendered separately, above these, since it's a meta-category rather
+// than a product domain — see backend/src/services/ledgerTaxonomy.js.
+const DOMAIN_ORDER = ['communications', 'finance', 'lifeops', 'health', 'family', 'other'];
+const DOMAIN_META = {
+  communications: { label: 'Communications', subtitle: 'Emails and messages sent on your behalf', icon: 'mail' },
+  finance: { label: 'Finance', subtitle: 'Payments and money actions', icon: 'dollar-sign' },
+  lifeops: { label: 'Life Operations', subtitle: 'Bookings, reminders and scheduling', icon: 'navigation' },
+  health: { label: 'Health', subtitle: 'Health tracking actions', icon: 'heart' },
+  family: { label: 'Family', subtitle: 'Family and care updates', icon: 'users' },
+  other: { label: 'Other', subtitle: 'Everything else', icon: 'zap' },
+};
+function domainColor(domain, theme) {
+  return {
+    communications: theme.info,
+    finance: theme.accent,
+    lifeops: theme.warning,
+    health: theme.danger,
+    family: theme.accentAlt,
+    other: theme.muted,
+  }[domain] || theme.muted;
+}
+
+// The spec's own stage names — deliberately NOT "L1–L4", since the app
+// already uses numbered trust levels for a different, account-wide setting
+// (Settings > Trust Level). These describe the *design intent* for a class
+// of action (e.g. payments are meant to require approval) rather than a
+// live per-instance gate — there isn't one in this codebase yet.
+const AUTONOMY_STAGE_META = {
+  proposed: { label: 'Proposed', color: '#F5A623', bg: '#FEF3C7' },
+  notified_after_acting: { label: 'Notified after acting', color: '#4FA6E8', bg: '#EAF3FD' },
+  trusted_automation: { label: 'Trusted automation', color: '#1F9A5A', bg: '#EFFDF6' },
+  fully_autonomous: { label: 'Fully autonomous', color: '#615FF8', bg: '#EEEDFE' },
+};
+
+const TRUST_LEVEL_NAMES = ['', 'Observe', 'Suggest', 'Draft & Prepare', 'Act'];
+const AUTONOMY_TOGGLE_LABELS = { finance: 'Finance', communications: 'Communications', health: 'Health', lifeops: 'Life Ops' };
+
+// A plain-language line for Security & Trust entries — these are account
+// setting changes, not AI actions, so they get a description instead of the
+// generic INPUT/RESULT key-value dump used for tool calls.
+function describeSecurityEntry(tool, inputData) {
+  if (tool === 'trust_level_changed') {
+    const from = TRUST_LEVEL_NAMES[inputData.from] || inputData.from;
+    const to = TRUST_LEVEL_NAMES[inputData.to] || inputData.to;
+    return `Trust level changed: ${from} → ${to}`;
+  }
+  if (tool === 'autonomy_toggle_changed') {
+    const changes = inputData.changes || {};
+    const parts = Object.entries(changes).map(([key, v]) =>
+      `${AUTONOMY_TOGGLE_LABELS[key] || key} autonomy ${v?.to ? 'turned on' : 'turned off'}`
+    );
+    return parts.join(', ') || 'Autonomy settings updated';
+  }
+  return (tool || '').replace(/_/g, ' ');
+}
 
 function actionKey(entry) {
   const input = entry?.input || {};
@@ -149,54 +253,23 @@ function formatScheduledTime(iso) {
   } catch { return ''; }
 }
 
-// A reminder/meeting set today for tomorrow is a commitment the twin is
-// still watching, not history — so it belongs under FUTURE regardless of
-// when it was logged. Everything else buckets by when it actually happened:
-// today is PRESENT, anything earlier is PAST.
-function classifyEntry(entry, now) {
-  let inputData = {};
-  try { inputData = JSON.parse(entry.action || '{}').input || {}; } catch { /* malformed action blob */ }
-  let targetTime = null;
-  if (entry.tool === 'set_reminder' && inputData.time) targetTime = new Date(inputData.time);
-  else if (entry.tool === 'schedule_event' && inputData.start) targetTime = new Date(inputData.start);
-  if (targetTime && !Number.isNaN(targetTime.getTime()) && targetTime.getTime() > now.getTime()) {
-    return { bucket: 'future', targetTime };
-  }
-  const ts = new Date(entry.ts);
-  const isPresent = !Number.isNaN(ts.getTime()) && ts.toDateString() === now.toDateString();
-  return { bucket: isPresent ? 'present' : 'past', targetTime: null };
-}
-
-// A small pulsing dot — the only cue on screen that says "this twin is
-// live right now", next to the PRESENT section header.
-function LiveDot({ styles }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scale, { toValue: 1.8, duration: 700, useNativeDriver: true }),
-        Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [scale]);
-  return (
-    <View style={styles.liveDotWrap}>
-      <Animated.View style={[styles.liveDotPulse, { transform: [{ scale }] }]} />
-      <View style={styles.liveDotCore} />
-    </View>
-  );
-}
-
 function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, styles }) {
   const icon = TOOL_ICONS[entry.tool] || 'zap';
   const color = mColor(TOOL_COLORS[entry.tool] || '#615FF8', theme);
   const bg = mBg(TOOL_BG[entry.tool] || '#EEEDFE', theme);
+  const stageMeta = entry.autonomyStage ? AUTONOMY_STAGE_META[entry.autonomyStage] : null;
+  const isSecurity = entry.domain === 'security';
 
   let inputData = {};
   let resultData = {};
-  try { const p = JSON.parse(entry.action || '{}'); inputData = p.input || {}; resultData = p.result || {}; } catch { /* malformed action blob */ }
+  let targetTime = null;
+  try {
+    const p = JSON.parse(entry.action || '{}');
+    inputData = p.input || {};
+    resultData = p.result || {};
+  } catch { /* malformed action blob */ }
+  if (entry.tool === 'set_reminder' && inputData.time) targetTime = inputData.time;
+  else if (entry.tool === 'schedule_event' && inputData.start) targetTime = inputData.start;
 
   return (
     <View style={styles.timelineRow}>
@@ -206,7 +279,7 @@ function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, s
       </View>
 
       <TouchableOpacity
-        style={[styles.entryCard, { flex: 1, marginLeft: 10 }]}
+        style={[styles.entryCard, { flex: 1, marginLeft: 10, borderLeftWidth: 3, borderLeftColor: dotColor || color }]}
         onPress={onToggle}
         activeOpacity={0.8}
       >
@@ -216,10 +289,16 @@ function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, s
           </View>
           <View style={styles.entryTextWrap}>
             <Text style={styles.entryTool}>{(entry.tool || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</Text>
-            {entry.targetTime ? (
-              <Text style={[styles.entryTime, { color: theme.accentAlt, fontWeight: '700' }]}>Scheduled · {formatScheduledTime(entry.targetTime)}</Text>
+            {targetTime ? (
+              <Text style={[styles.entryTime, { color: theme.accentAlt, fontWeight: '700' }]}>Scheduled · {formatScheduledTime(targetTime)}</Text>
             ) : (
               <Text style={styles.entryTime}>{formatTime(entry.ts)}</Text>
+            )}
+            {stageMeta && (
+              <View style={[styles.autonomyChip, { backgroundColor: mBg(stageMeta.bg, theme) }]}>
+                <View style={[styles.autonomyChipDot, { backgroundColor: mColor(stageMeta.color, theme) }]} />
+                <Text style={[styles.autonomyChipText, { color: mColor(stageMeta.color, theme) }]}>{stageMeta.label}</Text>
+              </View>
             )}
           </View>
           <View style={[styles.entryStatusBadge, { backgroundColor: statusBg(entry.status, theme) }]}>
@@ -233,27 +312,33 @@ function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, s
         {isExpanded && (
           <View style={styles.entryDetail}>
             <View style={styles.entryDetailDivider} />
-            {Object.keys(inputData).length > 0 && (
-              <View style={styles.entryDetailSection}>
-                <Text style={styles.entryDetailSectionTitle}>INPUT</Text>
-                {Object.entries(inputData).map(([k, v]) => (
-                  <View key={k} style={styles.entryDetailRow}>
-                    <Text style={styles.entryDetailKey}>{k}</Text>
-                    <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+            {isSecurity ? (
+              <Text style={styles.securityDescription}>{describeSecurityEntry(entry.tool, inputData)}</Text>
+            ) : (
+              <>
+                {Object.keys(inputData).length > 0 && (
+                  <View style={styles.entryDetailSection}>
+                    <Text style={styles.entryDetailSectionTitle}>INPUT</Text>
+                    {Object.entries(inputData).map(([k, v]) => (
+                      <View key={k} style={styles.entryDetailRow}>
+                        <Text style={styles.entryDetailKey}>{k}</Text>
+                        <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            )}
-            {Object.keys(resultData).length > 0 && (
-              <View style={styles.entryDetailSection}>
-                <Text style={styles.entryDetailSectionTitle}>RESULT</Text>
-                {Object.entries(resultData).map(([k, v]) => (
-                  <View key={k} style={styles.entryDetailRow}>
-                    <Text style={styles.entryDetailKey}>{k}</Text>
-                    <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+                )}
+                {Object.keys(resultData).length > 0 && (
+                  <View style={styles.entryDetailSection}>
+                    <Text style={styles.entryDetailSectionTitle}>RESULT</Text>
+                    {Object.entries(resultData).map(([k, v]) => (
+                      <View key={k} style={styles.entryDetailRow}>
+                        <Text style={styles.entryDetailKey}>{k}</Text>
+                        <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
+                )}
+              </>
             )}
             {entry.hash && (
               <View style={styles.hashRow}>
@@ -268,18 +353,19 @@ function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, s
   );
 }
 
-function TimelineSection({ title, subtitle, icon, color, entries, expanded, onToggleEntry, emptyText, extraHeader, theme, styles }) {
+function DomainSection({ title, subtitle, icon, color, entries, expanded, onToggleEntry, emptyText, theme, styles }) {
   return (
     <View style={styles.timelineSection}>
       <View style={styles.timelineSectionHeader}>
-        <View style={[styles.timelineSectionIconWrap, { backgroundColor: `${color}1A` }]}>
-          <Feather name={icon} size={14} color={color} />
-        </View>
+        <LinearGradient
+          colors={[color, `${color}CC`]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={styles.timelineSectionIconWrap}
+        >
+          <Feather name={icon} size={14} color="#FFFFFF" />
+        </LinearGradient>
         <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={[styles.timelineSectionTitle, { color }]}>{title}</Text>
-            {extraHeader}
-          </View>
+          <Text style={[styles.timelineSectionTitle, { color }]}>{title}</Text>
           <Text style={styles.timelineSectionSubtitle}>{subtitle}</Text>
         </View>
         <View style={[styles.timelineSectionCount, { backgroundColor: `${color}1A` }]}>
@@ -379,7 +465,8 @@ export default function TwinDiary({ navigation }) {
 
   const { on } = useSocket();
 
-  // Real-time: when AI executes any action, refresh ledger immediately
+  // Real-time: when AI executes any action, refresh ledger immediately —
+  // the new entry gets picked up by the domain grouping below automatically.
   useEffect(() => {
     const off = on('ledger:updated', (entry) => {
       if (!entry?.id || entry.status === 'failed') return;
@@ -391,11 +478,23 @@ export default function TwinDiary({ navigation }) {
     return () => off?.();
   }, [on]);
 
-  const now = new Date();
-  const classified = entries.map(e => ({ ...e, ...classifyEntry(e, now) }));
-  const futureEntries = classified.filter(e => e.bucket === 'future').sort((a, b) => a.targetTime - b.targetTime);
-  const presentEntries = classified.filter(e => e.bucket === 'present');
-  const pastEntries = classified.filter(e => e.bucket === 'past');
+  // Group by product domain, with Security & Trust (permission/trust-level
+  // changes) pulled out into its own meta-section shown first — matching
+  // the spec's structure rather than the old time-based Upcoming/Today/History
+  // split.
+  const { securityEntries, byDomain } = useMemo(() => {
+    const security = [];
+    const grouped = {};
+    for (const e of entries) {
+      const domain = e.domain || 'other';
+      if (domain === 'security') { security.push(e); continue; }
+      if (!grouped[domain]) grouped[domain] = [];
+      grouped[domain].push(e);
+    }
+    return { securityEntries: security, byDomain: grouped };
+  }, [entries]);
+
+  const activeDomains = DOMAIN_ORDER.filter(d => (byDomain[d] || []).length > 0);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -409,26 +508,42 @@ export default function TwinDiary({ navigation }) {
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Twin Diary</Text>
-            <Text style={styles.headerSubtitle}>Signed AI action ledger</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+              <LiveDot theme={theme} />
+              <Text style={styles.headerSubtitle}>Signed AI action ledger</Text>
+            </View>
           </View>
-          <View style={styles.headerBadge}>
-            <Feather name="shield" size={18} color={theme.accentAlt} />
-          </View>
+          <LinearGradient
+            colors={[theme.accentAlt, theme.accent]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={styles.headerBadge}
+          >
+            <Feather name="shield" size={18} color="#FFFFFF" />
+          </LinearGradient>
         </View>
 
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: theme.accentAlt }]}>{loading ? '—' : futureEntries.length}</Text>
-            <Text style={styles.statLabel}>Upcoming</Text>
+            <View style={[styles.statIconWrap, { backgroundColor: `${theme.accentAlt}1A` }]}>
+              <Feather name="grid" size={13} color={theme.accentAlt} />
+            </View>
+            <Text style={[styles.statValue, { color: theme.accentAlt }]}>{loading ? '—' : activeDomains.length}</Text>
+            <Text style={styles.statLabel}>Domains</Text>
           </View>
           <View style={[styles.statCard, { borderLeftWidth: 1, borderRightWidth: 1, borderColor: theme.border }]}>
-            <Text style={[styles.statValue, { color: theme.accent }]}>{loading ? '—' : presentEntries.length}</Text>
-            <Text style={styles.statLabel}>Today</Text>
+            <View style={[styles.statIconWrap, { backgroundColor: `${theme.accent}1A` }]}>
+              <Feather name="activity" size={13} color={theme.accent} />
+            </View>
+            <Text style={[styles.statValue, { color: theme.accent }]}>{loading ? '—' : entries.length}</Text>
+            <Text style={styles.statLabel}>Total Actions</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: theme.muted }]}>{loading ? '—' : pastEntries.length}</Text>
-            <Text style={styles.statLabel}>History</Text>
+            <View style={[styles.statIconWrap, { backgroundColor: `${theme.muted}1A` }]}>
+              <Feather name="shield" size={13} color={theme.muted} />
+            </View>
+            <Text style={[styles.statValue, { color: theme.muted }]}>{loading ? '—' : securityEntries.length}</Text>
+            <Text style={styles.statLabel}>Security</Text>
           </View>
         </View>
 
@@ -436,12 +551,16 @@ export default function TwinDiary({ navigation }) {
             the server to recompute every entry's hash, its link to the
             previous entry, and its Ed25519 signature from scratch. */}
         <TouchableOpacity style={styles.securityNote} onPress={handleVerify} activeOpacity={0.75} disabled={verifyState === 'checking'}>
-          <Feather name="lock" size={13} color={theme.accentAlt} />
-          <Text style={styles.securityNoteText}>  Every action is SHA-256 hash-chained &amp; Ed25519-signed</Text>
+          <View style={styles.securityNoteIconWrap}>
+            <Feather name="lock" size={13} color={theme.accentAlt} />
+          </View>
+          <Text style={styles.securityNoteText}>Every action is SHA-256 hash-chained &amp; Ed25519-signed</Text>
           {verifyState === 'checking' ? (
             <ActivityIndicator size="small" color={theme.accentAlt} />
           ) : (
-            <Text style={styles.securityNoteAction}>Verify</Text>
+            <View style={styles.securityNoteBtn}>
+              <Text style={styles.securityNoteAction}>Verify</Text>
+            </View>
           )}
         </TouchableOpacity>
 
@@ -456,9 +575,8 @@ export default function TwinDiary({ navigation }) {
           </View>
         )}
 
-        {/* Timeline — Future → Present → Past, exactly how an agent thinks
-            about its own work: what it's watching for you, what it's doing
-            right now, and everything it has already done. */}
+        {/* Domain-grouped timeline: Security & Trust first (permission and
+            trust-level changes), then each product domain that has activity. */}
         {loading ? (
           [1, 2, 3, 4].map(i => <View key={i} style={styles.entrySkeleton} />)
         ) : entries.length === 0 ? (
@@ -469,43 +587,38 @@ export default function TwinDiary({ navigation }) {
           </View>
         ) : (
           <>
-            <TimelineSection
-              title="UPCOMING"
-              subtitle="What your twin is watching for you"
-              icon="compass"
-              color={theme.accentAlt}
-              entries={futureEntries}
-              expanded={expanded}
-              onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
-              emptyText="Nothing scheduled yet."
-              theme={theme}
-              styles={styles}
-            />
-            <TimelineSection
-              title="TODAY"
-              subtitle="Happening today"
-              icon="radio"
-              color={theme.accent}
-              entries={presentEntries}
-              expanded={expanded}
-              onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
-              emptyText="No activity yet today."
-              extraHeader={presentEntries.length > 0 ? <LiveDot styles={styles} /> : null}
-              theme={theme}
-              styles={styles}
-            />
-            <TimelineSection
-              title="HISTORY"
-              subtitle="Everything your twin has already done"
-              icon="archive"
-              color={theme.muted}
-              entries={pastEntries}
-              expanded={expanded}
-              onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
-              emptyText="No history yet."
-              theme={theme}
-              styles={styles}
-            />
+            {securityEntries.length > 0 && (
+              <DomainSection
+                title="SECURITY & TRUST"
+                subtitle="Permission and trust-level changes"
+                icon="shield"
+                color={theme.muted}
+                entries={securityEntries}
+                expanded={expanded}
+                onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
+                emptyText=""
+                theme={theme}
+                styles={styles}
+              />
+            )}
+            {activeDomains.map((domain) => {
+              const meta = DOMAIN_META[domain];
+              return (
+                <DomainSection
+                  key={domain}
+                  title={meta.label.toUpperCase()}
+                  subtitle={meta.subtitle}
+                  icon={meta.icon}
+                  color={domainColor(domain, theme)}
+                  entries={byDomain[domain]}
+                  expanded={expanded}
+                  onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
+                  emptyText=""
+                  theme={theme}
+                  styles={styles}
+                />
+              );
+            })}
           </>
         )}
       </ScrollView>
@@ -544,14 +657,23 @@ const createStyles = (theme) => StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   headerTitle: { fontSize: 28, fontWeight: '800', color: theme.text },
   headerSubtitle: { fontSize: 13, color: theme.faint, marginTop: 2 },
-  headerBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE', alignItems: 'center', justifyContent: 'center' },
-  statsRow: { flexDirection: 'row', backgroundColor: theme.card, borderRadius: 20, marginBottom: 14 },
+  headerBadge: {
+    width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    shadowColor: theme.accentAlt, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3,
+  },
+  statsRow: {
+    flexDirection: 'row', backgroundColor: theme.card, borderRadius: 20, marginBottom: 14,
+    shadowColor: '#000', shadowOpacity: theme.isDark ? 0 : 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: theme.isDark ? 0 : 2,
+  },
   statCard: { flex: 1, alignItems: 'center', paddingVertical: 16 },
+  statIconWrap: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   statValue: { fontSize: 24, fontWeight: '800', color: theme.text, marginBottom: 4 },
   statLabel: { fontSize: 11, fontWeight: '600', color: theme.faint },
-  securityNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE', borderRadius: 12, padding: 12, marginBottom: 10 },
+  securityNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#EEEDFE', borderRadius: 14, padding: 10, marginBottom: 10, gap: 10 },
+  securityNoteIconWrap: { width: 30, height: 30, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.25)' : '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   securityNoteText: { flex: 1, fontSize: 12, color: theme.accentAlt, fontWeight: '600' },
-  securityNoteAction: { fontSize: 12, fontWeight: '800', color: theme.accentAlt, textDecorationLine: 'underline' },
+  securityNoteBtn: { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.25)' : '#FFFFFF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  securityNoteAction: { fontSize: 11, fontWeight: '800', color: theme.accentAlt },
   verifyResult: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, padding: 12, marginBottom: 20 },
   verifyResultOk: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' },
   verifyResultFail: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED' },
@@ -560,7 +682,7 @@ const createStyles = (theme) => StyleSheet.create({
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: theme.textSecondary },
   emptySubtitle: { fontSize: 13, color: theme.faint, textAlign: 'center' },
-  // Timeline sections (Future / Present / Past)
+  // Domain sections
   timelineSection: { marginBottom: 24 },
   timelineSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   timelineSectionIconWrap: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
@@ -575,16 +697,18 @@ const createStyles = (theme) => StyleSheet.create({
   timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 18 },
   timelineLine: { flex: 1, width: 2, backgroundColor: theme.border, marginTop: 4, marginBottom: 4, minHeight: 16 },
 
-  liveDotWrap: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
-  liveDotPulse: { position: 'absolute', width: 10, height: 10, borderRadius: 5, backgroundColor: theme.accent, opacity: 0.35 },
-  liveDotCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.accent },
-
-  entryCard: { backgroundColor: theme.card, borderRadius: 18, padding: 14, marginBottom: 10 },
+  entryCard: {
+    backgroundColor: theme.card, borderRadius: 18, padding: 14, marginBottom: 10,
+    shadowColor: '#000', shadowOpacity: theme.isDark ? 0 : 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: theme.isDark ? 0 : 1,
+  },
   entryTop: { flexDirection: 'row', alignItems: 'center' },
   entryIconWrap: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   entryTextWrap: { flex: 1 },
   entryTool: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
   entryTime: { fontSize: 11, color: theme.faint },
+  autonomyChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginTop: 4, gap: 4 },
+  autonomyChipDot: { width: 5, height: 5, borderRadius: 2.5 },
+  autonomyChipText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.2 },
   entryStatusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   entryStatusText: { fontSize: 10, fontWeight: '800' },
   entryDetail: { marginTop: 4 },
@@ -594,6 +718,7 @@ const createStyles = (theme) => StyleSheet.create({
   entryDetailRow: { flexDirection: 'row', marginBottom: 6 },
   entryDetailKey: { fontSize: 12, color: theme.faint, width: 90, fontWeight: '600' },
   entryDetailVal: { fontSize: 12, color: theme.textSecondary, flex: 1 },
+  securityDescription: { fontSize: 13, color: theme.textSecondary, marginBottom: 8, lineHeight: 18 },
   hashRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   hashText: { fontSize: 10, color: theme.disabled, flex: 1 },
   tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },

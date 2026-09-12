@@ -3197,10 +3197,20 @@ trustRouter.patch("/level", async (req, res) => {
   const { level } = req.body;
   if (!level || level < 1 || level > 4)
     return res.status(400).json({ error: "level must be 1–4" });
+  const before = await prisma.user.findUnique({ where: { id: req.user.id }, select: { trustLevel: true } });
   const user = await prisma.user.update({
     where: { id: req.user.id },
     data: { trustLevel: Number(level) },
   });
+  if (before && before.trustLevel !== user.trustLevel) {
+    ledger.add({
+      userId: req.user.id,
+      tool: "trust_level_changed",
+      input: { from: before.trustLevel, to: user.trustLevel },
+      result: { level: user.trustLevel },
+      status: "completed",
+    }).catch(() => {});
+  }
   res.json({ success: true, newLevel: user.trustLevel });
 });
 
@@ -3223,6 +3233,7 @@ trustRouter.patch("/settings", async (req, res) => {
   const { autonomy, privacy, notifications: notifPrefs, notificationLeadTimes } = req.body;
   const user = await userStore.getById(req.user.id);
   const prefs = user?.preferences || {};
+  const autonomyBefore = { ...(prefs.autonomy || {}) };
   if (autonomy) prefs.autonomy = { ...(prefs.autonomy || {}), ...autonomy };
   if (privacy) prefs.privacy = { ...(prefs.privacy || {}), ...privacy };
   if (notifPrefs)
@@ -3242,6 +3253,18 @@ trustRouter.patch("/settings", async (req, res) => {
     where: { id: req.user.id },
     data: { preferences: prefs },
   });
+  if (autonomy) {
+    const changedKeys = Object.keys(autonomy).filter((k) => autonomyBefore[k] !== prefs.autonomy[k]);
+    if (changedKeys.length) {
+      ledger.add({
+        userId: req.user.id,
+        tool: "autonomy_toggle_changed",
+        input: { changes: Object.fromEntries(changedKeys.map((k) => [k, { from: autonomyBefore[k], to: prefs.autonomy[k] }])) },
+        result: { autonomy: prefs.autonomy },
+        status: "completed",
+      }).catch(() => {});
+    }
+  }
   res.json({ success: true, preferences: prefs });
 });
 

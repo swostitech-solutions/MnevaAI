@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { prisma } from '../config/prisma.js'
 import { GENESIS_HASH, hashEntry, signHash, verifySignature } from './ledgerSigning.js'
+import { getToolMeta } from './ledgerTaxonomy.js'
 
 const MAX_SEQ_RETRIES = 3
 
@@ -29,9 +30,10 @@ class LedgerService {
       const hash = hashEntry({ id, userId, tool, status, action, createdAt, seq, prevHash })
       const signature = signHash(hash)
 
+      const { domain, autonomyStage } = getToolMeta(tool)
       try {
         const entry = await prisma.agentLedger.create({
-          data: { id, userId, tool, status, action, seq, prevHash, hash, signature, createdAt },
+          data: { id, userId, tool, status, action, seq, prevHash, hash, signature, createdAt, domain, autonomyStage },
         })
         return this.toPublicEntry(entry)
       } catch (err) {
@@ -96,6 +98,7 @@ class LedgerService {
     } catch {
       payload = { action: entry.action }
     }
+    const fallbackMeta = getToolMeta(entry.tool)
     return {
       id: entry.id,
       userId: entry.userId,
@@ -109,6 +112,8 @@ class LedgerService {
       prevHash: entry.prevHash,
       hash: entry.hash,
       sig: entry.signature,
+      domain: entry.domain ?? fallbackMeta.domain,
+      autonomyStage: entry.autonomyStage ?? fallbackMeta.autonomyStage,
     }
   }
 }

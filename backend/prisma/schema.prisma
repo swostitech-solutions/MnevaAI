@@ -323,6 +323,13 @@ model AgentLedger {
   prevHash  String?
   hash      String?
   signature String?
+  // Product-domain grouping and (for genuine AI-initiated tool calls only)
+  // an autonomy-stage label, both derived from `tool` at write time via
+  // ledgerTaxonomy.js. Nullable so rows written before this existed keep
+  // working — ledgerService.toPublicEntry() falls back to deriving these
+  // from `tool` on read, so no data backfill is required.
+  domain        String?
+  autonomyStage String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
