@@ -17,8 +17,43 @@ import org.json.JSONObject
 class MnevaNotificationListenerService : android.service.notification.NotificationListenerService() {
   private val executor = Executors.newSingleThreadExecutor()
 
+  // See the sibling implementation in
+  // android/app/src/main/java/com/swostitech/mneva/notifications/ for why
+  // this is a small known-app list plus a category check rather than an
+  // attempt at an exhaustive bank/wallet package list.
+  private val ALLOWED_PACKAGES = setOf(
+    "com.whatsapp",
+    "com.whatsapp.w4b",
+    "com.google.android.apps.nbu.paisa.user", // Google Pay
+    "com.phonepe.app",
+    "net.one97.paytm",
+    "in.org.npci.upiapp", // BHIM
+    "in.amazon.mShop.android.shopping",
+    "com.flipkart.android",
+    "in.swiggy.android",
+    "com.application.zomato",
+    "com.ubercab",
+    "com.olacabs.customer",
+  )
+
+  private val ALLOWED_CATEGORIES = setOf(
+    Notification.CATEGORY_MESSAGE,
+    Notification.CATEGORY_EMAIL,
+    Notification.CATEGORY_EVENT,
+    Notification.CATEGORY_REMINDER,
+    Notification.CATEGORY_ALARM,
+    Notification.CATEGORY_TRANSPORT,
+    Notification.CATEGORY_STATUS,
+    Notification.CATEGORY_CALL,
+    Notification.CATEGORY_MISSED_CALL,
+  )
+
   override fun onNotificationPosted(sbn: StatusBarNotification) {
     if (sbn.packageName == packageName || sbn.isOngoing) return
+    val isAllowedPackage = sbn.packageName in ALLOWED_PACKAGES
+    val isAllowedCategory = sbn.notification.category in ALLOWED_CATEGORIES
+    if (!isAllowedPackage && !isAllowedCategory) return
+
     val prefs = getSharedPreferences(MnevaNotificationAccessModule.PREFERENCES, Context.MODE_PRIVATE)
     val endpoint = prefs.getString(MnevaNotificationAccessModule.KEY_ENDPOINT, null) ?: return
     val token = prefs.getString(MnevaNotificationAccessModule.KEY_TOKEN, null) ?: return

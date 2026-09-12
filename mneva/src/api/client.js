@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import { getStoredAuth } from '../storage/auth';
+import { getStoredAuth, saveTokens } from '../storage/auth';
 
 const PRODUCTION_BACKEND = 'https://mneva-backend-v2.onrender.com';
 
@@ -132,7 +132,70 @@ export async function pingBackend(timeoutMs = 8000) {
   return _pingInFlight;
 }
 
+// Endpoints that either don't send a Bearer token at all (login/register/
+// verify/resend — the user isn't authenticated yet) or that a refresh
+// attempt itself would recurse into. A 401 here is a real credential/OTP
+// problem, not an expired session, so it's never worth trying to refresh.
+const NON_REFRESHABLE_PATHS = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/verify-email',
+  '/api/auth/resend-otp',
+  '/api/auth/refresh',
+];
+
+// Several apiFetch calls can hit a stale access token in the same instant
+// (Home.js alone fires ~11 in parallel) — without this, each would kick off
+// its own refresh, racing to rotate the same refresh token and invalidating
+// each other's. Every concurrent 401 shares this one in-flight attempt.
+let _refreshPromise = null;
+async function refreshAccessToken() {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    try {
+      const { refreshToken } = await getStoredAuth();
+      if (!refreshToken) return null;
+      const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      if (!data?.token || !data?.refreshToken) return null;
+      await saveTokens(data.token, data.refreshToken);
+      return data.token;
+    } catch {
+      return null;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+  return _refreshPromise;
+}
+
+// A thin wrapper around the real implementation below: on a 401 from a
+// session that's merely old (not a bad credential), attempt exactly one
+// silent renewal via the refresh token and replay the request once — the
+// prior behavior was to surface every expired-access-token 401 straight to
+// the caller, which is what eventually put up the "sign in again" banner
+// even though the account's actual session (the refresh token) was still
+// good for up to 60 days. A session with no stored refresh token (or one
+// that's also expired/revoked) falls straight through to that same existing
+// behavior — nothing changes for those cases.
 export async function apiFetch(path, options = {}) {
+  try {
+    return await doApiFetch(path, options);
+  } catch (err) {
+    if (err?.status === 401 && !NON_REFRESHABLE_PATHS.includes(path)) {
+      const newToken = await refreshAccessToken();
+      if (newToken) return doApiFetch(path, options);
+    }
+    throw err;
+  }
+}
+
+async function doApiFetch(path, options = {}) {
   // `retry: false` is used by higher-level recovery loops which already own
   // their retry/backoff policy. `timeoutMs` overrides the default 15s abort
   // window — the AI chat/draft endpoints run an agent loop of up to 10

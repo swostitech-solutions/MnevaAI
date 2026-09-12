@@ -1,6 +1,7 @@
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import crypto from 'node:crypto'
 import { body, validationResult } from 'express-validator'
 import { toPublicUser, userStore } from '../models/userStore.js'
 import { prisma } from '../config/prisma.js'
@@ -14,10 +15,29 @@ const router = express.Router()
 const SECRET = process.env.JWT_SECRET
 if (!SECRET) throw new Error('JWT_SECRET environment variable is not set')
 
+const REFRESH_TOKEN_TTL_MS = 60 * 24 * 60 * 60 * 1000 // 60 days
+
 const sign = (user) => jwt.sign(
   { id: user.id, email: user.email, name: user.name, trustLevel: user.trustLevel, onboardingDone: user.onboardingDone || false },
   SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
 )
+
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex')
+
+// The access JWT above still expires after 7 days — that's unchanged, and
+// deliberately so (shortening it now would turn every normal API call into a
+// refresh candidate, a much bigger behavior change than what was asked for).
+// This refresh token is the renewal path for *after* that: a long-lived,
+// opaque, random value stored only as a hash (a DB read alone can't be
+// replayed as the token), rotated on every use so an old one stops working
+// the moment it's exchanged.
+async function issueRefreshToken(userId) {
+  const token = crypto.randomBytes(40).toString('hex')
+  await prisma.refreshToken.create({
+    data: { userId, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS) },
+  })
+  return token
+}
 
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000))
@@ -42,7 +62,7 @@ router.post('/login',
       if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
       const ok = await bcrypt.compare(password, user.passwordHash)
       if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
-      res.json({ token: sign(user), user: toPublicUser(user) })
+      res.json({ token: sign(user), refreshToken: await issueRefreshToken(user.id), user: toPublicUser(user) })
     } catch (err) {
       const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
       if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
@@ -118,7 +138,7 @@ router.post('/verify-email',
         where: { email },
         data: { emailVerified: true, verifyToken: null, verifyTokenExp: null },
       })
-      res.json({ token: sign(verified), user: toPublicUser(verified) })
+      res.json({ token: sign(verified), refreshToken: await issueRefreshToken(verified.id), user: toPublicUser(verified) })
     } catch (err) {
       const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
       if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
@@ -225,6 +245,55 @@ router.get('/me', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' })
     res.json(toPublicUser(user))
   } catch { res.status(401).json({ error: 'Invalid token' }) }
+})
+
+// ── Refresh ────────────────────────────────────────────────────────────────────
+// Exchanges a still-valid refresh token for a new access token, so a session
+// older than the 7-day access JWT doesn't dead-end into a forced manual
+// sign-in — the client calls this transparently on a 401 (see
+// mneva/src/api/client.js). Rotated on every use: the presented token is
+// deleted and a fresh one issued, so it can't be replayed after this.
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body
+    if (!refreshToken) return res.status(400).json({ error: 'refreshToken is required' })
+
+    const tokenHash = hashToken(refreshToken)
+    const stored = await prisma.refreshToken.findUnique({ where: { tokenHash } })
+    if (!stored) return res.status(401).json({ error: 'Invalid refresh token' })
+    if (stored.expiresAt < new Date()) {
+      await prisma.refreshToken.delete({ where: { id: stored.id } }).catch(() => {})
+      return res.status(401).json({ error: 'Refresh token expired' })
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: stored.userId } })
+    if (!user) {
+      await prisma.refreshToken.delete({ where: { id: stored.id } }).catch(() => {})
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    // Rotate: the old token is consumed here and can't be exchanged again.
+    await prisma.refreshToken.delete({ where: { id: stored.id } })
+    res.json({ token: sign(user), refreshToken: await issueRefreshToken(user.id) })
+  } catch (err) {
+    res.status(500).json({ error: 'Could not refresh session. Please sign in again.' })
+  }
+})
+
+// ── Logout ─────────────────────────────────────────────────────────────────────
+// Best-effort server-side revocation of the refresh token so a signed-out
+// device can't silently renew its session again later. Never fails hard —
+// logging out locally must always succeed even if this call doesn't.
+router.post('/logout', async (req, res) => {
+  try {
+    const { refreshToken } = req.body
+    if (refreshToken) {
+      await prisma.refreshToken.deleteMany({ where: { tokenHash: hashToken(refreshToken) } })
+    }
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ── Delete account ───────────────────────────────────────────────────────────

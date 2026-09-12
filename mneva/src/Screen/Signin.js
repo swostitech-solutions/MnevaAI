@@ -112,7 +112,7 @@ export default function Signin({ navigation }) {
       // Persist the new session *before* mounting Home. Previously Home could
       // fetch with the previous/no token, leaving the UI empty until logout and
       // login caused another app start.
-      await saveAuth(data.token, data.user);
+      await saveAuth(data.token, data.user, data.refreshToken);
       resetSocket();
       await getSocket();
       registerForPushNotifications().catch(() => {});

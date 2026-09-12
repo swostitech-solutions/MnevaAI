@@ -45,6 +45,7 @@ model User {
   notifications             Notification[]
   deviceNotificationTokens  DeviceNotificationToken[]
   pushTokens                PushToken[]
+  refreshTokens             RefreshToken[]
   agentLedgers              AgentLedger[]
   trustScore                TrustScore?
   userProfile               UserProfile?
@@ -302,6 +303,25 @@ model PushToken {
   platform  String // 'android' | 'ios'
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// A stateless-JWT access token expiring after JWT_EXPIRES_IN (7d) previously
+// meant an account with no way to renew it — once expired, the only path
+// back in was a full manual sign-in. This is the renewal path: an opaque,
+// longer-lived, server-side-revocable token, stored only as a hash (never
+// the raw value) so a database read alone can't be replayed as a session.
+// Rotated on every use (the old row is deleted and a new one issued) to
+// limit how long a stolen refresh token stays valid if it's ever intercepted.
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

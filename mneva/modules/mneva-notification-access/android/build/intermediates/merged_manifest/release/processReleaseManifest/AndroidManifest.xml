@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.swostitech.mneva.notificationaccess" >
+
+    <uses-sdk android:minSdkVersion="23" />
+    <!--
+     Android only grants this service access after the user enables it in
+       Settings > Notification access. It does not request notification data
+       through a normal runtime permission.
+    -->
+    <application>
+        <service
+            android:name="com.swostitech.mneva.notificationaccess.MnevaNotificationListenerService"
+            android:exported="true"
+            android:label="Mneva notification analysis"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" >
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.service.notification.default_filter_types"
+                android:value="conversations|alerting" />
+        </service>
+    </application>
+
+</manifest>

@@ -67,7 +67,7 @@ export default function VerifyOtp({ route, navigation }) {
         retry: true,
         body: { email, otp: code },
       });
-      await saveAuth(data.token, data.user);
+      await saveAuth(data.token, data.user, data.refreshToken);
       navigation.replace('Home');
     } catch (err) {
       setError(err.message || 'Invalid or expired code');
