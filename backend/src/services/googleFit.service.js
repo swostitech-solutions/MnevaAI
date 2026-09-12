@@ -352,6 +352,15 @@ import { google } from "googleapis";
 import { prisma } from "../config/prisma.js";
 import { logger } from "../config/logger.js";
 
+// getHealthData's Fit branch fires 6 live Fit API calls (steps/heart-rate/
+// sleep/calories/weight/height) on every single call — every Health-screen
+// open and every dashboard load. This data doesn't change second to second,
+// so the raw Fit fan-out result is cached briefly per user; the merge with
+// today's manually-logged values (below) still always runs fresh against
+// current preferences, so a manual log update is never masked by the cache.
+const FIT_RAW_CACHE_TTL_MS = 3 * 60 * 1000;
+const _fitRawCache = new Map();
+
 const FIT_SCOPES = [
   "https://www.googleapis.com/auth/fitness.activity.read",
   "https://www.googleapis.com/auth/fitness.heart_rate.read",
@@ -642,15 +651,27 @@ export async function getHealthData(user) {
         const todayStartMs = todayStart.getTime();
         const weekStartMs = todayStartMs - 6 * 86400000;
 
-        const [weeklyStepsRaw, heartRate, sleep, calories, weight, height] =
-          await Promise.allSettled([
-            fetchSteps(auth, weekStartMs, now),
-            fetchHeartRate(auth, todayStartMs, now),
-            fetchSleep(auth, todayStartMs - 86400000, now),
-            fetchCalories(auth, todayStartMs, now),
-            fetchWeight(auth, now - 30 * 86400000, now),
-            fetchHeight(auth, now - 365 * 86400000, now),
-          ]);
+        const fitCacheKey = user.id;
+        const cachedFit = _fitRawCache.get(fitCacheKey);
+        const usedFitCache = !!(cachedFit && now - cachedFit.at < FIT_RAW_CACHE_TTL_MS);
+        let weeklyStepsRaw, heartRate, sleep, calories, weight, height;
+        if (usedFitCache) {
+          ({ weeklyStepsRaw, heartRate, sleep, calories, weight, height } = cachedFit.data);
+        } else {
+          [weeklyStepsRaw, heartRate, sleep, calories, weight, height] =
+            await Promise.allSettled([
+              fetchSteps(auth, weekStartMs, now),
+              fetchHeartRate(auth, todayStartMs, now),
+              fetchSleep(auth, todayStartMs - 86400000, now),
+              fetchCalories(auth, todayStartMs, now),
+              fetchWeight(auth, now - 30 * 86400000, now),
+              fetchHeight(auth, now - 365 * 86400000, now),
+            ]);
+          _fitRawCache.set(fitCacheKey, {
+            at: now,
+            data: { weeklyStepsRaw, heartRate, sleep, calories, weight, height },
+          });
+        }
 
         const weeklySteps =
           weeklyStepsRaw.status === "fulfilled" ? weeklyStepsRaw.value : [];
@@ -685,6 +706,7 @@ export async function getHealthData(user) {
           period: "today",
           lastUpdated: new Date().toISOString(),
           source: "google_fit",
+          _fitCacheHit: usedFitCache,
           heartRate: hr
             ? {
                 value: hr,

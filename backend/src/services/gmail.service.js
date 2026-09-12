@@ -13,6 +13,15 @@ import { applyModelCompat } from './openaiCompat.js'
 const EMAIL_LIST_CACHE_TTL_MS = 30000
 const _emailListCache = new Map()
 
+// getUrgentEmails does its own Gmail list + N `messages.get` calls PLUS a
+// synchronous OpenAI classification pass — heavier than listEmails above,
+// and unlike listEmails it had no cache at all. Both /api/dashboard/brief
+// and /api/dashboard/full-summary call it independently, and both Home.js
+// and Priorities.js call both of those endpoints on mount, so a single app
+// open could trigger this entire chain up to 4 times for the same data.
+const URGENT_EMAILS_CACHE_TTL_MS = 60000
+const _urgentEmailsCache = new Map()
+
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
@@ -435,6 +444,11 @@ async function classifyUrgencyWithAI(emails) {
 // Fetch today's unread primary emails and return only the genuinely urgent
 // ones, ranked by urgency.
 export async function getUrgentEmails(user, maxResults = 20) {
+  const cacheKey = `${user.id}:${maxResults}`
+  const cached = _urgentEmailsCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < URGENT_EMAILS_CACHE_TTL_MS) {
+    return cached.data
+  }
   try {
     const authClient = await getAuthenticatedGmailClient(user)
     const gmail = google.gmail({ version: 'v1', auth: authClient })
@@ -450,7 +464,10 @@ export async function getUrgentEmails(user, maxResults = 20) {
     })
 
     const messages = listRes.data.messages || []
-    if (!messages.length) return []
+    if (!messages.length) {
+      _urgentEmailsCache.set(cacheKey, { at: Date.now(), data: [] })
+      return []
+    }
 
     const emails = await Promise.all(messages.map(async (msg) => {
       const data = await gmail.users.messages.get({
@@ -473,23 +490,27 @@ export async function getUrgentEmails(user, maxResults = 20) {
     // only if OpenAI isn't configured or the call fails, so a misconfigured
     // key never silently means "flag everything" again.
     const aiResults = await classifyUrgencyWithAI(emails)
-    if (aiResults) {
-      return emails
-        .map(e => {
-          const ai = aiResults.get(e.id)
-          return { ...e, urgencyScore: ai?.score ?? 0, urgent: ai?.urgent ?? false, reason: ai?.reason || null }
-        })
-        .filter(e => e.urgent)
-        .sort((a, b) => b.urgencyScore - a.urgencyScore)
-        .slice(0, 5)
-    }
+    const result = aiResults
+      ? emails
+          .map(e => {
+            const ai = aiResults.get(e.id)
+            return { ...e, urgencyScore: ai?.score ?? 0, urgent: ai?.urgent ?? false, reason: ai?.reason || null }
+          })
+          .filter(e => e.urgent)
+          .sort((a, b) => b.urgencyScore - a.urgencyScore)
+          .slice(0, 5)
+      : emails
+          .map(e => ({ ...e, urgencyScore: scoreEmailByKeywords(e.subject, e.snippet, e.from) }))
+          .filter(e => e.urgencyScore >= 2)
+          .sort((a, b) => b.urgencyScore - a.urgencyScore)
+          .slice(0, 5)
 
-    return emails
-      .map(e => ({ ...e, urgencyScore: scoreEmailByKeywords(e.subject, e.snippet, e.from) }))
-      .filter(e => e.urgencyScore >= 2)
-      .sort((a, b) => b.urgencyScore - a.urgencyScore)
-      .slice(0, 5)
+    _urgentEmailsCache.set(cacheKey, { at: Date.now(), data: result })
+    return result
   } catch {
+    // Not cached — a transient failure (token refresh hiccup, Gmail API
+    // blip) shouldn't force every caller to see an empty result for a
+    // full minute; the next call retries for real.
     return []
   }
 }

@@ -7727,12 +7727,23 @@ export default function Home({ navigation }) {
       );
     }
     if (briefData) setBrief(briefData);
-    if (calendarData)
-      setCalendarItems(
-        Array.isArray(calendarData)
-          ? calendarData
-          : calendarData.meetings || [],
-      );
+    if (calendarData) {
+      const all = Array.isArray(calendarData)
+        ? calendarData
+        : calendarData.meetings || [];
+      setCalendarItems(all);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      // Deduplicate by eventId first, then by id
+      const seen = new Set();
+      const unique = all.filter((m) => {
+        const key = m.eventId || m.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setMeetings(unique.filter((m) => m.start && new Date(m.start) >= now));
+    }
     if (doneMeetingsData)
       setDoneMeetingIds(new Set(doneMeetingsData.ids || []));
     if (profileRes2) {
@@ -7772,6 +7783,32 @@ export default function Home({ navigation }) {
     }
   };
 
+  const applyPhase2Data = ({ ledgerData, portfolioData, spendingData, healthData }) => {
+    if (ledgerData) {
+      const seen = new Set();
+      const pending = (ledgerData.entries || []).filter(
+        (e) =>
+          e.status === "pending_approval" &&
+          !seen.has(e.id) &&
+          seen.add(e.id),
+      );
+      setPendingActions(pending);
+    }
+    if (portfolioData || spendingData) {
+      setFinanceSnap({
+        netWorth: portfolioData?.netWorth || portfolioData?.totalCurrent || 0,
+        spent: spendingData?.total || 0,
+        savingsRate: spendingData?.savingsRate || 0,
+      });
+    }
+    if (healthData) {
+      setHealthSnap({
+        steps: healthData?.steps?.value ?? healthData?.healthSync?.steps ?? null,
+        sleep: healthData?.sleep?.value ?? healthData?.healthSync?.sleep ?? null,
+      });
+    }
+  };
+
   // Paint the dashboard from the last cached responses immediately on mount
   // — otherwise every single open shows zeros/blank for however long the
   // real fetch below takes (previously 2-3s even on a fast network, since
@@ -7779,22 +7816,34 @@ export default function Home({ navigation }) {
   // still runs immediately after and silently replaces this with fresh data;
   // the ref guard stops a slow cache read from ever clobbering real data.
   const hasRealPhase1Ref = useRef(false);
+  const hasRealPhase2Ref = useRef(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData] =
-        await Promise.all([
-          peekCachedResponse("/api/notifications"),
-          peekCachedResponse("/api/dashboard/brief"),
-          peekCachedResponse("/api/onboarding/profile"),
-          peekCachedResponse("/api/tasks"),
-          peekCachedResponse("/api/calendar/meetings"),
-          peekCachedResponse("/api/tasks/meeting-done"),
-        ]);
-      const gotSomething = notifs || briefData || profileRes2 || tasksData || calendarData || doneMeetingsData;
-      if (!cancelled && !hasRealPhase1Ref.current && gotSomething) {
+      const [
+        notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData,
+        ledgerData, portfolioData, spendingData, healthData,
+      ] = await Promise.all([
+        peekCachedResponse("/api/notifications"),
+        peekCachedResponse("/api/dashboard/brief"),
+        peekCachedResponse("/api/onboarding/profile"),
+        peekCachedResponse("/api/tasks"),
+        peekCachedResponse("/api/calendar/meetings"),
+        peekCachedResponse("/api/tasks/meeting-done"),
+        peekCachedResponse("/api/agent/ledger"),
+        peekCachedResponse("/api/finance/portfolio"),
+        peekCachedResponse("/api/finance/spending"),
+        peekCachedResponse("/api/health-data/metrics"),
+      ]);
+      if (cancelled) return;
+      const gotPhase1 = notifs || briefData || profileRes2 || tasksData || calendarData || doneMeetingsData;
+      if (!hasRealPhase1Ref.current && gotPhase1) {
         applyPhase1Data({ me: null, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData });
         setBriefLoading(false);
+      }
+      const gotPhase2 = ledgerData || portfolioData || spendingData || healthData;
+      if (!hasRealPhase2Ref.current && gotPhase2) {
+        applyPhase2Data({ ledgerData, portfolioData, spendingData, healthData });
       }
     })();
     return () => { cancelled = true; };
@@ -7813,6 +7862,21 @@ export default function Home({ navigation }) {
     try {
       const { user: stored } = await getStoredAuth();
       if (stored) setUser(stored);
+
+      // Phase 1 + Phase 2 are fully independent (Phase 2 never reads
+      // anything Phase 1 returns), so both batches are fired together here
+      // — previously Phase 2's apiFetch calls weren't even issued until
+      // Phase 1 fully settled, adding its entire latency for no reason.
+      // Phase 1 is still awaited (and rendered) first so the primary
+      // dashboard content appears as soon as it's ready, without waiting
+      // on Phase 2 — that progressive-render behavior is unchanged, only
+      // the wasted serial network latency is removed.
+      const phase2Promise = Promise.allSettled([
+        apiFetch("/api/agent/ledger"),
+        apiFetch("/api/finance/portfolio"),
+        apiFetch("/api/finance/spending"),
+        apiFetch("/api/health-data/metrics"),
+      ]);
 
       // Phase 1 — critical data + tasks all in one shot
       const [
@@ -7865,46 +7929,18 @@ export default function Home({ navigation }) {
 
       setBriefLoading(false);
 
-      // Phase 2 — secondary data in background
+      // Phase 2 — secondary data, already in flight since before Phase 1
+      // was awaited above; this just picks up the result.
       const [ledgerRes, portfolioRes, spendingRes, healthRes] =
-        await Promise.allSettled([
-          apiFetch("/api/agent/ledger"),
-          apiFetch("/api/finance/portfolio"),
-          apiFetch("/api/finance/spending"),
-          apiFetch("/api/health-data/metrics"),
-        ]);
+        await phase2Promise;
 
-      if (ledgerRes.status === "fulfilled") {
-        const seen = new Set();
-        const pending = (ledgerRes.value.entries || []).filter(
-          (e) =>
-            e.status === "pending_approval" &&
-            !seen.has(e.id) &&
-            seen.add(e.id),
-        );
-        setPendingActions(pending);
-      }
-      if (
-        portfolioRes.status === "fulfilled" ||
-        spendingRes.status === "fulfilled"
-      ) {
-        const portfolio =
-          portfolioRes.status === "fulfilled" ? portfolioRes.value : null;
-        const spending =
-          spendingRes.status === "fulfilled" ? spendingRes.value : null;
-        setFinanceSnap({
-          netWorth: portfolio?.netWorth || portfolio?.totalCurrent || 0,
-          spent: spending?.total || 0,
-          savingsRate: spending?.savingsRate || 0,
-        });
-      }
-      if (healthRes.status === "fulfilled") {
-        const h = healthRes.value;
-        setHealthSnap({
-          steps: h?.steps?.value ?? h?.healthSync?.steps ?? null,
-          sleep: h?.sleep?.value ?? h?.healthSync?.sleep ?? null,
-        });
-      }
+      hasRealPhase2Ref.current = true;
+      applyPhase2Data({
+        ledgerData: ledgerRes.status === "fulfilled" ? ledgerRes.value : null,
+        portfolioData: portfolioRes.status === "fulfilled" ? portfolioRes.value : null,
+        spendingData: spendingRes.status === "fulfilled" ? spendingRes.value : null,
+        healthData: healthRes.status === "fulfilled" ? healthRes.value : null,
+      });
     } catch {
     } finally {
       isLoadingRef.current = false;
@@ -8227,33 +8263,10 @@ export default function Home({ navigation }) {
     }, 30000);
     return () => clearInterval(interval);
   }, []);
-  useEffect(() => {
-    Promise.allSettled([
-      apiFetch("/api/calendar/meetings"),
-      apiFetch("/api/tasks/meeting-done"),
-    ])
-      .then(([calendarRes, doneRes]) => {
-        if (calendarRes.status !== "fulfilled") return;
-        const all = Array.isArray(calendarRes.value)
-          ? calendarRes.value
-          : calendarRes.value.meetings || [];
-        setCalendarItems(all);
-        if (doneRes.status === "fulfilled")
-          setDoneMeetingIds(new Set(doneRes.value.ids || []));
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        // Deduplicate by eventId first, then by id
-        const seen = new Set();
-        const unique = all.filter((m) => {
-          const key = m.eventId || m.id;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setMeetings(unique.filter((m) => m.start && new Date(m.start) >= now));
-      })
-      .catch(() => {});
-  }, []);
+  // Note: /api/calendar/meetings and /api/tasks/meeting-done used to be
+  // fetched again here, duplicating two calls loadData()'s Phase 1 already
+  // makes on every mount. calendarItems/doneMeetingIds/meetings are now all
+  // derived from that single fetch inside applyPhase1Data instead.
 
   const onRefresh = () => {
     setRefreshing(true);

@@ -105,14 +105,20 @@ export async function getMessages(req, res) {
       return res.status(404).json({ message: 'Conversation not found' })
     }
 
+    // Bounded to the most recent 100 — a long-lived conversation would
+    // otherwise grow this fetch (and the Ask AI screen's initial render)
+    // unbounded. Fetched newest-first so `take` keeps the recent tail, then
+    // re-sorted back to chronological order for the client.
     const messages = await prisma.message.findMany({
       where: {
         conversationId,
       },
       orderBy: {
-        createdAt: 'asc',
+        createdAt: 'desc',
       },
+      take: 100,
     })
+    messages.reverse()
 
     res.json(messages)
   } catch (err) {

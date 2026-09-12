@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from '../context/ThemeContext';
 
 const { width } = Dimensions.get("window");
@@ -40,6 +40,7 @@ const SLIDES = [
 export default function Onboarding({ navigation }) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+  const insets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);
   const listRef = useRef(null);
 
@@ -62,7 +63,7 @@ export default function Onboarding({ navigation }) {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <StatusBar style={theme.statusBarStyle} />
 
-      <TouchableOpacity style={styles.skip} onPress={handleSkip}>
+      <TouchableOpacity style={[styles.skip, { top: insets.top + 12 }]} onPress={handleSkip}>
         <Text style={styles.skipText}>Skip</Text>
       </TouchableOpacity>
 
@@ -117,7 +118,6 @@ const createStyles = (theme) => StyleSheet.create({
   },
   skip: {
     position: "absolute",
-    top: 16,
     right: 24,
     zIndex: 10,
   },

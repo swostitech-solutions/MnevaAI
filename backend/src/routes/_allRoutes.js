@@ -2052,8 +2052,11 @@ healthRouter.get("/metrics", async (req, res) => {
     const { getHealthData } = await import("../services/googleFit.service.js");
     const user = await userStore.getById(req.user.id);
     const data = await getHealthData(user);
-    // auto-log today's Google Fit data to the calendar log
-    if (data.source === "google_fit") {
+    // auto-log today's Google Fit data to the calendar log — skipped on a
+    // cache hit (see getHealthData's Fit-fetch cache) since the data hasn't
+    // actually changed since the last write; avoids a redundant Prisma
+    // write firing on every single Health-screen/dashboard refresh.
+    if (data.source === "google_fit" && !data._fitCacheHit) {
       const today = new Date().toISOString().slice(0, 10);
       const prefs = user?.preferences || {};
       if (!prefs.healthLog) prefs.healthLog = {};
@@ -2094,6 +2097,7 @@ healthRouter.get("/metrics", async (req, res) => {
         .update({ where: { id: req.user.id }, data: { preferences: prefs } })
         .catch(() => {});
     }
+    delete data._fitCacheHit;
     res.json(data);
   } catch (err) {
     // No health source is a normal state for a new/unconnected user.
@@ -2903,6 +2907,7 @@ notifRouter.get("/", async (req, res) => {
   const notifications = await prisma.notification.findMany({
     where: { userId: req.user.id },
     orderBy: { createdAt: "desc" },
+    take: 100,
   });
   res.json({
     notifications: notifications.map((n) => {
