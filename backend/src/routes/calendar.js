@@ -5,6 +5,7 @@ import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
 import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
+import { stopCalendarPoller } from '../services/calendarPoller.js'
 
 const router = express.Router()
 
@@ -101,6 +102,7 @@ router.get('/status', async (req, res) => {
 router.post('/disconnect', async (req, res) => {
   try {
     await clearCalendarConnection(req.user.id)
+    stopCalendarPoller(req.user.id)
     ledger.add({
       userId: req.user.id,
       tool: 'account_disconnected',

@@ -6,6 +6,7 @@ import {
 import { userStore } from '../models/userStore.js';
 import { logger } from '../config/logger.js';
 import { ledger } from '../services/ledgerService.js';
+import { stopContactsPoller } from '../services/contactsPoller.js';
 
 const router = express.Router();
 
@@ -102,6 +103,7 @@ router.get('/status', async (req, res) => {
 router.post('/disconnect', async (req, res) => {
   try {
     await clearContactsTokens(req.user.id);
+    stopContactsPoller(req.user.id);
     ledger.add({
       userId: req.user.id,
       tool: 'account_disconnected',

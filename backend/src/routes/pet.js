@@ -231,6 +231,21 @@ export function startPetReminderPoller(io) {
         include: { pet: { select: { name: true, species: true } } },
       })
       for (const r of due) {
+        // Consecutive 60s polling windows aren't guaranteed to be perfectly
+        // back-to-back (setInterval drifts under load, GC pauses, etc.), so
+        // the same remindAt can land inside two ticks' windows and fire
+        // twice. Dedup the same way medicationDosePoller.js already does:
+        // the unique (userId, itemType, itemId, leadMinutes) constraint is
+        // the actual guarantee, not a read-then-write check.
+        try {
+          await prisma.reminderSchedule.create({
+            data: { userId: r.userId, itemType: 'pet_reminder', itemId: r.id, leadMinutes: 0 },
+          })
+        } catch (err) {
+          if (err.code === 'P2002') continue // already sent for this reminder
+          throw err
+        }
+
         io.to(`u:${r.userId}`).emit('pet:alert', {
           id: r.id, petId: r.petId,
           petName: r.pet.name, petSpecies: r.pet.species,

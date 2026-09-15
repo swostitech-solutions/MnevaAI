@@ -160,6 +160,20 @@ export function startFamilyReminderPoller(io) {
         where: { done: false, remindAt: { gte: now, lte: windowEnd } },
       })
       for (const item of due) {
+        // Consecutive 60s polling windows aren't guaranteed to be perfectly
+        // back-to-back, so the same remindAt can land inside two ticks'
+        // windows and fire twice. Dedup the same way medicationDosePoller.js
+        // already does: the unique (userId, itemType, itemId, leadMinutes)
+        // constraint is the actual guarantee, not a read-then-write check.
+        try {
+          await prisma.reminderSchedule.create({
+            data: { userId: item.userId, itemType: 'family_item', itemId: item.id, leadMinutes: 0 },
+          })
+        } catch (err) {
+          if (err.code === 'P2002') continue // already sent for this item
+          throw err
+        }
+
         const d = item.data || {}
         const title = d.title || d.name || d.item || d.person || 'Reminder'
         io.to(`u:${item.userId}`).emit('family:alert', {

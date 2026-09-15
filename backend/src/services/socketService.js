@@ -138,18 +138,16 @@ import { runLangGraphOrchestrator } from "../agents/langGraphOrchestrator.js";
 import { userStore } from "../models/userStore.js";
 import { ledger } from "./ledgerService.js";
 import { prisma } from "../config/prisma.js";
-import {
-  startGmailPoller,
-  stopGmailPoller,
-  sendGmailReply,
-} from "./gmailPoller.js";
-import { startCalendarPoller, stopCalendarPoller } from "./calendarPoller.js";
-import { startContactsPoller, stopContactsPoller } from "./contactsPoller.js";
+import { startGmailPoller, sendGmailReply } from "./gmailPoller.js";
+import { startCalendarPoller } from "./calendarPoller.js";
+import { startContactsPoller } from "./contactsPoller.js";
 import { setSocketServer } from "./realtime.js";
 
+// Gmail/Calendar/Contacts pollers now run globally from server boot
+// (server.js's startGoogleServicePollersForConnectedUsers), independent of
+// whether this user has a live socket — so nothing here stops them on
+// disconnect anymore. This map only tracks connection count for logging.
 const userSocketCounts = new Map();
-const pollerStopTimers = new Map();
-const POLLER_GRACE_MS = 5 * 60 * 1000;
 
 export function setupSocket(io) {
   setSocketServer(io);
@@ -172,11 +170,6 @@ export function setupSocket(io) {
     socket.join(`u:${socket.user.id}`);
 
     const userId = socket.user.id;
-    const pendingStop = pollerStopTimers.get(userId);
-    if (pendingStop) {
-      clearTimeout(pendingStop);
-      pollerStopTimers.delete(userId);
-    }
     userSocketCounts.set(userId, (userSocketCounts.get(userId) || 0) + 1);
 
     // Real-time agent message
@@ -269,23 +262,6 @@ export function setupSocket(io) {
       logger.info(
         `🔌 Disconnected: ${socket.user.name} (${reason}); remaining sockets: ${remaining}`,
       );
-
-      // A mobile network/background transition can briefly drop Socket.IO.
-      // Do not stop user pollers immediately; give the client time to reconnect.
-      if (remaining === 0) {
-        const timer = setTimeout(() => {
-          pollerStopTimers.delete(userId);
-          if (!userSocketCounts.has(userId)) {
-            stopGmailPoller(userId);
-            stopCalendarPoller(userId);
-            stopContactsPoller(userId);
-            logger.info(
-              `⏹️ Pollers stopped after socket grace period for user ${userId}`,
-            );
-          }
-        }, POLLER_GRACE_MS);
-        pollerStopTimers.set(userId, timer);
-      }
     });
   });
 }

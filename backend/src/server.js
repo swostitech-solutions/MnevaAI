@@ -25,7 +25,6 @@ import searchRoutes from "./routes/search.js";
 import conversationRoutes from "./routes/conversations.js";
 import messageRoutes from "./routes/messages.js";
 import documentsRoutes from "./routes/documents.js";
-import workflowsRoutes from "./routes/workflows.js";
 import preferencesRoutes from "./routes/preferences.js";
 import gmailRoutes, { gmailCallbackHandler } from "./routes/gmail.js";
 import calendarRoutes, { calendarCallbackHandler } from "./routes/calendar.js";
@@ -50,12 +49,13 @@ import {
 import deviceNotificationRoutes from "./routes/deviceNotifications.js";
 import pushRoutes from "./routes/push.js";
 import tasksRoutes from "./routes/tasks.js";
-import { connectDatabase, disconnectDatabase } from "./config/prisma.js";
+import { connectDatabase, disconnectDatabase, prisma } from "./config/prisma.js";
+import { startGmailPoller } from "./services/gmailPoller.js";
+import { startCalendarPoller } from "./services/calendarPoller.js";
+import { startContactsPoller } from "./services/contactsPoller.js";
 import { connectQdrant } from "./config/qdrant.js";
 import { connectRedis, disconnectRedis } from "./config/redis.js";
-import { startEmailWorker } from "./queues/email.queue.js";
 import { startReminderWorker } from "./queues/reminder.queue.js";
-import { startWorkflowWorker } from "./queues/workflow.queue.js";
 import { startDailyDigestWorker, scheduleDailyDigest } from "./queues/dailyDigest.queue.js";
 import { startAdvanceReminderWorker, scheduleAdvanceReminderScan } from "./queues/advanceReminder.queue.js";
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
@@ -71,6 +71,12 @@ app.disable("etag");
 let isShuttingDown = false;
 let databaseReady = false;
 let selfPingTimer = null;
+// BullMQ Worker instances started once Redis is ready — closed gracefully in
+// shutdown() below. Previously nothing here was ever closed, so a job
+// actively being processed at the moment SIGTERM arrived had its Redis
+// connection pulled out from under it mid-run (disconnectRedis fires in the
+// very same shutdown pass) instead of being allowed to finish first.
+const activeWorkers = [];
 let eventLoopLagMs = 0;
 let lastLoopCheckAt = Date.now();
 
@@ -432,7 +438,6 @@ app.use("/api/gtasks", authMiddleware, gtasksRoutes);
 app.use("/api/conversations", authMiddleware, conversationRoutes);
 app.use("/api/messages", authMiddleware, messageRoutes);
 app.use("/api/documents", authMiddleware, documentsRoutes);
-app.use("/api/workflows", authMiddleware, workflowsRoutes);
 app.use("/api/preferences", authMiddleware, preferencesRoutes);
 
 // ── Protected ───────────────────────────────────────────────────────────────
@@ -497,6 +502,19 @@ const shutdown = async (signal) => {
     new Promise((resolve) => setTimeout(resolve, 10000)),
   ]);
 
+  // Let any job actively being processed right now finish (or hit BullMQ's
+  // own internal close timeout) before the Redis connection it needs is torn
+  // down below — previously nothing closed these, so an in-flight job's
+  // connection could be pulled out from under it by disconnectRedis() in the
+  // same pass.
+  if (activeWorkers.length) {
+    logger.info(`Closing ${activeWorkers.length} BullMQ worker(s)...`);
+    await Promise.race([
+      Promise.allSettled(activeWorkers.map((w) => w.close())),
+      new Promise((resolve) => setTimeout(resolve, 10000)),
+    ]);
+  }
+
   await Promise.allSettled([disconnectDatabase(), disconnectRedis()]);
   process.exit(0);
 };
@@ -517,6 +535,38 @@ async function connectDatabaseWithRetry() {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+}
+
+// Gmail/Calendar/Contacts polling used to only run for the duration of a
+// user's live Socket.IO connection, and stopped 5 minutes after the last one
+// disconnected — meaning new-email/new-event alerts silently stopped once
+// the app had been closed for a few minutes. Every other proactive alert in
+// this app (medication doses, pet/family reminders, the advance-reminder
+// scan) runs globally regardless of app state; this brings Gmail/Calendar/
+// Contacts in line with that by starting them here at boot for every user
+// who has a relevant account connected. socketService.js still calls the
+// same start functions on socket connect (harmless — each is a no-op if
+// already running for that user) so a brand-new connection made mid-session
+// doesn't have to wait for a server restart to start being polled.
+async function startGoogleServicePollersForConnectedUsers(io) {
+  const users = await prisma.user.findMany({ select: { id: true, preferences: true } });
+  let gmailCalendarCount = 0;
+  let contactsCount = 0;
+  for (const user of users) {
+    const prefs = user.preferences || {};
+    if (prefs.gmail?.tokens || prefs.calendar?.tokens) {
+      startGmailPoller(user.id, io);
+      startCalendarPoller(user.id, io);
+      gmailCalendarCount++;
+    }
+    if (prefs.googleContacts?.tokens && !prefs.googleContacts?.disconnected) {
+      startContactsPoller(user.id, io);
+      contactsCount++;
+    }
+  }
+  logger.info(
+    `📡 Google-account pollers started — Gmail/Calendar: ${gmailCalendarCount} user(s), Contacts: ${contactsCount} user(s)`,
+  );
 }
 
 // ── FIX: open the port immediately, don't block on Redis/Qdrant/DB ──────────
@@ -579,6 +629,9 @@ server.on("listening", () => {
       startPetReminderPoller(io);
       startFamilyReminderPoller(io);
       startMedicationDosePoller();
+      startGoogleServicePollersForConnectedUsers(io).catch((err) =>
+        logger.error(`Failed to start Google-account pollers: ${err.message}`),
+      );
       // Fire-and-forget: chains + signs any ledger rows written before the
       // Twin Diary's hash-chain existed. Runs every boot but is a no-op once
       // the table is fully backfilled, so it never delays startup noticeably.
@@ -593,12 +646,10 @@ server.on("listening", () => {
 
     if (redisClient) {
       try {
-        startEmailWorker();
-        startReminderWorker(io);
-        startWorkflowWorker();
-        startDailyDigestWorker();
+        activeWorkers.push(startReminderWorker(io));
+        activeWorkers.push(startDailyDigestWorker());
         await scheduleDailyDigest();
-        startAdvanceReminderWorker();
+        activeWorkers.push(startAdvanceReminderWorker());
         await scheduleAdvanceReminderScan();
         logger.info("✅ BullMQ workers started");
       } catch (error) {
