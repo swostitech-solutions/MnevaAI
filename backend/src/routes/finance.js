@@ -610,6 +610,14 @@ financeRouter.get('/spending', async (req, res) => {
 
 financeRouter.post('/pay', async (req, res) => {
   try {
+    const amount = Number(req.body.amount) || 0
+    if (amount >= 1000) {
+      const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { preferences: true } })
+      const gateOn = user?.preferences?.privacy?.biometricGate !== false
+      if (gateOn && req.body.biometricConfirmed !== true) {
+        return res.status(403).json({ error: 'biometric_required', message: 'Biometric confirmation is required for payments ≥ ₹1,000.' })
+      }
+    }
     const entry = await ledger.add({
       userId: req.user.id,
       tool: 'initiate_payment',

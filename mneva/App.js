@@ -57,6 +57,8 @@ import FamilyCalendar from "./src/Screen/FamilyCalendar";
 import PhoneAlerts from "./src/Screen/PhoneAlerts";
 import PhoneAlertDetail from "./src/Screen/PhoneAlertDetail";
 import { getStoredAuth } from "./src/storage/auth";
+import { isAppLockEnabled } from "./src/storage/appLock";
+import * as LocalAuthentication from "expo-local-authentication";
 import { apiFetch, pingBackend } from "./src/api/client";
 // Wake Render backend immediately on JS bundle load — before any screen mounts
 pingBackend();
@@ -71,6 +73,7 @@ import ReminderAlert from "./src/components/ReminderAlert";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import SessionExpiredBanner from "./src/components/SessionExpiredBanner";
 import ServerBusyBanner from "./src/components/ServerBusyBanner";
+import AppLockScreen from "./src/components/AppLockScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -123,6 +126,12 @@ function AppInner() {
   // user *why* the screen looks stuck instead of leaving them staring at a
   // silent blank/stale screen, which previously read as "the app is fully broken."
   const [serverBusyBanner, setServerBusyBanner] = useState(false);
+  // Whether the biometric app-lock screen is currently blocking access. Only
+  // ever set true if lockApplicableRef is also true — a device with no
+  // biometric hardware/enrollment, or the feature turned off in Settings,
+  // is never locked out with no way back in.
+  const [appLockActive, setAppLockActive] = useState(false);
+  const lockApplicableRef = useRef(false);
   const navigationRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
   const recoveryTimerRef = useRef(null);
@@ -300,6 +309,7 @@ function AppInner() {
         pingBackend().catch(() => {});
       }
       if (!wasBackgrounded || state !== "active") return;
+      if (lockApplicableRef.current) setAppLockActive(true);
       recoverSession().catch(() => {});
     });
     return () => {
@@ -357,6 +367,21 @@ function AppInner() {
           // and never sees the Signin screen again — still gets registered
           // after this feature ships.
           registerForPushNotifications().catch(() => {});
+
+          // App-open biometric lock — only meaningful for an already
+          // signed-in session; Onboarding/Signin have nothing to protect
+          // yet. Never locks a device out with no way back in: only applies
+          // when the feature is on AND the device actually has biometrics
+          // set up.
+          try {
+            const enabled = await isAppLockEnabled();
+            const hasHardware = enabled && await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = hasHardware && await LocalAuthentication.isEnrolledAsync();
+            lockApplicableRef.current = !!(enabled && hasHardware && isEnrolled);
+            if (lockApplicableRef.current) setAppLockActive(true);
+          } catch {
+            lockApplicableRef.current = false;
+          }
         }
       } catch {
         setInitialRoute("Onboarding");
@@ -377,6 +402,15 @@ function AppInner() {
     return (
       <SafeAreaProvider>
         <Splash />
+      </SafeAreaProvider>
+    );
+  }
+
+  if (appLockActive) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style={theme.statusBarStyle} />
+        <AppLockScreen onUnlock={() => setAppLockActive(false)} />
       </SafeAreaProvider>
     );
   }

@@ -16,7 +16,8 @@
         "NSMicrophoneUsageDescription": "Mneva uses your microphone to record voice messages for AI transcription.",
         "NSLocationWhenInUseUsageDescription": "Mneva uses your location to show local weather on the dashboard.",
         "NSCameraUsageDescription": "Mneva uses your camera to capture images for AI analysis.",
-        "NSPhotoLibraryUsageDescription": "Mneva accesses your photo library to upload images for AI analysis."
+        "NSPhotoLibraryUsageDescription": "Mneva accesses your photo library to upload images for AI analysis.",
+        "NSFaceIDUsageDescription": "Mneva uses Face ID to keep your account locked when the app isn't in use."
       }
     },
     "android": {
@@ -78,6 +79,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Mneva uses Face ID to keep your account locked when the app isn't in use."
+        }
+      ],
       [
         "expo-notifications",
         {

@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
 import { useTheme } from '../../context/ThemeContext';
@@ -75,7 +76,15 @@ export default function BillScreen({ navigation }) {
   const [uploading, setUploading] = useState(false);
   const [payModal, setPayModal] = useState(null);
   const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState(null);
+  const [biometricGateOn, setBiometricGateOn] = useState(true);
   const isEditing = !!editItem;
+
+  useEffect(() => {
+    apiFetch('/api/trust/settings').then((data) => {
+      if (data?.preferences?.privacy?.biometricGate === false) setBiometricGateOn(false);
+    }).catch(() => {});
+  }, []);
 
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -170,17 +179,37 @@ export default function BillScreen({ navigation }) {
 
   const handlePay = async () => {
     if (!payModal) return;
+    const amount = payModal.amount || 0;
+    setPayError(null);
     setPaying(true);
     try {
+      let biometricConfirmed = false;
+      if (amount >= 1000 && biometricGateOn) {
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = hasHardware && await LocalAuthentication.isEnrolledAsync();
+        if (hasHardware && isEnrolled) {
+          const result = await LocalAuthentication.authenticateAsync({
+            promptMessage: `Confirm payment of ₹${amount.toLocaleString('en-IN')}`,
+            cancelLabel: 'Cancel',
+            disableDeviceFallback: false,
+          });
+          if (!result.success) { setPaying(false); return; }
+          biometricConfirmed = true;
+        }
+      }
       await apiFetch('/api/finance/pay', {
         method: 'POST',
-        body: { billId: payModal.id, amount: payModal.amount, payee: payModal.name, category: payModal.category },
+        body: { billId: payModal.id, amount: payModal.amount, payee: payModal.name, category: payModal.category, biometricConfirmed },
       });
       setPayModal(null);
       loadData(true);
-    } catch {}
+    } catch (err) {
+      setPayError(err?.message === 'biometric_required' ? 'Biometric confirmation required for this payment.' : "Couldn't complete payment — try again.");
+    }
     finally { setPaying(false); }
   };
+
+  const closePayModal = () => { setPayModal(null); setPayError(null); };
 
   const handleBack = () => { if (showForm) closeForm(); else navigation?.goBack(); };
   const displayedBills = bills.map(billDisplay);
@@ -382,8 +411,8 @@ export default function BillScreen({ navigation }) {
         </ScrollView>
       )}
 
-      <Modal visible={!!payModal} transparent animationType="fade" onRequestClose={() => setPayModal(null)}>
-        <TouchableWithoutFeedback onPress={() => setPayModal(null)}>
+      <Modal visible={!!payModal} transparent animationType="fade" onRequestClose={closePayModal}>
+        <TouchableWithoutFeedback onPress={closePayModal}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.modalSheet}>
@@ -395,16 +424,19 @@ export default function BillScreen({ navigation }) {
                     <Text style={styles.modalRowVal}>{v}</Text>
                   </View>
                 ))}
-                <View style={styles.biometricNote}>
-                  <Feather name="lock" size={13} color={theme.warning} />
-                  <Text style={styles.biometricText}>  Biometric required for payments ≥ ₹1,000</Text>
-                </View>
+                {(payModal?.amount || 0) >= 1000 && biometricGateOn && (
+                  <View style={styles.biometricNote}>
+                    <Feather name="lock" size={13} color={theme.warning} />
+                    <Text style={styles.biometricText}>  Biometric required for payments ≥ ₹1,000</Text>
+                  </View>
+                )}
+                {payError && <Text style={styles.payErrorText}>{payError}</Text>}
                 <TouchableOpacity style={styles.payBtn} onPress={handlePay} disabled={paying}>
                   <LinearGradient colors={['#1F9A5A', '#3CB37A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.payBtnGrad}>
-                    <Text style={styles.payBtnText}>{paying ? 'Processing…' : 'Authenticate & Pay'}</Text>
+                    {paying ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.payBtnText}>Authenticate & Pay</Text>}
                   </LinearGradient>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setPayModal(null)}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={closePayModal}>
                   <Text style={styles.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
@@ -473,6 +505,7 @@ const createStyles = (theme) => StyleSheet.create({
   modalRowVal: { fontSize: 13, fontWeight: '700', color: theme.text },
   biometricNote: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderRadius: 10, padding: 12, marginVertical: 16 },
   biometricText: { fontSize: 12, color: theme.warning, fontWeight: '600' },
+  payErrorText: { fontSize: 12, color: theme.danger, fontWeight: '600', textAlign: 'center', marginBottom: 10 },
   payBtn: { borderRadius: 16, overflow: 'hidden', marginBottom: 10 },
   payBtnGrad: { paddingVertical: 16, alignItems: 'center' },
   payBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },

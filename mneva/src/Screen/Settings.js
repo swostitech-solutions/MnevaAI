@@ -7,6 +7,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { clearAuth } from '../storage/auth';
+import { isAppLockEnabled, setAppLockEnabled } from '../storage/appLock';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { AppState, Platform } from 'react-native';
 import {
   enableNotificationCapture,
@@ -241,6 +243,10 @@ export default function Settings({ navigation, route }) {
   const [user, setUser] = useState(null);
   const [phoneCaptureEnabled, setPhoneCaptureEnabled] = useState(false);
   const [phoneCaptureBusy, setPhoneCaptureBusy] = useState(false);
+  // Device-local (not synced to the account, unlike PRIVACY_TOGGLES above) —
+  // whether biometrics unlock the app itself, checked once on mount.
+  const [appLockOn, setAppLockOn] = useState(true);
+  const [appLockSupported, setAppLockSupported] = useState(true);
 
   // Shared by the real fetch below and by the cache-hydration pass before
   // it, so a returning user sees their last known settings immediately
@@ -292,6 +298,27 @@ export default function Settings({ navigation, route }) {
       applySettingsData(data, me);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [enabledPref, hasHardware, isEnrolled] = await Promise.all([
+          isAppLockEnabled(),
+          LocalAuthentication.hasHardwareAsync(),
+          LocalAuthentication.isEnrolledAsync(),
+        ]);
+        setAppLockOn(enabledPref);
+        setAppLockSupported(hasHardware && isEnrolled);
+      } catch {
+        setAppLockSupported(false);
+      }
+    })();
+  }, []);
+
+  const toggleAppLock = async (val) => {
+    setAppLockOn(val);
+    await setAppLockEnabled(val);
+  };
 
   // Android's settings page is outside the app, so confirm the final consent
   // whenever the Settings screen becomes active again.
@@ -474,18 +501,48 @@ export default function Settings({ navigation, route }) {
           <>
             <Text style={styles.sectionLabel}>Privacy & Security</Text>
             <View style={styles.card}>
-              {PRIVACY_TOGGLES.map(({ key, label, icon }, i) => (
-                <View key={key} style={[styles.toggleRow, i !== PRIVACY_TOGGLES.length - 1 && styles.divider]}>
-                  <Feather name={icon} size={16} color={theme.textSecondary} />
-                  <Text style={styles.toggleLabel}>{label}</Text>
-                  <Switch
-                    value={!!privacy[key]}
-                    onValueChange={v => togglePrivacy(key, v)}
-                    trackColor={{ false: theme.borderStrong, true: theme.accent }}
-                    thumbColor="#FFFFFF"
-                  />
-                </View>
-              ))}
+              {PRIVACY_TOGGLES.map(({ key, label, icon }, i) => {
+                const isBiometricGate = key === 'biometricGate';
+                const disabled = isBiometricGate && !appLockSupported;
+                return (
+                  <View key={key} style={[styles.toggleRow, i !== PRIVACY_TOGGLES.length - 1 && styles.divider]}>
+                    <Feather name={icon} size={16} color={theme.textSecondary} />
+                    <Text style={styles.toggleLabel}>{label}</Text>
+                    <Switch
+                      value={!!privacy[key] && !disabled}
+                      onValueChange={v => togglePrivacy(key, v)}
+                      disabled={disabled}
+                      trackColor={{ false: theme.borderStrong, true: theme.accent }}
+                      thumbColor="#FFFFFF"
+                    />
+                  </View>
+                );
+              })}
+              {!appLockSupported && (
+                <Text style={styles.appLockHint}>
+                  Set up Face ID, fingerprint, or a screen lock on this device to use the biometric payment gate.
+                </Text>
+              )}
+            </View>
+
+            <Text style={styles.sectionLabel}>App Lock</Text>
+            <View style={styles.card}>
+              <View style={styles.toggleRow}>
+                <Feather name="lock" size={16} color={theme.textSecondary} />
+                <Text style={styles.toggleLabel}>Unlock Mneva with Face ID / fingerprint</Text>
+                <Switch
+                  value={appLockOn && appLockSupported}
+                  onValueChange={toggleAppLock}
+                  disabled={!appLockSupported}
+                  trackColor={{ false: theme.borderStrong, true: theme.accent }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+              {!appLockSupported && (
+                <Text style={styles.appLockHint}>
+                  Set up Face ID, fingerprint, or a screen lock on this device to use this.
+                </Text>
+              )}
             </View>
           </>
         )}
@@ -623,6 +680,7 @@ const createStyles = (theme) => StyleSheet.create({
   levelDesc:       { fontSize: 12, color: theme.faint, marginTop: 2 },
   toggleRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   toggleLabel:     { flex: 1, fontSize: 14, fontWeight: '600', color: theme.text, marginLeft: 12 },
+  appLockHint:     { fontSize: 12, color: theme.faint, paddingBottom: 14, paddingHorizontal: 2 },
   captureRow:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   captureIcon:     { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', alignItems: 'center', justifyContent: 'center' },
   captureTitle:    { fontSize: 14, fontWeight: '700', color: theme.text },
