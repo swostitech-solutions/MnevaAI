@@ -142,6 +142,7 @@ import { startGmailPoller, sendGmailReply } from "./gmailPoller.js";
 import { startCalendarPoller } from "./calendarPoller.js";
 import { startContactsPoller } from "./contactsPoller.js";
 import { setSocketServer } from "./realtime.js";
+import { resolvePendingAction } from "./pendingActions.service.js";
 
 // Gmail/Calendar/Contacts pollers now run globally from server boot
 // (server.js's startGoogleServicePollersForConnectedUsers), independent of
@@ -189,17 +190,40 @@ export function setupSocket(io) {
       }
     });
 
-    // Action approval
-    socket.on("action:approve", ({ actionId }) => {
-      logger.info(`✅ Action approved: ${actionId} by ${socket.user.name}`);
-      io.to(`u:${socket.user.id}`).emit("action:confirmed", {
-        actionId,
-        ts: new Date().toISOString(),
-      });
+    // Action approval — resolvePendingAction actually runs (or cancels) the
+    // real side effect and updates trust score/level; this handler just
+    // broadcasts the outcome to every device signed into this account.
+    socket.on("action:approve", async ({ actionId, biometricConfirmed }) => {
+      try {
+        const outcome = await resolvePendingAction(socket.user.id, actionId, "approve", { biometricConfirmed });
+        if (outcome.error) {
+          socket.emit("action:failed", { actionId, error: outcome.error });
+          return;
+        }
+        logger.info(`✅ Action approved: ${actionId} by ${socket.user.name}`);
+        io.to(`u:${socket.user.id}`).emit("action:confirmed", {
+          actionId,
+          result: outcome.result,
+          ts: new Date().toISOString(),
+        });
+      } catch (err) {
+        logger.error(`Action approve failed: ${err.message}`);
+        socket.emit("action:failed", { actionId, error: err.message });
+      }
     });
-    socket.on("action:deny", ({ actionId }) => {
-      logger.info(`✕ Action denied: ${actionId}`);
-      socket.emit("action:denied", { actionId });
+    socket.on("action:deny", async ({ actionId }) => {
+      try {
+        const outcome = await resolvePendingAction(socket.user.id, actionId, "deny");
+        if (outcome.error) {
+          socket.emit("action:failed", { actionId, error: outcome.error });
+          return;
+        }
+        logger.info(`✕ Action denied: ${actionId}`);
+        io.to(`u:${socket.user.id}`).emit("action:denied", { actionId, ts: new Date().toISOString() });
+      } catch (err) {
+        logger.error(`Action deny failed: ${err.message}`);
+        socket.emit("action:failed", { actionId, error: err.message });
+      }
     });
 
     // Ledger sync

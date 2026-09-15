@@ -6,6 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
+import { useSocket } from '../services/socket';
 import { clearAuth } from '../storage/auth';
 import { isAppLockEnabled, setAppLockEnabled } from '../storage/appLock';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -228,6 +229,7 @@ export default function Settings({ navigation, route }) {
   const { width } = useWindowDimensions();
   const { theme } = useTheme();
   const styles = createStyles(theme);
+  const { on } = useSocket();
   const [activeTab, setActiveTab] = useState(route?.params?.tab ?? 0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -319,6 +321,13 @@ export default function Settings({ navigation, route }) {
     setAppLockOn(val);
     await setAppLockEnabled(val);
   };
+
+  // Trust level can now change on its own (auto-adjusted after a streak of
+  // approvals/denials in chat, not just a manual pick here) — this keeps the
+  // Trust tab in sync live instead of only reflecting reality on next load.
+  useEffect(() => on('trust:levelChanged', ({ level }) => {
+    setCurrentLevel(level);
+  }), [on]);
 
   // Android's settings page is outside the app, so confirm the final consent
   // whenever the Settings screen becomes active again.

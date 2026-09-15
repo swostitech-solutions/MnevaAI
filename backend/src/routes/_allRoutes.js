@@ -1284,6 +1284,7 @@ import { createDeviceToken, hashToken } from "./deviceNotifications.js";
 import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
+import { resolvePendingAction, listPendingActions } from "../services/pendingActions.service.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1576,24 +1577,23 @@ agentRouter.get("/ledger", async (req, res) => {
 agentRouter.get("/registry", (_req, res) => {
   res.json(getAgentRegistrySnapshot());
 });
+agentRouter.get("/pending-actions", async (req, res) => {
+  const actions = await listPendingActions(req.user.id);
+  res.json({ actions });
+});
 agentRouter.post("/approve", async (req, res) => {
-  await prisma.trustScore.upsert({
-    where: { userId: req.user.id },
-    update: { approvedActions: { increment: 1 }, score: { increment: 1 } },
-    create: { userId: req.user.id, approvedActions: 1, score: 1 },
-  });
+  const outcome = await resolvePendingAction(req.user.id, req.body.actionId, "approve", { biometricConfirmed: req.body.biometricConfirmed });
+  if (outcome.error) return res.status(outcome.error === "biometric_required" ? 403 : 404).json(outcome);
   res.json({
     actionId: req.body.actionId,
     status: "approved",
+    result: outcome.result,
     ts: new Date().toISOString(),
   });
 });
 agentRouter.post("/deny", async (req, res) => {
-  await prisma.trustScore.upsert({
-    where: { userId: req.user.id },
-    update: { rejectedActions: { increment: 1 }, score: { decrement: 1 } },
-    create: { userId: req.user.id, rejectedActions: 1, score: -1 },
-  });
+  const outcome = await resolvePendingAction(req.user.id, req.body.actionId, "deny");
+  if (outcome.error) return res.status(404).json(outcome);
   res.json({
     actionId: req.body.actionId,
     status: "denied",
@@ -3244,9 +3244,16 @@ trustRouter.patch("/level", async (req, res) => {
     ledger.add({
       userId: req.user.id,
       tool: "trust_level_changed",
-      input: { from: before.trustLevel, to: user.trustLevel },
+      input: { from: before.trustLevel, to: user.trustLevel, reason: "manual" },
       result: { level: user.trustLevel },
       status: "completed",
+    }).catch(() => {});
+    // A manual change is a deliberate reset — old streaks shouldn't carry
+    // into the newly-chosen level and silently trigger another auto-change.
+    prisma.trustScore.upsert({
+      where: { userId: req.user.id },
+      update: { approvalStreak: 0, rejectionStreak: 0 },
+      create: { userId: req.user.id, approvalStreak: 0, rejectionStreak: 0 },
     }).catch(() => {});
   }
   res.json({ success: true, newLevel: user.trustLevel });

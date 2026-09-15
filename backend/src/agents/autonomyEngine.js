@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
+import { getAutonomyPolicy, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction } from '../services/pendingActions.service.js'
 
 function validTimeZone(value) {
   try {
@@ -516,7 +517,20 @@ export async function executeTool(name, input, userId) {
       }
     }
     case 'query_bills':          return []
-    case 'initiate_payment':     return { actionId: `pay_${Date.now()}`, status: 'pending_approval', requiresBiometric: (input.amount || 0) >= 1000, ...input }
+    case 'initiate_payment': {
+      const policy = await getAutonomyPolicy(userId)
+      const gate = decideGate('initiate_payment', policy)
+      const amount = Number(input.amount) || 0
+      if (gate.mode === 'blocked') {
+        return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, 'make this payment') }
+      }
+      if (gate.mode === 'pending') {
+        const summary = `Pay ₹${amount.toLocaleString('en-IN')} to ${input.payee || 'payee'}`
+        const pending = await createPendingAction(userId, 'initiate_payment', gate.domain, input, summary)
+        return { success: true, status: 'pending_approval', pendingActionId: pending.id, requiresBiometric: amount >= 1000, message: "I've prepared this payment — approve it in the app to send it." }
+      }
+      return await executePaymentSideEffect(userId, input)
+    }
     case 'get_portfolio':        return { totalInvested: 0, totalCurrent: 0, holdings: [], accounts: [] }
     case 'get_spending_summary': return { period: input.period, total: 0, categories: [], insights: [] }
     case 'get_emails': {
@@ -529,12 +543,18 @@ export async function executeTool(name, input, userId) {
     }
     case 'draft_reply':          return { error: 'No connected email data found' }
     case 'send_email': {
+      const policy = await getAutonomyPolicy(userId)
+      const gate = decideGate('send_email', policy)
+      if (gate.mode === 'blocked') {
+        return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, 'send this email') }
+      }
+      if (gate.mode === 'pending') {
+        const summary = `Send email to ${input.recipient || 'recipient'}`
+        const pending = await createPendingAction(userId, 'send_email', gate.domain, input, summary)
+        return { success: true, status: 'pending_approval', pendingActionId: pending.id, message: "I've drafted this email — approve it in the app to send it." }
+      }
       try {
-        const { sendEmail: _sendEmail } = await import('../services/gmail.service.js')
-        const { userStore: _userStore } = await import('../models/userStore.js')
-        const _user = await _userStore.getById(userId)
-        const result = await _sendEmail(_user, input.recipient, input.email_id, input.draft)
-        return { success: true, result }
+        return await executeSendEmailSideEffect(userId, input)
       } catch (err) { return { success: false, error: err.message } }
     }
     case 'get_health_data': {
@@ -1226,7 +1246,9 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
           tool: tb.name,
           input: tb.input,
           result,
-          status: result?.success === false ? 'failed' : 'completed',
+          status: result?.status === 'pending_approval' ? 'pending_approval'
+            : result?.blocked ? 'blocked'
+            : result?.success === false ? 'failed' : 'completed',
         })
         // Delay slightly so any task DB writes from the tool are committed first
         setTimeout(() => emitToUser(user.id, 'ledger:updated', ledgerEntry), 500)

@@ -47,6 +47,7 @@ model User {
   pushTokens                PushToken[]
   refreshTokens             RefreshToken[]
   agentLedgers              AgentLedger[]
+  pendingActions            PendingAction[]
   trustScore                TrustScore?
   userProfile               UserProfile?
   familyConnectionsSent     FamilyConnection[]        @relation("ConnectionRequester")
@@ -316,6 +317,28 @@ model PushToken {
 // the raw value) so a database read alone can't be replayed as a session.
 // Rotated on every use (the old row is deleted and a new one issued) to
 // limit how long a stolen refresh token stays valid if it's ever intercepted.
+// An AI-proposed sensitive action (payment, email) awaiting the user's
+// explicit approval — created when the trust-level gate defers execution
+// instead of running it immediately. Resolving one (approve/deny) is what
+// actually triggers or cancels the real side effect; see
+// pendingActions.service.js. Separate from AgentLedger (an immutable audit
+// trail) since this row's `status` is mutated in place as it's resolved.
+model PendingAction {
+  id         String    @id @default(uuid())
+  userId     String
+  tool       String
+  domain     String
+  input      Json
+  summary    String
+  status     String    @default("pending") // pending | approved | rejected
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
 model RefreshToken {
   id        String   @id @default(uuid())
   userId    String
@@ -412,6 +435,12 @@ model TrustScore {
   approvedActions Int    @default(0)
   rejectedActions Int    @default(0)
   executedActions Int    @default(0)
+  // Consecutive approvals/denials since the last one of the opposite kind
+  // (or the last level change) — what actually drives auto trust-level
+  // changes, since a lifetime total never resets and would let one good week
+  // years ago paper over recent rejections. See applyTrustFeedback().
+  approvalStreak  Int    @default(0)
+  rejectionStreak Int    @default(0)
   user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
