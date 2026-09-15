@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (syntax, Prisma schema, unit tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Placeholder values so modules that validate an env var exists at
+      # import time (config/prisma.js, tokenCrypto.js) load cleanly — nothing
+      # here needs a real database or a real key, since the tests that run
+      # in CI never open a connection or encrypt/decrypt anything real.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci_placeholder
+      JWT_SECRET: ci_placeholder_secret_do_not_use_in_prod_32ch
+      TOKEN_ENCRYPTION_KEY: Tjtjf+hxc92UlKm8PNOVo3ClrIqZOzaXhOCTFY1R7Ww=
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      - name: Syntax-check every source file
+        run: find src scripts instrument.mjs -name "*.js" -o -name "*.mjs" | xargs -n1 node --check
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Run unit tests
+        # Excludes tests/ocr.pipeline.test.js on purpose — it needs a live
+        # Qdrant instance and an uploaded fixture file that isn't committed
+        # to the repo (storage/ is gitignored), so it's a local/manual
+        # integration test, not something a clean CI runner can pass.
+        run: node --test --test-timeout=15000 tests/autonomyEngine.test.js
+
+  mneva:
+    name: Mneva app (syntax check)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mneva
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mneva/package-lock.json
+
+      - run: npm ci
+
+      - name: Syntax-check every source file (JSX/TS-aware parse)
+        run: |
+          node -e "
+          const parser = require('@babel/parser');
+          const fs = require('fs');
+          const path = require('path');
+          const plugins = ['jsx', 'nullishCoalescingOperator', 'optionalChaining', 'classProperties', 'objectRestSpread'];
+          const roots = ['App.js', 'src'];
+          let failed = false;
+          function walk(p) {
+            const stat = fs.statSync(p);
+            if (stat.isDirectory()) {
+              for (const entry of fs.readdirSync(p)) walk(path.join(p, entry));
+              return;
+            }
+            if (!/\.jsx?$/.test(p)) return;
+            try {
+              parser.parse(fs.readFileSync(p, 'utf8'), { sourceType: 'module', plugins });
+            } catch (e) {
+              console.error(p + ': ' + e.message);
+              failed = true;
+            }
+          }
+          for (const r of roots) walk(r);
+          if (failed) process.exit(1);
+          console.log('All frontend source files parsed cleanly.');
+          "

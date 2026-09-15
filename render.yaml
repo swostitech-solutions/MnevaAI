@@ -4,7 +4,7 @@ services:
     runtime: node
     rootDir: backend
     buildCommand: bash render-build.sh
-    startCommand: node src/server.js
+    startCommand: node --import ./instrument.mjs src/server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,6 +19,8 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: SENTRY_DSN
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false

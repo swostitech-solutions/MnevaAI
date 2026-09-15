@@ -8,6 +8,7 @@ import compression from "compression";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { logger } from "./config/logger.js";
+import { Sentry, sentryEnabled } from "./config/sentry.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { authMiddleware } from "./middleware/auth.js";
 import { setupSocket } from "./services/socketService.js";
@@ -463,6 +464,10 @@ app.use("/api/family", authMiddleware, familyRouter);
 app.use("/api/pet", authMiddleware, petRouter);
 app.use("/api/family-items", authMiddleware, familyItemsRouter);
 
+// Sentry's own error handler must sit between the routes and our custom
+// one — it needs to see the error first to report it, then hands off to
+// errorHandler.js unchanged for the actual response shape.
+if (sentryEnabled) Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 // create server and socket once; fail fast if port is unavailable
@@ -720,6 +725,7 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("uncaughtException", (err) => {
   logger.error(`Uncaught exception: ${err?.stack || err}`);
+  if (sentryEnabled) Sentry.captureException(err);
   // Only exit for truly fatal errors, not OCR/file-not-found issues
   if (err.code === "EADDRINUSE" || err.code === "EACCES") {
     process.exit(1);
@@ -727,6 +733,7 @@ process.on("uncaughtException", (err) => {
 });
 process.on("unhandledRejection", (err) => {
   logger.error(`Unhandled rejection: ${err?.stack || err}`);
+  if (sentryEnabled) Sentry.captureException(err);
 });
 
 export default app;
