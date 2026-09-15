@@ -9,7 +9,8 @@
     "start": "node src/server.js",
     "postinstall": "npx prisma generate && (npx prisma migrate resolve --rolled-back 20260823082440_add_missing_pet_family_models || true)",
     "db:test": "node -r dotenv/config test-db.js",
-    "db:clean-demo": "node scripts/cleanDemoData.js"
+    "db:clean-demo": "node scripts/cleanDemoData.js",
+    "db:encrypt-google-tokens": "node scripts/encryptGoogleTokens.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
