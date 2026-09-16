@@ -408,10 +408,10 @@ function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, s
   );
 }
 
-function DomainSection({ title, subtitle, icon, color, entries, expanded, onToggleEntry, emptyText, theme, styles }) {
+function DomainSection({ title, subtitle, icon, color, entries, expanded, onToggleEntry, emptyText, theme, styles, isSectionExpanded, onToggleSection }) {
   return (
     <View style={styles.timelineSection}>
-      <View style={styles.timelineSectionHeader}>
+      <TouchableOpacity style={styles.timelineSectionHeader} onPress={onToggleSection} activeOpacity={0.7}>
         <LinearGradient
           colors={[color, `${color}CC`]}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -426,23 +426,26 @@ function DomainSection({ title, subtitle, icon, color, entries, expanded, onTogg
         <View style={[styles.timelineSectionCount, { backgroundColor: `${color}1A` }]}>
           <Text style={[styles.timelineSectionCountText, { color }]}>{entries.length}</Text>
         </View>
-      </View>
+        <Feather name={isSectionExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={theme.disabled} style={{ marginLeft: 8 }} />
+      </TouchableOpacity>
 
-      {entries.length === 0 ? (
-        <Text style={styles.timelineEmptyText}>{emptyText}</Text>
-      ) : (
-        entries.map((entry, i) => (
-          <TimelineEntry
-            key={entry.id || i}
-            entry={entry}
-            isLast={i === entries.length - 1}
-            dotColor={color}
-            isExpanded={expanded === entry.id}
-            onToggle={() => onToggleEntry(entry.id)}
-            theme={theme}
-            styles={styles}
-          />
-        ))
+      {isSectionExpanded && (
+        entries.length === 0 ? (
+          <Text style={styles.timelineEmptyText}>{emptyText}</Text>
+        ) : (
+          entries.map((entry, i) => (
+            <TimelineEntry
+              key={entry.id || i}
+              entry={entry}
+              isLast={i === entries.length - 1}
+              dotColor={color}
+              isExpanded={expanded === entry.id}
+              onToggle={() => onToggleEntry(entry.id)}
+              theme={theme}
+              styles={styles}
+            />
+          ))
+        )
       )}
     </View>
   );
@@ -460,13 +463,25 @@ export default function TwinDiary({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  // Which module sections (Security & Trust, Life Ops, Finance, etc.) are
+  // expanded — a section not in this set is collapsed. Starts empty so
+  // every module opens collapsed by default, same as individual entries.
+  const [expandedSections, setExpandedSections] = useState(() => new Set());
+  const toggleSection = (key) => setExpandedSections((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   const [verifyState, setVerifyState] = useState(null); // null | 'checking' | { valid, checked, total, reason }
   const isMountedRef = useRef(false);
 
   const hasRealDataRef = useRef(false);
 
   const loadData = async (isRefresh = false) => {
-    if (!isRefresh) setLoading(true);
+    // A cold load (fresh screen open, not a background refresh) always
+    // starts every entry collapsed — nothing should ever appear pre-expanded
+    // just because a stale id happened to still be set from a previous visit.
+    if (!isRefresh) { setLoading(true); setExpanded(null); setExpandedSections(new Set()); }
     try {
       const data = await apiFetch('/api/twin/diary');
       hasRealDataRef.current = true;
@@ -513,6 +528,8 @@ export default function TwinDiary({ navigation }) {
   useEffect(() => {
     const unsub = navigation?.addListener?.('focus', () => {
       if (!isMountedRef.current) { isMountedRef.current = true; return; }
+      setExpanded(null);
+      setExpandedSections(new Set());
       loadData(true);
     });
     return () => unsub?.();
@@ -651,6 +668,8 @@ export default function TwinDiary({ navigation }) {
                 entries={securityEntries}
                 expanded={expanded}
                 onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
+                isSectionExpanded={expandedSections.has('security')}
+                onToggleSection={() => toggleSection('security')}
                 emptyText=""
                 theme={theme}
                 styles={styles}
@@ -668,6 +687,8 @@ export default function TwinDiary({ navigation }) {
                   entries={byDomain[domain]}
                   expanded={expanded}
                   onToggleEntry={(id) => setExpanded(expanded === id ? null : id)}
+                  isSectionExpanded={expandedSections.has(domain)}
+                  onToggleSection={() => toggleSection(domain)}
                   emptyText=""
                   theme={theme}
                   styles={styles}

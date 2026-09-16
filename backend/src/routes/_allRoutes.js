@@ -3269,6 +3269,11 @@ trustRouter.get("/settings", async (req, res) => {
     trustScore: trustScore?.score || 0,
     approvedActions: trustScore?.approvedActions || 0,
     rejectedActions: trustScore?.rejectedActions || 0,
+    // What actually drives the next auto level-up/down — see
+    // applyTrustFeedback() in pendingActions.service.js (5 consecutive
+    // approvals raises the level by one, 2 consecutive denials lowers it).
+    approvalStreak: trustScore?.approvalStreak || 0,
+    rejectionStreak: trustScore?.rejectionStreak || 0,
     plan: user?.plan || "Free",
     preferences: user?.preferences || {},
   });

@@ -13,6 +13,7 @@ import {
   TouchableWithoutFeedback,
   useWindowDimensions,
   Animated,
+  Easing,
   Linking,
   Image,
   AppState,
@@ -222,6 +223,56 @@ function ThinkingDots({ theme }) {
         />
       ))}
     </View>
+  );
+}
+
+// Full-screen cover shown only for the very first conversation-history fetch
+// on mount — a plain spinner (or nothing) here reads as "this screen is
+// slow"; a small animated agent orb reads as "your assistant is starting
+// up", which is the more honest framing since that's exactly what's
+// happening (fetching the conversation + message history).
+const BOOT_TEXT = "Workspace started";
+
+function AgentBootLoader({ theme, styles, fadeAnim }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.14, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    const spinLoop = Animated.loop(
+      Animated.timing(spin, { toValue: 1, duration: 2600, easing: Easing.linear, useNativeDriver: true }),
+    );
+    pulseLoop.start();
+    spinLoop.start();
+    return () => { pulseLoop.stop(); spinLoop.stop(); };
+  }, []);
+
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+
+  return (
+    <Animated.View style={[styles.bootOverlay, { opacity: fadeAnim }]}>
+      <View style={styles.bootOrbWrap}>
+        <Animated.View style={[styles.bootOrbRing, { borderColor: theme.accentAlt, transform: [{ rotate }] }]} />
+        <Animated.View style={{ transform: [{ scale: pulse }] }}>
+          <LinearGradient
+            colors={[theme.accentAlt, theme.accent]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={styles.bootOrb}
+          >
+            <Feather name="cpu" size={26} color="#FFFFFF" />
+          </LinearGradient>
+        </Animated.View>
+      </View>
+      <View style={{ marginTop: 22 }}>
+        <ThinkingDots theme={theme} />
+      </View>
+      <Text style={[styles.bootText, { color: theme.textSecondary }]}>{BOOT_TEXT}</Text>
+    </Animated.View>
   );
 }
 
@@ -532,6 +583,18 @@ export default function AskAI({ navigation }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef(null);
 
+  // First-load agent boot animation — dismissed once, never shown again for
+  // background refreshes on this same screen instance.
+  const [booting, setBooting] = useState(true);
+  const bootFadeAnim = useRef(new Animated.Value(1)).current;
+  const bootDismissedRef = useRef(false);
+  const dismissBoot = useCallback(() => {
+    if (bootDismissedRef.current) return;
+    bootDismissedRef.current = true;
+    Animated.timing(bootFadeAnim, { toValue: 0, duration: 400, useNativeDriver: true })
+      .start(() => setBooting(false));
+  }, [bootFadeAnim]);
+
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -598,8 +661,10 @@ export default function AskAI({ navigation }) {
       }
     } catch {
       // Keep the current chat on screen; the shared recovery flow will retry.
+    } finally {
+      dismissBoot();
     }
-  }, [scrollToLatest]);
+  }, [scrollToLatest, dismissBoot]);
 
   // Paint the last known conversation immediately from cache — otherwise this
   // screen always shows the generic welcome message for however long the
@@ -1133,7 +1198,15 @@ export default function AskAI({ navigation }) {
           </View>
         </View>
 
-        {/* Messages */}
+        {/* Messages — while the first load is in flight, the boot loader
+            takes this exact spot (between header and input bar) instead of
+            floating as a separate overlay, so it's never mispositioned
+            relative to the rest of the screen. */}
+        {booting ? (
+          <View style={styles.container}>
+            <AgentBootLoader theme={theme} styles={styles} fadeAnim={bootFadeAnim} />
+          </View>
+        ) : (
         <ScrollView
           ref={scrollRef}
           style={styles.container}
@@ -1199,6 +1272,7 @@ export default function AskAI({ navigation }) {
           )}
           {aiLoading && !transcribing && <ThinkingBubble theme={theme} styles={styles} />}
         </ScrollView>
+        )}
 
         {/* Input bar */}
         <View style={[styles.inputBar, { paddingHorizontal: horizontalPad, paddingBottom: 12 }]}>
@@ -1442,6 +1516,31 @@ const createStyles = (theme) => StyleSheet.create({
     borderColor: theme.isDark ? "rgba(52,199,123,0.25)" : "#DFF3E7",
   },
   thinkingText: { fontSize: 12.5, fontWeight: "600", color: theme.faint },
+
+  // ── Agent boot loader (first conversation-history fetch only) ────────────
+  // Sits inline in the message area (between header and input bar), not as
+  // an absolute overlay — that way it's never mispositioned relative to the
+  // rest of the screen regardless of platform/layout quirks.
+  bootOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bootOrbWrap: { width: 84, height: 84, alignItems: "center", justifyContent: "center" },
+  bootOrbRing: {
+    position: "absolute",
+    width: 84, height: 84, borderRadius: 42,
+    borderWidth: 2,
+    borderTopColor: "transparent",
+    borderLeftColor: "transparent",
+    opacity: 0.6,
+  },
+  bootOrb: {
+    width: 58, height: 58, borderRadius: 19,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: theme.accentAlt, shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+  },
+  bootText: { marginTop: 16, fontSize: 13.5, fontWeight: "600" },
 
   // ── Edit-and-resend (explicit Edit/Copy row under a sent message) ─────────
   bubbleEditing: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" },

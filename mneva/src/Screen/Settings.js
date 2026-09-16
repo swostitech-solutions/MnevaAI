@@ -60,6 +60,11 @@ function formatLeadTime(minutes) {
 }
 
 const LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner Circle' };
+// Must match APPROVALS_TO_LEVEL_UP / REJECTIONS_TO_LEVEL_DOWN in
+// backend/src/services/pendingActions.service.js — purely a display
+// constant, changing this alone doesn't change how leveling actually works.
+const APPROVALS_TO_LEVEL_UP = 5;
+const REJECTIONS_TO_LEVEL_DOWN = 2;
 
 function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
   const { theme } = useTheme();
@@ -247,6 +252,8 @@ export default function Settings({ navigation, route }) {
   const [currentLevel, setCurrentLevel] = useState(1);
   const [trustScore, setTrustScore] = useState(0);
   const [approvedActions, setApprovedActions] = useState(0);
+  const [approvalStreak, setApprovalStreak] = useState(0);
+  const [rejectionStreak, setRejectionStreak] = useState(0);
   const [autonomy, setAutonomy] = useState({});
   const [privacy, setPrivacy] = useState({ biometricGate: true, e2eEncryption: true, signedLedger: true, dataSharing: false });
   const [notifications, setNotifications] = useState({ email: true, payments: true, rides: true, aiInsights: true, system: true });
@@ -270,6 +277,8 @@ export default function Settings({ navigation, route }) {
       setCurrentLevel(data.currentLevel || 1);
       setTrustScore(data.trustScore || 0);
       setApprovedActions(data.approvedActions || 0);
+      setApprovalStreak(data.approvalStreak || 0);
+      setRejectionStreak(data.rejectionStreak || 0);
       const prefs = data.preferences || {};
       if (prefs.autonomy)      setAutonomy(prefs.autonomy);
       if (prefs.privacy)       setPrivacy(p => ({ ...p, ...prefs.privacy }));
@@ -337,6 +346,11 @@ export default function Settings({ navigation, route }) {
   // Trust tab in sync live instead of only reflecting reality on next load.
   useEffect(() => on('trust:levelChanged', ({ level }) => {
     setCurrentLevel(level);
+    // The server resets both streaks to 0 the moment a level change fires —
+    // reflect that immediately instead of showing a stale streak count
+    // until the next full settings reload.
+    setApprovalStreak(0);
+    setRejectionStreak(0);
   }), [on]);
 
   // Android's settings page is outside the app, so confirm the final consent
@@ -459,16 +473,43 @@ export default function Settings({ navigation, route }) {
         {/* ── TRUST TAB ── */}
         {activeTab === 0 && (
           <>
-            {/* Score bar */}
+            {/* Progress to next level — 5 consecutive approvals is what
+                actually raises the level (see applyTrustFeedback on the
+                backend), so this shows real progress toward that, not a
+                cosmetic score bar disconnected from what triggers it. */}
             <View style={styles.card}>
               <Text style={styles.sectionLabel}>Trust Score</Text>
               <View style={styles.scoreRow}>
                 <Text style={styles.scoreNum}>{trustScore}</Text>
                 <Text style={styles.scoreHint}>{approvedActions} approved actions</Text>
               </View>
-              <View style={styles.barBg}>
-                <View style={[styles.barFill, { width: `${Math.min(100, (trustScore / 50) * 100)}%` }]} />
-              </View>
+
+              {currentLevel >= 4 ? (
+                <View style={styles.streakMaxRow}>
+                  <Feather name="award" size={15} color={theme.accent} />
+                  <Text style={styles.streakMaxText}>Inner Circle reached — full autonomy unlocked</Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.barBg}>
+                    <View style={[styles.barFill, { width: `${Math.min(100, Math.round((approvalStreak / APPROVALS_TO_LEVEL_UP) * 100))}%` }]} />
+                  </View>
+                  <Text style={styles.streakLabel}>
+                    {Math.min(100, Math.round((approvalStreak / APPROVALS_TO_LEVEL_UP) * 100))}% to {LEVEL_NAMES[currentLevel + 1]}
+                  </Text>
+                </>
+              )}
+
+              {rejectionStreak > 0 && currentLevel > 1 && (
+                <View style={styles.streakWarnRow}>
+                  <Feather name="alert-triangle" size={12} color={theme.warning} />
+                  <Text style={styles.streakWarnText}>
+                    {REJECTIONS_TO_LEVEL_DOWN - rejectionStreak === 1
+                      ? 'One more declined action will lower your level'
+                      : `${rejectionStreak}/${REJECTIONS_TO_LEVEL_DOWN} declines toward a level drop`}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Level display — earned automatically (a streak of approvals/
@@ -683,6 +724,11 @@ const createStyles = (theme) => StyleSheet.create({
   scoreHint:       { fontSize: 13, color: theme.faint },
   barBg:           { height: 8, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 4, overflow: 'hidden' },
   barFill:         { height: 8, backgroundColor: theme.accent, borderRadius: 4 },
+  streakLabel:     { fontSize: 12.5, color: theme.faint, fontWeight: '600', marginTop: 8 },
+  streakMaxRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },
+  streakMaxText:   { fontSize: 12.5, color: theme.accent, fontWeight: '700', flex: 1 },
+  streakWarnRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  streakWarnText:  { fontSize: 12, color: theme.warning, fontWeight: '600', flex: 1 },
   levelHint:       { fontSize: 12, color: theme.faint, marginBottom: 12, lineHeight: 17 },
   levelCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: theme.border },
   levelCardActive: { borderColor: theme.accent, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.10)' : '#F5FBF8' },

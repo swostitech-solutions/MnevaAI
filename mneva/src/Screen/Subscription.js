@@ -5,7 +5,6 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { apiFetch } from '../api/client';
-import { getStoredAuth } from '../storage/auth';
 import { useTheme } from '../context/ThemeContext';
 
 const PLANS = [
@@ -67,8 +66,12 @@ export default function Subscription({ navigation }) {
   const [currentPlan, setCurrentPlan] = useState('free');
 
   useEffect(() => {
-    getStoredAuth().then(({ user }) => user?.plan && setCurrentPlan(planKey(user.plan))).catch(() => {});
-    apiFetch('/api/auth/me').then(user => user?.plan && setCurrentPlan(planKey(user.plan))).catch(() => {});
+    // Only the fresh server response decides which plan shows as current —
+    // the locally-cached auth blob is captured once at login and never
+    // refreshed afterward, so a plan change (or this account simply having
+    // been Free all along under a stale cached value) could otherwise keep
+    // showing the wrong plan highlighted indefinitely.
+    apiFetch('/api/auth/me').then(user => setCurrentPlan(planKey(user?.plan))).catch(() => {});
   }, []);
 
   const selectPlan = (plan) => {
