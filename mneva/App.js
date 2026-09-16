@@ -27,6 +27,7 @@ import Communications from "./src/Screen/Communications";
 import Health from "./src/Screen/Health";
 import LifeOps from "./src/Screen/LifeOps";
 import TwinDiary from "./src/Screen/TwinDiary";
+import Vault from "./src/Screen/Vault";
 import ConnectedAccounts from "./src/Screen/ConnectedAccounts";
 import Tasks from "./src/Screen/Tasks";
 import GoogleWorkspace from "./src/Screen/GoogleWorkspace";
@@ -450,6 +451,7 @@ function AppInner() {
           <Stack.Screen name="Health" component={Health} />
           <Stack.Screen name="LifeOps" component={LifeOps} />
           <Stack.Screen name="TwinDiary" component={TwinDiary} />
+          <Stack.Screen name="Vault" component={Vault} />
           <Stack.Screen
             name="ConnectedAccounts"
             component={ConnectedAccounts}

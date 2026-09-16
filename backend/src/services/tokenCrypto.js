@@ -1,9 +1,13 @@
 import crypto from 'node:crypto'
 
-// AES-256-GCM for OAuth tokens at rest (Gmail/Calendar/Fit/Contacts/Drive/
-// Tasks refresh & access tokens) — these are stored inside User.preferences
-// (a JSON column) and are themselves credentials: a leaked refresh token
-// grants ongoing account access without needing the user's password.
+// Shared AES-256-GCM helpers for encrypting arbitrary JSON-serializable
+// values at rest. Originally written for Google OAuth tokens (Gmail/
+// Calendar/Fit/Contacts/Drive/Tasks refresh & access tokens, stored inside
+// User.preferences — themselves credentials, since a leaked refresh token
+// grants ongoing account access without the user's password) and reused
+// as-is by qdrant.service.js for the vector-memory `text` payload field —
+// same threat model (plaintext-at-rest of sensitive personal content),
+// same primitive, no reason to duplicate it under a different name.
 const ALGORITHM = 'aes-256-gcm'
 const IV_LENGTH = 12
 const AUTH_TAG_LENGTH = 16

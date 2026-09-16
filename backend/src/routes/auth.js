@@ -9,6 +9,7 @@ import { sendOtpEmail } from '../services/email.service.js'
 import { qdrantService } from '../services/qdrant.service.js'
 import { getRedisClient } from '../config/redis.js'
 import { deletePersistedFile } from '../controllers/document.controller.js'
+import { deleteVaultFileBlob } from '../controllers/vault.controller.js'
 import { logger } from '../config/logger.js'
 
 const router = express.Router()
@@ -317,6 +318,14 @@ router.delete('/account', async (req, res) => {
     })
     for (const doc of documents) {
       if (doc.filePath) await deletePersistedFile(doc.filePath)
+    }
+
+    const vaultFiles = await prisma.vaultFile.findMany({
+      where: { userId: d.id },
+      select: { filePath: true },
+    })
+    for (const file of vaultFiles) {
+      if (file.filePath) await deleteVaultFileBlob(file.filePath)
     }
 
     await qdrantService.deleteByFilter('mneva_memory', {

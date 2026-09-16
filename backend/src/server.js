@@ -26,6 +26,7 @@ import searchRoutes from "./routes/search.js";
 import conversationRoutes from "./routes/conversations.js";
 import messageRoutes from "./routes/messages.js";
 import documentsRoutes from "./routes/documents.js";
+import vaultRoutes from "./routes/vault.js";
 import preferencesRoutes from "./routes/preferences.js";
 import gmailRoutes, { gmailCallbackHandler } from "./routes/gmail.js";
 import calendarRoutes, { calendarCallbackHandler } from "./routes/calendar.js";
@@ -334,6 +335,9 @@ const PRIVACY_POLICY_HTML = `<!DOCTYPE html>
 
   <h2>6. Data security</h2>
   <p>Data is encrypted in transit (HTTPS) between your device and our servers. Your login session is stored using your device's secure hardware-backed storage (Android Keystore / iOS Keychain), not in plain app storage. Passwords, where used, are hashed and never stored in plain text.</p>
+  <p>Beyond transit encryption, two things are encrypted at rest on our servers: the OAuth tokens for any Google account you connect (Gmail, Calendar, Fit, Contacts, Drive, Tasks), and the text content of your AI memory. Both use AES-256-GCM with a key we hold — this protects that data if our database were ever stolen or leaked, but it doesn't mean we're unable to read it ourselves.</p>
+  <p>Secure Vault (Settings → Privacy → Secure Vault) is different: files you store there are encrypted on your device, with a key generated on your device and never sent to us, before they're ever uploaded. We store and return that data without being able to read it, in either direction. There's no password reset for it — if you lose the device or reinstall the app without a backup of that key, files in your Vault can't be recovered by us or anyone else.</p>
+  <p>Other data the assistant actively works with on your behalf — health records, financial records, bills, documents you upload for it to search — is stored as regular data in our database, not end-to-end encrypted, since the assistant needs to read it to do things like summarize your spending or remind you about a bill. If you want something kept fully private from us, Secure Vault is the place for it.</p>
 
   <h2>7. Children's privacy</h2>
   <p>Mneva is not directed at children under 13, and we do not knowingly collect data from them.</p>
@@ -439,6 +443,7 @@ app.use("/api/gtasks", authMiddleware, gtasksRoutes);
 app.use("/api/conversations", authMiddleware, conversationRoutes);
 app.use("/api/messages", authMiddleware, messageRoutes);
 app.use("/api/documents", authMiddleware, documentsRoutes);
+app.use("/api/vault", authMiddleware, vaultRoutes);
 app.use("/api/preferences", authMiddleware, preferencesRoutes);
 
 // ── Protected ───────────────────────────────────────────────────────────────

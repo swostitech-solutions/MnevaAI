@@ -264,7 +264,7 @@ Mneva operates at trust levels L1–L4. Higher trust levels allow autonomous act
 All payment actions ≥ ₹1,000 require biometric confirmation. Mneva is not a licensed financial advisor.
 
 4. DATA & PRIVACY
-Your data is encrypted at rest and in transit. We do not sell your personal data.
+Connections to our servers are encrypted in transit. Your connected account tokens (Gmail, Calendar, etc.) and AI memory are encrypted at rest. Files you choose to store in Secure Vault are end-to-end encrypted with a key only your device holds — we cannot read them. Other data the assistant actively uses (health, finance, documents) is stored as regular data so it can act on it. We do not sell your personal data.
 
 5. ACCOUNT TERMINATION
 You may delete your account at any time from Settings → Account. All data will be permanently erased within 30 days per DPDP Act requirements.
@@ -289,7 +289,7 @@ Swostitech Solutions operates Mneva AI. This policy explains how we collect, use
 We never sell your data to third parties.
 
 3. DATA STORAGE
-All data is stored on encrypted servers in India. Conversation history is stored in PostgreSQL.
+Data is transmitted over encrypted (HTTPS) connections. Connected-account tokens and AI memory content are encrypted at rest. Secure Vault files are encrypted on your device before we ever see them, with a key we never receive. Conversation history is stored in PostgreSQL.
 
 4. YOUR RIGHTS (DPDP Act 2023)
 • Right to access your data

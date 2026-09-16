@@ -175,6 +175,16 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
         <Text style={styles.upgradeBtnText}>  Upgrade to Inner Circle — ₹999/mo</Text>
       </TouchableOpacity>
 
+      {/* Secure Vault */}
+      <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Privacy</Text>
+      <View style={styles.card}>
+        <TouchableOpacity style={styles.dangerRow} onPress={() => navigation?.navigate?.('Vault')} activeOpacity={0.7}>
+          <Feather name="lock" size={16} color={theme.accent} />
+          <Text style={[styles.dangerLabel, { color: theme.text }]}>Secure Vault</Text>
+          <Feather name="chevron-right" size={16} color={theme.disabled} />
+        </TouchableOpacity>
+      </View>
+
       {/* Danger zone */}
       <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Data & Account</Text>
       <View style={styles.card}>

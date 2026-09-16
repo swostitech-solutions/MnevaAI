@@ -48,6 +48,7 @@ model User {
   refreshTokens             RefreshToken[]
   agentLedgers              AgentLedger[]
   pendingActions            PendingAction[]
+  vaultFiles                VaultFile[]
   trustScore                TrustScore?
   userProfile               UserProfile?
   familyConnectionsSent     FamilyConnection[]        @relation("ConnectionRequester")
@@ -232,6 +233,28 @@ model Document {
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   knowledgeSource KnowledgeSource? @relation(fields: [knowledgeSourceId], references: [id])
+
+  @@index([userId])
+}
+
+// Genuinely zero-knowledge storage: the client encrypts the file with a key
+// that only ever lives in the device's Keychain/Keystore (see
+// mneva/src/storage/vaultKey.js) before upload — this row's `filePath`
+// points at ciphertext the server can store and serve back but never
+// decrypt itself, unlike Document above (whose files the server can read,
+// since the AI's OCR/indexing pipeline needs to). No key-recovery path
+// exists by design: if the device's key is lost, these files are
+// permanently unreadable, which is the actual point of the feature.
+model VaultFile {
+  id        String   @id @default(uuid())
+  userId    String
+  fileName  String
+  mimeType  String
+  filePath  String
+  size      Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
