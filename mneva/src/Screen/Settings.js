@@ -359,11 +359,6 @@ export default function Settings({ navigation, route }) {
     setSaving(false);
   }, []);
 
-  const setLevel = async (level) => {
-    setCurrentLevel(level);
-    await apiFetch('/api/trust/level', { method: 'PATCH', body: { level } }).catch(() => {});
-  };
-
   const toggleAutonomy = (key, val) => {
     const next = { ...autonomy, [key]: val };
     setAutonomy(next);
@@ -476,14 +471,14 @@ export default function Settings({ navigation, route }) {
               </View>
             </View>
 
-            {/* Level selector */}
+            {/* Level display — earned automatically (a streak of approvals/
+                denials in chat moves this), never set by tapping a card. */}
             <Text style={styles.sectionLabel}>Autonomy Level</Text>
+            <Text style={styles.levelHint}>Earned automatically as you approve or decline what Mneva proposes — not something you set directly.</Text>
             {TRUST_LEVELS.map(({ level, name, desc }) => (
-              <TouchableOpacity
+              <View
                 key={level}
-                style={[styles.levelCard, currentLevel === level && styles.levelCardActive]}
-                onPress={() => setLevel(level)}
-                activeOpacity={0.8}
+                style={[styles.levelCard, currentLevel === level && styles.levelCardActive, currentLevel !== level && styles.levelCardInactive]}
               >
                 <View style={[styles.levelBadge, currentLevel === level && styles.levelBadgeActive]}>
                   <Text style={[styles.levelBadgeText, currentLevel === level && styles.levelBadgeTextActive]}>L{level}</Text>
@@ -493,7 +488,7 @@ export default function Settings({ navigation, route }) {
                   <Text style={styles.levelDesc}>{desc}</Text>
                 </View>
                 {currentLevel === level && <Feather name="check-circle" size={18} color={theme.accent} />}
-              </TouchableOpacity>
+              </View>
             ))}
 
             {/* Per-domain toggles */}
@@ -688,8 +683,10 @@ const createStyles = (theme) => StyleSheet.create({
   scoreHint:       { fontSize: 13, color: theme.faint },
   barBg:           { height: 8, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 4, overflow: 'hidden' },
   barFill:         { height: 8, backgroundColor: theme.accent, borderRadius: 4 },
+  levelHint:       { fontSize: 12, color: theme.faint, marginBottom: 12, lineHeight: 17 },
   levelCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: theme.border },
   levelCardActive: { borderColor: theme.accent, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.10)' : '#F5FBF8' },
+  levelCardInactive: { opacity: 0.6 },
   levelBadge:      { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.border, alignItems: 'center', justifyContent: 'center' },
   levelBadgeActive:{ backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE' },
   levelBadgeText:  { fontSize: 12, fontWeight: '800', color: theme.faint },

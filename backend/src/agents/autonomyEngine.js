@@ -225,7 +225,7 @@ function calendarDayKey(value, timeZone) {
   }).format(new Date(value))
 }
 
-function formatLeadMinutes(minutes) {
+export function formatLeadMinutes(minutes) {
   if (minutes < 60) return `${minutes} min`
   if (minutes % 60 === 0) return `${minutes / 60} hr${minutes / 60 !== 1 ? 's' : ''}`
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`

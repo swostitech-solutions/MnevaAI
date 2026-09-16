@@ -1,5 +1,6 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
+import { formatLeadMinutes } from '../agents/autonomyEngine.js'
 
 const router = express.Router()
 
@@ -17,8 +18,15 @@ router.get('/', async (req, res) => {
 // POST /api/tasks
 router.post('/', async (req, res) => {
   try {
-    const { title, description, status } = req.body
+    const { title, description, status, reminderTime, reminderDomain } = req.body
     if (!title?.trim()) return res.status(400).json({ error: 'title is required' })
+
+    // Optional — the Home screen's quick-add doesn't collect a time by
+    // default (it's meant to be instant), but when one is given, this task
+    // gets real push reminders the same way an AI-chat "remind me" does.
+    const scheduledAt = reminderTime ? new Date(reminderTime) : null
+    const hasValidReminder = scheduledAt && !isNaN(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now()
+
     const task = await prisma.task.create({
       data: {
         title: title.trim(),
@@ -30,6 +38,38 @@ router.post('/', async (req, res) => {
     // real-time push to all devices
     const io = req.app.get('io')
     if (io) io.to(`u:${req.user.id}`).emit('task:created', task)
+
+    if (hasValidReminder) {
+      const scheduled = scheduledAt.toISOString()
+      await prisma.notification.create({
+        data: {
+          userId: req.user.id,
+          title: '🔔 Reminder set',
+          message: JSON.stringify({ source: 'reminder', preview: title.trim(), start: scheduled, repeat: 'once' }),
+        },
+      })
+      try {
+        const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { preferences: true } })
+        const leadTimes = Array.isArray(user?.preferences?.notificationLeadTimes) && user.preferences.notificationLeadTimes.length
+          ? user.preferences.notificationLeadTimes
+          : [30]
+        const { enqueueReminder } = await import('../queues/reminder.queue.js')
+        await Promise.all(leadTimes.map((leadMinutes) => {
+          const fireAt = new Date(scheduledAt.getTime() - leadMinutes * 60 * 1000)
+          const body = leadMinutes > 0 ? `${title.trim()} — in ${formatLeadMinutes(leadMinutes)}` : title.trim()
+          return enqueueReminder({
+            userId: req.user.id,
+            message: body,
+            time: fireAt.toISOString(),
+            domain: reminderDomain || 'general',
+            repeat: 'once',
+          })
+        }))
+      } catch {
+        // The task itself is already saved — a queue hiccup shouldn't fail the request.
+      }
+    }
+
     res.json(task)
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

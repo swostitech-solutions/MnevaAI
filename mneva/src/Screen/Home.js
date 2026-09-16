@@ -6751,6 +6751,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle } from "react-native-svg";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { clearAuth, getStoredAuth } from "../storage/auth";
 import { apiFetch, BASE_URL, peekCachedResponse } from "../api/client";
 import { useSocket, resetSocket } from "../services/socket";
@@ -6899,21 +6900,40 @@ const CATEGORY_COLORS = {
   Relationships: "#E0546E",
 };
 
+const defaultReminderTime = () => new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+const fmtReminderDate = (d) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+const fmtReminderTime = (d) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+
 function QuickCaptureSheet({ visible, onClose, onSubmit, bottomInset, theme, styles }) {
   const [text, setText] = useState("");
   const [category, setCategory] = useState("Finance");
+  const [reminderOn, setReminderOn] = useState(false);
+  const [reminderAt, setReminderAt] = useState(defaultReminderTime());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  const resetState = () => {
+    setText("");
+    setCategory("Finance");
+    setReminderOn(false);
+    setReminderAt(defaultReminderTime());
+    setShowDatePicker(false);
+    setShowTimePicker(false);
+  };
 
   const handleAdd = () => {
     if (!text.trim()) return;
-    onSubmit({ text: text.trim(), category });
-    setText("");
-    setCategory("Finance");
+    onSubmit({
+      text: text.trim(),
+      category,
+      reminderTime: reminderOn ? reminderAt.toISOString() : null,
+    });
+    resetState();
     onClose();
   };
 
   const handleClose = () => {
-    setText("");
-    setCategory("Finance");
+    resetState();
     onClose();
   };
 
@@ -6979,6 +6999,72 @@ function QuickCaptureSheet({ visible, onClose, onSubmit, bottomInset, theme, sty
               );
             })}
           </View>
+
+          <TouchableOpacity
+            style={[styles.sheetReminderToggle, reminderOn && styles.sheetReminderToggleActive]}
+            onPress={() => setReminderOn((v) => !v)}
+          >
+            <Feather name="bell" size={14} color={reminderOn ? "#FFFFFF" : theme.textSecondary} />
+            <Text style={[styles.sheetReminderToggleText, reminderOn && styles.sheetReminderToggleTextActive]}>
+              {reminderOn ? `Remind me — ${fmtReminderDate(reminderAt)}, ${fmtReminderTime(reminderAt)}` : "Remind me at a time"}
+            </Text>
+          </TouchableOpacity>
+
+          {reminderOn && (
+            <View style={styles.sheetReminderPickers}>
+              <TouchableOpacity style={styles.sheetPickerBtn} onPress={() => setShowDatePicker(true)}>
+                <Feather name="calendar" size={14} color={theme.accent} />
+                <Text style={styles.sheetPickerBtnText}>{fmtReminderDate(reminderAt)}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sheetPickerBtn} onPress={() => setShowTimePicker(true)}>
+                <Feather name="clock" size={14} color={theme.accent} />
+                <Text style={styles.sheetPickerBtnText}>{fmtReminderTime(reminderAt)}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {showDatePicker && (
+            <DateTimePicker
+              value={reminderAt}
+              mode="date"
+              display={Platform.OS === "ios" ? "inline" : "default"}
+              minimumDate={new Date()}
+              onChange={(e, date) => {
+                setShowDatePicker(Platform.OS === "ios");
+                if (date) {
+                  setReminderAt((prev) => {
+                    const next = new Date(prev);
+                    next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+                    return next;
+                  });
+                }
+              }}
+            />
+          )}
+          {showTimePicker && (
+            <DateTimePicker
+              value={reminderAt}
+              mode="time"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              onChange={(e, time) => {
+                setShowTimePicker(Platform.OS === "ios");
+                if (time) {
+                  setReminderAt((prev) => {
+                    const next = new Date(prev);
+                    next.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                    return next;
+                  });
+                }
+              }}
+            />
+          )}
+          {Platform.OS === "ios" && (showDatePicker || showTimePicker) && (
+            <TouchableOpacity
+              style={styles.sheetPickerDoneBtn}
+              onPress={() => { setShowDatePicker(false); setShowTimePicker(false); }}
+            >
+              <Text style={styles.sheetPickerDoneBtnText}>Done</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[
@@ -8463,7 +8549,7 @@ export default function Home({ navigation }) {
     }
   };
 
-  const handleAddPriority = async ({ text, category }) => {
+  const handleAddPriority = async ({ text, category, reminderTime }) => {
     // optimistic UI — add instantly
     const tempId = `local_${Date.now()}`;
     setLocalPriorities((prev) => [
@@ -8480,7 +8566,12 @@ export default function Home({ navigation }) {
     try {
       const task = await apiFetch("/api/tasks", {
         method: "POST",
-        body: { title: text, description: category, status: "PENDING" },
+        body: {
+          title: text,
+          description: category,
+          status: "PENDING",
+          ...(reminderTime ? { reminderTime, reminderDomain: category === "Finance" ? "finance" : "general" } : {}),
+        },
       });
       // replace temp with real task id
       setLocalPriorities((prev) =>
@@ -10681,6 +10772,60 @@ const createStyles = (theme) => StyleSheet.create({
   },
   sheetChipTextActive: {
     color: "#FFFFFF",
+  },
+  sheetReminderToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.borderStrong,
+    backgroundColor: theme.card,
+    marginBottom: 12,
+  },
+  sheetReminderToggleActive: {
+    backgroundColor: theme.accent,
+    borderColor: theme.accent,
+  },
+  sheetReminderToggleText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.textSecondary,
+  },
+  sheetReminderToggleTextActive: {
+    color: "#FFFFFF",
+  },
+  sheetReminderPickers: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+  },
+  sheetPickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: theme.soft,
+  },
+  sheetPickerBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.text,
+  },
+  sheetPickerDoneBtn: {
+    alignSelf: "flex-end",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 8,
+  },
+  sheetPickerDoneBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.accent,
   },
   sheetSubmitButton: {
     backgroundColor: theme.text,
