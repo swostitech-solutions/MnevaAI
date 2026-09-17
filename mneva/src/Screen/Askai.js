@@ -146,21 +146,147 @@ function normalizeSavedMessages(savedMessages) {
 }
 
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+const INLINE_TOKEN_REGEX = /(https?:\/\/[^\s]+)|\*\*(.+?)\*\*|`([^`]+)`/g;
+
+function tokenizeInline(text) {
+  const nodes = [];
+  let lastIndex = 0;
+  let match;
+  INLINE_TOKEN_REGEX.lastIndex = 0;
+  while ((match = INLINE_TOKEN_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push({ type: "text", content: text.slice(lastIndex, match.index) });
+    if (match[1]) nodes.push({ type: "link", content: match[1] });
+    else if (match[2] !== undefined) nodes.push({ type: "bold", content: match[2] });
+    else if (match[3] !== undefined) nodes.push({ type: "code", content: match[3] });
+    lastIndex = INLINE_TOKEN_REGEX.lastIndex;
+  }
+  if (lastIndex < text.length) nodes.push({ type: "text", content: text.slice(lastIndex) });
+  return nodes;
+}
+
+function InlineSpans({ nodes, isUser, styles }) {
+  return nodes.map((node, i) => {
+    if (node.type === "link") {
+      return (
+        <Text key={i} style={isUser ? styles.linkUser : styles.linkAi} onPress={() => Linking.openURL(node.content)}>
+          {node.content}
+        </Text>
+      );
+    }
+    if (node.type === "bold") return <Text key={i} style={styles.mdBold}>{node.content}</Text>;
+    if (node.type === "code") return <Text key={i} style={isUser ? styles.mdCodeUser : styles.mdCode}>{node.content}</Text>;
+    return <Text key={i}>{node.content}</Text>;
+  });
+}
+
+// Lightweight markdown-lite renderer for agent replies — the model routinely
+// answers with **bold** labels, "- " bullet lists, numbered steps, and "### "
+// section headers (see buildSystemPrompt's CALENDAR DATE GROUPING /
+// concise-answer rules), which previously showed up as raw asterisks/hashes/
+// dashes in a single flat Text block instead of an actually readable layout.
+// GFM-style pipe table: a row containing "|" immediately followed by a
+// "|---|---|" separator row — the format the model reaches for when asked
+// something like "price of iPhone 17 Air" (a variant/price breakdown).
+const TABLE_SEPARATOR_ROW = /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/;
+const splitTableRow = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+
+function parseBlocks(text) {
+  const lines = text.split("\n");
+  const blocks = [];
+  let paragraph = [];
+  const flush = () => {
+    if (paragraph.length) {
+      blocks.push({ type: "p", text: paragraph.join("\n") });
+      paragraph = [];
+    }
+  };
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) { flush(); i += 1; continue; }
+
+    if (trimmed.includes("|") && lines[i + 1] && TABLE_SEPARATOR_ROW.test(lines[i + 1].trim())) {
+      flush();
+      const header = splitTableRow(trimmed);
+      const rows = [];
+      let j = i + 2;
+      while (j < lines.length && lines[j].trim().includes("|")) {
+        rows.push(splitTableRow(lines[j]));
+        j += 1;
+      }
+      blocks.push({ type: "table", header, rows });
+      i = j;
+      continue;
+    }
+
+    const header = trimmed.match(/^(#{1,4})\s+(.*)$/);
+    const bullet = trimmed.match(/^[-*•]\s+(.*)$/);
+    const numbered = trimmed.match(/^(\d+)[.)]\s+(.*)$/);
+    if (header) { flush(); blocks.push({ type: "h", text: header[2] }); }
+    else if (bullet) { flush(); blocks.push({ type: "li", text: bullet[1] }); }
+    else if (numbered) { flush(); blocks.push({ type: "ol", n: numbered[1], text: numbered[2] }); }
+    else paragraph.push(trimmed);
+    i += 1;
+  }
+  flush();
+  return blocks;
+}
 
 function RichText({ text, isUser, styles }) {
-  const parts = text.split(URL_REGEX);
+  const baseStyle = isUser ? styles.bubbleTextUser : styles.bubbleTextAi;
+  const blocks = parseBlocks(text);
+
   return (
-    <Text style={isUser ? styles.bubbleTextUser : styles.bubbleTextAi}>
-      {parts.map((part, i) =>
-        URL_REGEX.test(part) ? (
-          <Text key={i} style={isUser ? styles.linkUser : styles.linkAi} onPress={() => Linking.openURL(part)}>
-            {part}
+    <View style={styles.mdBlocks}>
+      {blocks.map((block, i) => {
+        if (block.type === "table") {
+          return (
+            <View key={i} style={styles.mdTable}>
+              <View style={[styles.mdTableRow, styles.mdTableHeaderRow]}>
+                {block.header.map((cell, ci) => (
+                  <Text key={ci} style={[baseStyle, styles.mdTableHeaderCell]}>
+                    <InlineSpans nodes={tokenizeInline(cell)} isUser={isUser} styles={styles} />
+                  </Text>
+                ))}
+              </View>
+              {block.rows.map((row, ri) => (
+                <View key={ri} style={[styles.mdTableRow, ri === block.rows.length - 1 && styles.mdTableRowLast]}>
+                  {row.map((cell, ci) => (
+                    <Text key={ci} style={[baseStyle, styles.mdTableCell]}>
+                      <InlineSpans nodes={tokenizeInline(cell)} isUser={isUser} styles={styles} />
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          );
+        }
+
+        const nodes = tokenizeInline(block.text);
+        if (block.type === "h") {
+          return (
+            <Text key={i} style={[baseStyle, styles.mdHeader]}>
+              <InlineSpans nodes={nodes} isUser={isUser} styles={styles} />
+            </Text>
+          );
+        }
+        if (block.type === "li" || block.type === "ol") {
+          return (
+            <View key={i} style={styles.mdListRow}>
+              <Text style={[baseStyle, styles.mdBullet]}>{block.type === "ol" ? `${block.n}.` : "•"}</Text>
+              <Text style={[baseStyle, styles.mdListText]}>
+                <InlineSpans nodes={nodes} isUser={isUser} styles={styles} />
+              </Text>
+            </View>
+          );
+        }
+        return (
+          <Text key={i} style={baseStyle}>
+            <InlineSpans nodes={nodes} isUser={isUser} styles={styles} />
           </Text>
-        ) : (
-          <Text key={i}>{part}</Text>
-        )
-      )}
-    </Text>
+        );
+      })}
+    </View>
   );
 }
 
@@ -588,12 +714,6 @@ export default function AskAI({ navigation }) {
   const [booting, setBooting] = useState(true);
   const bootFadeAnim = useRef(new Animated.Value(1)).current;
   const bootDismissedRef = useRef(false);
-  const dismissBoot = useCallback(() => {
-    if (bootDismissedRef.current) return;
-    bootDismissedRef.current = true;
-    Animated.timing(bootFadeAnim, { toValue: 0, duration: 400, useNativeDriver: true })
-      .start(() => setBooting(false));
-  }, [bootFadeAnim]);
 
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
@@ -636,6 +756,26 @@ export default function AskAI({ navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 250);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 750);
   }, []);
+
+  // The boot loader occupies the ScrollView's exact spot while `booting` is
+  // true (see the JSX below), so `scrollRef.current` is null for every
+  // scrollToLatest() call that happens during the initial load (loadConversation
+  // resolving, cache hydration) — those all silently no-op. Once the fade-out
+  // finishes and the real ScrollView mounts for the first time, nothing used
+  // to re-trigger the scroll, so the chat could render sitting at the very
+  // top (oldest messages) instead of the latest exchange until the user
+  // scrolled manually. Re-running scrollToLatest right here, now that the
+  // ScrollView genuinely exists, closes that gap.
+  const dismissBoot = useCallback(() => {
+    if (bootDismissedRef.current) return;
+    bootDismissedRef.current = true;
+    Animated.timing(bootFadeAnim, { toValue: 0, duration: 400, useNativeDriver: true })
+      .start(() => {
+        setBooting(false);
+        initialHistoryPositioningRef.current = true;
+        scrollToLatest(false);
+      });
+  }, [bootFadeAnim, scrollToLatest]);
 
   // ── Load conversation history from backend (same as web app) ─────────────
   const loadConversation = useCallback(async () => {
@@ -718,6 +858,15 @@ export default function AskAI({ navigation }) {
   useEffect(() => { loadConversation(); }, [loadConversation]);
   useEffect(() => onAppDataRefresh(loadConversation), [loadConversation]);
 
+  // React Navigation keeps this screen mounted when you switch tabs, so it
+  // never remounts on return — without this, coming back to Ask AI could
+  // land wherever the ScrollView happened to be left (e.g. scrolled up to
+  // re-read something) instead of the latest message.
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.('focus', () => scrollToLatest(false));
+    return unsubscribe;
+  }, [navigation, scrollToLatest]);
+
   // ── Date filter: view a specific day's chat instead of the live tail ─────
   const dateParam = (d) => {
     const y = d.getFullYear();
@@ -757,7 +906,14 @@ export default function AskAI({ navigation }) {
   useEffect(() => {
     if (!initialHistoryPositioningRef.current) return undefined;
     scrollToLatest(false);
-    const done = setTimeout(() => { initialHistoryPositioningRef.current = false; }, 1200);
+    // A generous upper bound, not the primary exit — onScrollBeginDrag below
+    // clears the ref the instant the user actually takes control. This is
+    // only the fallback for a slow device/large history where content is
+    // still settling; 1200ms was too tight and could expire before a long
+    // message list (or the boot-loader fade-out) finished laying out,
+    // leaving the chat sitting wherever it happened to be instead of at the
+    // latest message.
+    const done = setTimeout(() => { initialHistoryPositioningRef.current = false; }, 4000);
     return () => clearTimeout(done);
   }, [messages, scrollToLatest]);
 
@@ -1324,6 +1480,7 @@ export default function AskAI({ navigation }) {
           contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad }]}
           showsVerticalScrollIndicator={false}
           keyboardDismissMode="on-drag"
+          onScrollBeginDrag={() => { initialHistoryPositioningRef.current = false; }}
           onContentSizeChange={() => {
             if (initialHistoryPositioningRef.current) scrollToLatest(false);
           }}
@@ -1432,31 +1589,35 @@ export default function AskAI({ navigation }) {
             )}
           </TouchableOpacity>
         </View>
-
-        {/* Tab bar */}
-        <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
-          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Home"); }}>
-            <Ionicons name="home" size={22} color={theme.faint} />
-            <Text style={styles.tabLabel}>HOME</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Priorities"); }}>
-            <Feather name="calendar" size={22} color={theme.faint} />
-            <Text style={styles.tabLabel}>PRIORITIES</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem}>
-            <Feather name="mic" size={22} color={theme.accent} />
-            <Text style={[styles.tabLabel, styles.tabLabelActive]}>ASK AI</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Space"); }}>
-            <Feather name="folder" size={22} color={theme.faint} />
-            <Text style={styles.tabLabel}>SPACE</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Profile"); }}>
-            <Feather name="user" size={22} color={theme.faint} />
-            <Text style={styles.tabLabel}>PROFILE</Text>
-          </TouchableOpacity>
-        </View>
       </KeyboardAvoidingView>
+
+      {/* Tab bar — deliberately a sibling of KeyboardAvoidingView, not a
+          child of it. It used to sit inside that view, so the keyboard
+          showing/hiding (its 'padding'/'height' resize behavior) dragged
+          the tab bar up along with the input bar. Keeping it outside pins
+          it to the bottom of the screen regardless of keyboard state. */}
+      <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
+        <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Home"); }}>
+          <Ionicons name="home" size={22} color={theme.faint} />
+          <Text style={styles.tabLabel}>HOME</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Priorities"); }}>
+          <Feather name="calendar" size={22} color={theme.faint} />
+          <Text style={styles.tabLabel}>PRIORITIES</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem}>
+          <Feather name="mic" size={22} color={theme.accent} />
+          <Text style={[styles.tabLabel, styles.tabLabelActive]}>ASK AI</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Space"); }}>
+          <Feather name="folder" size={22} color={theme.faint} />
+          <Text style={styles.tabLabel}>SPACE</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Profile"); }}>
+          <Feather name="user" size={22} color={theme.faint} />
+          <Text style={styles.tabLabel}>PROFILE</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Action approve/deny card */}
       {pendingAction && (
@@ -1633,6 +1794,39 @@ const createStyles = (theme) => StyleSheet.create({
     fontWeight: "700",
     textDecorationLine: "underline",
   },
+  mdBlocks: { gap: 8 },
+  mdHeader: { fontSize: 15.5, fontWeight: "800", marginTop: 2 },
+  mdListRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  mdBullet: { fontWeight: "800" },
+  mdListText: { flex: 1 },
+  mdBold: { fontWeight: "800" },
+  mdCode: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 13,
+    backgroundColor: theme.isDark ? "rgba(255,255,255,0.1)" : "rgba(15,23,32,0.06)",
+  },
+  mdCodeUser: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 13,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  mdTable: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  mdTableRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  mdTableRowLast: { borderBottomWidth: 0 },
+  mdTableHeaderRow: {
+    backgroundColor: theme.isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,32,0.05)",
+  },
+  mdTableHeaderCell: { flex: 1, padding: 8, fontSize: 12.5, fontWeight: "800" },
+  mdTableCell: { flex: 1, padding: 8, fontSize: 13 },
 
   // ── Thinking indicator ─────────────────────────────────────────────────────
   thinkingBubble: {
