@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js'
 import { ledger } from './ledgerService.js'
 import { emitToUser } from './realtime.js'
+import { qdrantService } from './qdrant.service.js'
 
 // Which trust-autonomy domain (Settings > Trust > Autonomy toggles) gates
 // each AI tool. Only tools with a real, hard-to-reverse, externally-visible
@@ -9,6 +10,49 @@ import { emitToUser } from './realtime.js'
 export const GATED_DOMAINS = {
   initiate_payment: 'finance',
   send_email: 'communications',
+}
+
+// L1 -> L2 auto-graduation, deliberately NOT based on a raw chat-message
+// tally (10 empty "hi"s shouldn't count as Mneva having learned anything).
+// Both conditions must hold: real accumulated memory (proof it's actually
+// read/understood something about you — conversations, documents, connected
+// data all feed the same memory store) AND a minimum account age, so this
+// can never fire in one sitting no matter how much someone chats at once.
+const L1_GRADUATION_MEMORY_COUNT = 20
+const L1_GRADUATION_MIN_ACCOUNT_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+// Called after every user-sent chat message — a no-op for anyone not
+// currently at L1, so it's cheap to call unconditionally from
+// message.controller.js rather than needing its own trigger plumbing.
+export async function checkObserveGraduation(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { trustLevel: true, createdAt: true } })
+  if ((user?.trustLevel || 1) !== 1) return
+
+  const accountAgeMs = Date.now() - new Date(user.createdAt).getTime()
+  if (accountAgeMs < L1_GRADUATION_MIN_ACCOUNT_AGE_MS) return
+
+  const memoryCount = await qdrantService.countByFilter('mneva_memory', {
+    must: [{ key: 'userId', match: { value: userId } }],
+  })
+  if (memoryCount < L1_GRADUATION_MEMORY_COUNT) return
+
+  await prisma.user.update({ where: { id: userId }, data: { trustLevel: 2 } })
+  const ledgerEntry = await ledger.add({
+    userId, tool: 'trust_level_changed',
+    input: { from: 1, to: 2, reason: 'observe_graduation' },
+    result: { level: 2 }, status: 'completed',
+  })
+  await prisma.notification.create({
+    data: {
+      userId,
+      title: '⬆️ Trust level increased',
+      message: "Mneva has learned enough about you now, so it raised your trust level to L2 — it'll start proposing things for you to approve.",
+    },
+  })
+  // Reuses the exact same event Settings.js/Askai.js already listen for
+  // from the approval-streak path — no separate frontend wiring needed.
+  emitToUser(userId, 'trust:levelChanged', { level: 2, previousLevel: 1 })
+  emitToUser(userId, 'ledger:updated', ledgerEntry)
 }
 
 export async function getAutonomyPolicy(userId) {
@@ -28,12 +72,32 @@ export async function getAutonomyPolicy(userId) {
 // again. That's a one-way trust downgrade per domain: once denied, this
 // domain stays "ask first" at every level, including L4, until a person
 // resets it (there's no auto-recovery — see Settings).
-export function decideGate(tool, policy) {
+// `amount` only matters for initiate_payment — the one truly irreversible
+// action this gate covers. Everything else (currently just send_email)
+// ignores it.
+export function decideGate(tool, policy, amount = 0) {
   const domain = GATED_DOMAINS[tool]
   if (!domain) return { mode: 'execute', domain: null }
   if (policy.autonomy[domain] === false) return { mode: 'blocked', domain, reason: 'domain_disabled' }
   if (policy.trustLevel <= 1) return { mode: 'blocked', domain, reason: 'observe_mode' }
-  if (policy.trustLevel >= 4 && !policy.rejections[domain]) return { mode: 'execute', domain }
+
+  // A large payment always needs a real approval tap, no matter how much
+  // trust has been earned — same ₹1,000 line Bills' own biometric gate
+  // already draws between "routine" and "needs a human," now applied here
+  // too so "Inner Circle" never means unattended large payments.
+  const isLargePayment = tool === 'initiate_payment' && amount >= 1000
+  if (isLargePayment) return { mode: 'pending', domain }
+
+  // Once a domain has been explicitly denied, it goes back to asking every
+  // time regardless of level — applies uniformly now, not just at L4.
+  if (policy.rejections[domain]) return { mode: 'pending', domain }
+
+  // L3 ("one tap") auto-executes small, routine payments — this is the
+  // actual functional difference from L2, which asked for everything.
+  if (policy.trustLevel >= 3 && tool === 'initiate_payment') return { mode: 'execute', domain }
+  // L4 auto-executes everything else this gate covers (e.g. email).
+  if (policy.trustLevel >= 4) return { mode: 'execute', domain }
+
   return { mode: 'pending', domain }
 }
 

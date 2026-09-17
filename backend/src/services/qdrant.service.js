@@ -109,6 +109,22 @@ const qdrantService = {
     }
   },
 
+  // How many points match a filter — e.g. how many memories exist for one
+  // user (used to gate the L1 -> L2 auto-graduation on real accumulated
+  // memory, not just a raw chat-message tally).
+  async countByFilter(collectionName = DEFAULT_COLLECTION, filter = {}) {
+    const client = getQdrantClient()
+    if (!client) return 0
+
+    try {
+      await this.init(collectionName)
+      const response = await client.count(collectionName, { filter, exact: true })
+      return response?.count || 0
+    } catch {
+      return 0
+    }
+  },
+
   // Exhaustively lists every point in a collection, including its raw
   // (still-encrypted, or pre-encryption plaintext) payload and vector — used
   // by scripts/encryptVectorMemory.js to find and re-save points saved

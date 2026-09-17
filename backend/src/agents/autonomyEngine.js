@@ -519,8 +519,8 @@ export async function executeTool(name, input, userId) {
     case 'query_bills':          return []
     case 'initiate_payment': {
       const policy = await getAutonomyPolicy(userId)
-      const gate = decideGate('initiate_payment', policy)
       const amount = Number(input.amount) || 0
+      const gate = decideGate('initiate_payment', policy, amount)
       if (gate.mode === 'blocked') {
         return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, 'make this payment') }
       }

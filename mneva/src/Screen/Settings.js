@@ -730,6 +730,7 @@ const createStyles = (theme) => StyleSheet.create({
   streakWarnRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   streakWarnText:  { fontSize: 12, color: theme.warning, fontWeight: '600', flex: 1 },
   levelHint:       { fontSize: 12, color: theme.faint, marginBottom: 12, lineHeight: 17 },
+
   levelCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: theme.border },
   levelCardActive: { borderColor: theme.accent, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.10)' : '#F5FBF8' },
   levelCardInactive: { opacity: 0.6 },

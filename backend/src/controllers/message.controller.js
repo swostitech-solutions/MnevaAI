@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma.js'
 import { memoryService } from '../services/memory.service.js'
+import { checkObserveGraduation } from '../services/pendingActions.service.js'
 
 export async function createMessage(req, res) {
   try {
@@ -49,6 +50,10 @@ export async function createMessage(req, res) {
       lastUpdatedAt: message.createdAt,
     })
 
+    if (role === 'user') {
+      checkObserveGraduation(req.user.id).catch(() => {})
+    }
+
     res.status(201).json(message)
   } catch (err) {
     res.status(500).json({
@@ -93,6 +98,7 @@ export async function deleteMessagesFrom(req, res) {
 export async function getMessages(req, res) {
   try {
     const { conversationId } = req.params
+    const { date } = req.query
 
     const conversation = await prisma.conversation.findFirst({
       where: {
@@ -103,6 +109,22 @@ export async function getMessages(req, res) {
 
     if (!conversation) {
       return res.status(404).json({ message: 'Conversation not found' })
+    }
+
+    // ?date=YYYY-MM-DD (Ask AI's date filter) — that calendar day in IST,
+    // unbounded by the normal 100-message cap below, since a specific day's
+    // worth of chat is inherently small regardless of how long the overall
+    // conversation has run.
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const dayStart = new Date(`${date}T00:00:00+05:30`)
+      const dayEnd = new Date(`${date}T23:59:59.999+05:30`)
+      if (isNaN(dayStart.getTime())) return res.status(400).json({ message: 'Invalid date' })
+
+      const dayMessages = await prisma.message.findMany({
+        where: { conversationId, createdAt: { gte: dayStart, lte: dayEnd } },
+        orderBy: { createdAt: 'asc' },
+      })
+      return res.json(dayMessages)
     }
 
     // Bounded to the most recent 100 — a long-lived conversation would

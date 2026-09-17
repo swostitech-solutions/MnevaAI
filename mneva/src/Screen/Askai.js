@@ -617,6 +617,13 @@ export default function AskAI({ navigation }) {
   const hasRealHistoryRef = useRef(false);
   const { on, emit } = useSocket();
 
+  // Date filter — browsing a past day's chat instead of the live tail.
+  const [viewDate, setViewDate] = useState(null); // Date | null (null = live)
+  const [showDateFilterPicker, setShowDateFilterPicker] = useState(false);
+  const [dateViewLoading, setDateViewLoading] = useState(false);
+  const liveMessagesRef = useRef(null); // snapshot of the live chat while browsing a past day
+  const viewingHistoricalRef = useRef(false); // background refresh must not clobber a historical view
+
   // History arrives asynchronously. Waiting for both React's layout pass and
   // any navigation animation prevents the chat from opening at message one.
   const scrollToLatest = useCallback((animated = false) => {
@@ -632,8 +639,9 @@ export default function AskAI({ navigation }) {
 
   // ── Load conversation history from backend (same as web app) ─────────────
   const loadConversation = useCallback(async () => {
-    // Never replace the visible conversation while a reply is in flight.
-    if (aiLoadingRef.current) return;
+    // Never replace the visible conversation while a reply is in flight,
+    // or while the user is browsing a past day via the date filter.
+    if (aiLoadingRef.current || viewingHistoricalRef.current) return;
     try {
       const list = await apiFetch("/api/conversations");
       const conversations = Array.isArray(list) ? list : list.conversations || [];
@@ -655,9 +663,21 @@ export default function AskAI({ navigation }) {
       hasRealHistoryRef.current = true;
 
       if (normalized.length) {
-        initialHistoryPositioningRef.current = true;
-        setMessages(normalized);
-        scrollToLatest(false);
+        // Never regress to a shorter history than what's already on screen —
+        // if a message failed to persist (see persistMessage's retry-exhausted
+        // comment), the server's copy is momentarily behind what the user is
+        // actually looking at, and this background refresh must not "erase"
+        // it by overwriting local state with that stale, shorter version.
+        let grew = false;
+        setMessages((prev) => {
+          if (normalized.length < prev.length) return prev;
+          grew = true;
+          return normalized;
+        });
+        if (grew) {
+          initialHistoryPositioningRef.current = true;
+          scrollToLatest(false);
+        }
       }
     } catch {
       // Keep the current chat on screen; the shared recovery flow will retry.
@@ -697,6 +717,42 @@ export default function AskAI({ navigation }) {
 
   useEffect(() => { loadConversation(); }, [loadConversation]);
   useEffect(() => onAppDataRefresh(loadConversation), [loadConversation]);
+
+  // ── Date filter: view a specific day's chat instead of the live tail ─────
+  const dateParam = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const viewMessagesForDate = useCallback(async (date) => {
+    const convId = conversationIdRef.current;
+    if (!convId) return;
+    // Snapshot the live chat once, before the first day-switch, so "Back to
+    // Live" can restore it instantly without another round trip.
+    if (!viewingHistoricalRef.current) liveMessagesRef.current = messages;
+    viewingHistoricalRef.current = true;
+    setDateViewLoading(true);
+    setViewDate(date);
+    try {
+      const dayMessages = await apiFetch(`/api/messages/${convId}?date=${dateParam(date)}`);
+      setMessages(normalizeSavedMessages(dayMessages));
+    } catch {
+      setMessages([]);
+    } finally {
+      setDateViewLoading(false);
+    }
+  }, [messages]);
+
+  const exitDateView = useCallback(() => {
+    viewingHistoricalRef.current = false;
+    setViewDate(null);
+    setMessages(liveMessagesRef.current || INITIAL_MESSAGES);
+    liveMessagesRef.current = null;
+    scrollToLatest(false);
+    loadConversation();
+  }, [loadConversation, scrollToLatest]);
   useEffect(() => { aiLoadingRef.current = aiLoading; }, [aiLoading]);
   useEffect(() => {
     if (!initialHistoryPositioningRef.current) return undefined;
@@ -709,11 +765,23 @@ export default function AskAI({ navigation }) {
     const convId = conversationIdRef.current;
     if (!convId || !content) return;
     try {
+      // Without `retry: true` this POST gets exactly one attempt (apiFetch
+      // only auto-retries GETs by default) — a single dropped WiFi packet or
+      // a Render cold-start blip meant the message was never actually saved,
+      // even though it was already showing on screen. The next background
+      // refresh (loadConversation, via onAppDataRefresh) would then silently
+      // "erase" it by overwriting local state with the server's incomplete
+      // history — exactly the vanishing-message bug this fixes.
       await apiFetch("/api/messages", {
         method: "POST",
         body: { conversationId: convId, role, content },
+        retry: true,
       });
-    } catch {}
+    } catch {
+      // All retries exhausted (a genuinely prolonged outage, not a blip) —
+      // loadConversation()'s own length guard below is the last line of
+      // defense against this specific message vanishing from screen.
+    }
   };
 
   const clearHistory = async () => {
@@ -868,6 +936,15 @@ export default function AskAI({ navigation }) {
     const content = (text || input).trim();
     if (!content || aiLoading) return;
     if (!text) setInput("");
+
+    // Sending while browsing a past day would otherwise append the new
+    // message onto that historical view — jump back to the live chat first.
+    if (viewingHistoricalRef.current) {
+      viewingHistoricalRef.current = false;
+      setViewDate(null);
+      historyBase = historyBase || liveMessagesRef.current || INITIAL_MESSAGES;
+      liveMessagesRef.current = null;
+    }
 
     const baseMessages = historyBase || messages;
     const userMsg = { id: String(Date.now()), sender: "user", text: content, ts: new Date().toISOString() };
@@ -1195,8 +1272,42 @@ export default function AskAI({ navigation }) {
               <Feather name="calendar" size={14} color={theme.accent} />
               <Text style={styles.scheduleBtnText}>Schedule</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.scheduleBtn} onPress={() => setShowDateFilterPicker(true)}>
+              <Feather name="clock" size={14} color={theme.accent} />
+              <Text style={styles.scheduleBtnText}>History</Text>
+            </TouchableOpacity>
           </View>
         </View>
+
+        {showDateFilterPicker && (
+          <DateTimePicker
+            value={viewDate || new Date()}
+            mode="date"
+            display={Platform.OS === "ios" ? "inline" : "default"}
+            maximumDate={new Date()}
+            onChange={(e, date) => {
+              setShowDateFilterPicker(Platform.OS === "ios" && e?.type !== "dismissed");
+              if (date && e?.type !== "dismissed") viewMessagesForDate(date);
+            }}
+          />
+        )}
+        {Platform.OS === "ios" && showDateFilterPicker && (
+          <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setShowDateFilterPicker(false)}>
+            <Text style={styles.pickerDoneBtnText}>Done</Text>
+          </TouchableOpacity>
+        )}
+
+        {viewDate && (
+          <View style={[styles.dateFilterBanner, { marginHorizontal: horizontalPad }]}>
+            <Feather name="calendar" size={14} color={theme.accent} />
+            <Text style={styles.dateFilterBannerText}>
+              {dateViewLoading ? "Loading…" : `Viewing ${viewDate.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}`}
+            </Text>
+            <TouchableOpacity onPress={exitDateView}>
+              <Text style={styles.dateFilterBannerAction}>Back to Live</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Messages — while the first load is in flight, the boot loader
             takes this exact spot (between header and input bar) instead of
@@ -1462,6 +1573,20 @@ const createStyles = (theme) => StyleSheet.create({
     borderColor: theme.isDark ? 'rgba(52,199,123,0.4)' : "rgba(31,154,90,0.3)",
   },
   scheduleBtnText: { fontSize: 12, fontWeight: "700", color: theme.accent },
+  dateFilterBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    marginBottom: 8,
+    backgroundColor: theme.isDark ? 'rgba(255,193,7,0.14)' : "rgba(255,152,0,0.1)",
+    borderWidth: 1,
+    borderColor: theme.isDark ? 'rgba(255,193,7,0.35)' : "rgba(255,152,0,0.3)",
+  },
+  dateFilterBannerText: { flex: 1, fontSize: 12.5, fontWeight: "600", color: theme.text },
+  dateFilterBannerAction: { fontSize: 12.5, fontWeight: "800", color: theme.accent },
   container: { flex: 1 },
   scrollContent: { paddingTop: 8, paddingBottom: 16 },
   bubbleRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 16 },
