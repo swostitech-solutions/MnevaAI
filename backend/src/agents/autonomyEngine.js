@@ -355,6 +355,99 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
   }
 }
 
+// ── Data-entry helpers (Finance/Family record-creation tools) ───────────────
+// These exist so the agent can ask for as few fields as possible — anything
+// a bank/lender would compute automatically (an EMI amount, a maturity
+// value, a next billing date) gets computed here instead of turned into
+// another question for the user.
+
+// Reducing-balance EMI formula — the same math a bank would use to quote it.
+function computeEmi(principal, annualRatePercent, months) {
+  const p = Number(principal)
+  const n = Number(months)
+  const r = Number(annualRatePercent || 0) / 12 / 100
+  if (!p || !n || n <= 0) return null
+  if (!r) return Math.round((p / n) * 100) / 100
+  const factor = Math.pow(1 + r, n)
+  return Math.round(((p * r * factor) / (factor - 1)) * 100) / 100
+}
+
+// Compound-interest maturity value for a Fixed Deposit.
+function computeFdMaturity(principal, annualRatePercent, months, compoundingFrequency = 'Quarterly') {
+  const p = Number(principal)
+  const monthsNum = Number(months)
+  const rate = Number(annualRatePercent)
+  if (!p || !monthsNum || !rate) return null
+  const compoundsPerYear = { Monthly: 12, Quarterly: 4, 'Half-Yearly': 2, Yearly: 1, Cumulative: 4 }[compoundingFrequency] || 4
+  const years = monthsNum / 12
+  const amount = p * Math.pow(1 + rate / 100 / compoundsPerYear, compoundsPerYear * years)
+  return Math.round(amount * 100) / 100
+}
+
+function addMonthsToDate(date, months) {
+  const d = new Date(date)
+  d.setMonth(d.getMonth() + Number(months))
+  return d
+}
+
+function nextBillingDateFor(startDate, billingCycle) {
+  const start = new Date(startDate)
+  if (billingCycle === 'Weekly') {
+    const d = new Date(start)
+    d.setDate(d.getDate() + 7)
+    return d
+  }
+  const monthsMap = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }
+  return addMonthsToDate(start, monthsMap[billingCycle] || 1)
+}
+
+function parseFlexibleDate(value, fallback = new Date()) {
+  if (!value) return fallback
+  const d = new Date(value)
+  return isNaN(d.getTime()) ? fallback : d
+}
+
+// Resolves a spoken name/email ("mom", "priya@x.com", "myself") to one of
+// the user's ACCEPTED family connections — creating a FamilyTask needs a
+// real connectionId + assigneeId, which only exist once two accounts are
+// actually linked (Family → Connections), so this can legitimately fail.
+async function resolveFamilyConnection(userId, assigneeName) {
+  const connections = await prisma.familyConnection.findMany({
+    where: { status: 'ACCEPTED', OR: [{ requesterId: userId }, { receiverId: userId }] },
+    include: {
+      requester: { select: { id: true, name: true, email: true } },
+      receiver: { select: { id: true, name: true, email: true } },
+    },
+  })
+  if (!connections.length) return { error: 'no_connections' }
+
+  const withPartner = connections.map((c) => ({
+    connectionId: c.id,
+    partner: c.requesterId === userId ? c.receiver : c.requester,
+  }))
+
+  if (!assigneeName || /^(me|myself|i|self)$/i.test(assigneeName.trim())) {
+    return { connectionId: withPartner[0].connectionId, assigneeId: userId }
+  }
+  const needle = assigneeName.trim().toLowerCase()
+  const match = withPartner.find(({ partner }) =>
+    partner.name?.toLowerCase().includes(needle) || partner.email?.toLowerCase().includes(needle)
+  )
+  if (!match) return { error: 'not_found', available: withPartner.map((w) => w.partner.name || w.partner.email) }
+  return { connectionId: match.connectionId, assigneeId: match.partner.id }
+}
+
+// Required sub-fields per FamilyItem domain+type — mirrors exactly what each
+// manual-entry screen (ChildrenActivities.js, HomeMaintenance.js,
+// CelebrationGifting.js, FamilyCalendar.js) collects, so an AI-created item
+// looks identical to a hand-entered one.
+const FAMILY_ITEM_REQUIRED_FIELDS = {
+  children: { child: ['name'], activity: ['name', 'day'], event: ['title', 'date'] },
+  home: { task: ['title'], contact: ['name'], warranty: ['item'] },
+  celebration: { occasion: ['person', 'date'], gift: ['person', 'item'] },
+  calendar: { event: ['title', 'date'] },
+}
+
 // ── 13 Domain Tools (matching pitch deck capabilities) ──────────────────────
 export const MNEVA_TOOLS = [
   {
@@ -456,6 +549,225 @@ export const MNEVA_TOOLS = [
     name: 'get_contact',
     description: 'Get full details of a specific contact by their resource name (id). Use after search_contacts to get complete info.',
     input_schema: { type: 'object', properties: { resource_name: { type: 'string', description: 'Contact resource name e.g. people/c12345' } }, required: ['resource_name'] }
+  },
+
+  // ── Data-entry tools: Finance / Health / Family ──────────────────────────
+  // For every tool below: only the `required` fields are things the model
+  // cannot reasonably guess or compute — ask the user for exactly those
+  // before calling the tool, never invent a value for one. Every other
+  // field is genuinely optional; either omit it or fill it if the user
+  // volunteered it. Several numeric fields (EMI amount, FD maturity value,
+  // next billing date) are computed automatically when left out.
+  {
+    name: 'create_subscription',
+    description: 'Add a recurring subscription (Netflix, Spotify, SaaS tool, gym membership, etc.) to Finance → Subscriptions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Subscription name, e.g. "Netflix"' },
+        category: { type: 'string', enum: ['Streaming', 'Software', 'Cloud', 'Gaming', 'News', 'Fitness', 'Education', 'Other'] },
+        amount: { type: 'number', description: 'Amount charged per billing cycle' },
+        billing_cycle: { type: 'string', enum: ['Weekly', 'Monthly', 'Quarterly', 'Half-Yearly', 'Yearly'], description: 'Defaults to Monthly' },
+        provider: { type: 'string' },
+        start_date: { type: 'string', description: 'ISO date the subscription started. Defaults to today.' },
+        payment_method: { type: 'string', enum: ['Card', 'Bank', 'UPI', 'Wallet', 'Other'] },
+        auto_renewal: { type: 'boolean', description: 'Defaults to true' },
+        notes: { type: 'string' },
+      },
+      required: ['name', 'category', 'amount'],
+    },
+  },
+  {
+    name: 'create_loan',
+    description: 'Add a loan (personal, home, car, education, business, gold, etc.) to Finance → Loans.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        loan_type: { type: 'string', enum: ['Personal', 'Home', 'Car', 'Education', 'Business', 'Gold', 'Other'] },
+        lender_name: { type: 'string', description: 'Bank or lender name' },
+        principal_amount: { type: 'number', description: 'Original loan amount' },
+        interest_rate: { type: 'number', description: 'Annual interest rate, %' },
+        number_of_emis: { type: 'number', description: 'Total loan tenure in months' },
+        name: { type: 'string', description: 'A short label for this loan. Defaults to "<loan_type> loan from <lender_name>".' },
+        outstanding_amount: { type: 'number', description: 'Amount still owed. Defaults to the full principal (nothing paid yet).' },
+        interest_type: { type: 'string', enum: ['Fixed', 'Floating'], description: 'Defaults to Fixed' },
+        interest_calculation: { type: 'string', enum: ['Reducing Balance', 'Flat Rate'], description: 'Defaults to Reducing Balance' },
+        emi_amount: { type: 'number', description: 'Monthly EMI amount. Computed automatically from principal/rate/tenure if omitted.' },
+        loan_start_date: { type: 'string', description: 'ISO date the loan started. Defaults to today.' },
+        account_number: { type: 'string' },
+        auto_debit: { type: 'boolean' },
+        notes: { type: 'string' },
+      },
+      required: ['loan_type', 'lender_name', 'principal_amount', 'interest_rate', 'number_of_emis'],
+    },
+  },
+  {
+    name: 'create_emi',
+    description: 'Add an EMI plan (product/credit-card/other EMI, distinct from a bank Loan) to Finance → EMIs.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        emi_type: { type: 'string', enum: ['Loan EMI', 'Credit Card EMI', 'Product EMI', 'Other'] },
+        provider: { type: 'string', description: 'Bank, card issuer, or store financing this EMI' },
+        total_amount: { type: 'number', description: 'Total price being paid off' },
+        number_of_installments: { type: 'number' },
+        name: { type: 'string', description: 'Defaults to "<emi_type> - <product_name or provider>".' },
+        product_name: { type: 'string' },
+        down_payment: { type: 'number', description: 'Defaults to 0' },
+        interest_rate: { type: 'number', description: 'Annual %, defaults to 0 (no-cost EMI)' },
+        emi_amount: { type: 'number', description: 'Computed automatically from the financed amount/rate/installments if omitted.' },
+        start_date: { type: 'string', description: 'Defaults to today' },
+        auto_debit: { type: 'boolean' },
+        notes: { type: 'string' },
+      },
+      required: ['emi_type', 'provider', 'total_amount', 'number_of_installments'],
+    },
+  },
+  {
+    name: 'create_fixed_deposit',
+    description: 'Add a bank Fixed Deposit to Finance → Fixed Deposits.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        bank_name: { type: 'string' },
+        principal_amount: { type: 'number' },
+        interest_rate: { type: 'number', description: 'Annual %' },
+        maturity_date: { type: 'string', description: 'ISO date. Provide this OR tenure_months.' },
+        tenure_months: { type: 'number', description: 'Used to compute maturity_date if that is not given.' },
+        name: { type: 'string', description: 'Defaults to "FD - <bank_name>".' },
+        start_date: { type: 'string', description: 'Defaults to today' },
+        compounding_frequency: { type: 'string', enum: ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly', 'Cumulative'], description: 'Defaults to Quarterly' },
+        account_number: { type: 'string' },
+        nominee: { type: 'string' },
+        auto_renewal: { type: 'boolean' },
+        notes: { type: 'string' },
+      },
+      required: ['bank_name', 'principal_amount', 'interest_rate'],
+    },
+  },
+  {
+    name: 'log_health_data',
+    description: 'Log manual health metrics (Activity, Body, Vitals, or Nutrition) for today into the Health module. Accepts any combination of metrics — provide at least one.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        steps: { type: 'number' },
+        heart_rate: { type: 'number' },
+        blood_pressure_systolic: { type: 'number' },
+        blood_pressure_diastolic: { type: 'number' },
+        blood_oxygen: { type: 'number' },
+        weight: { type: 'number', description: 'kg' },
+        height: { type: 'number', description: 'cm' },
+        bmi: { type: 'number' },
+        body_fat: { type: 'number', description: '%' },
+        muscle_mass: { type: 'number', description: 'kg' },
+        waist: { type: 'number', description: 'cm' },
+        body_temp: { type: 'number', description: '°F' },
+        sleep: { type: 'number', description: 'Hours slept' },
+        calories: { type: 'number' },
+        protein: { type: 'number', description: 'grams' },
+        carbs: { type: 'number', description: 'grams' },
+        fat: { type: 'number', description: 'grams' },
+        fiber: { type: 'number', description: 'grams' },
+        water: { type: 'number', description: 'Liters' },
+        active_minutes: { type: 'number' },
+        workout_type: { type: 'string' },
+        workout_duration: { type: 'number', description: 'Minutes' },
+        distance: { type: 'number', description: 'km' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'add_parent_medication',
+    description: 'Add a parent/elder\'s medication tracker entry to Family → Parent Medication.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        parent: { type: 'string', description: 'Which parent/elder this is for, e.g. "Mom"' },
+        med_name: { type: 'string' },
+        dosage: { type: 'string', description: 'e.g. "500mg", "1 tablet"' },
+        frequency: { type: 'string', description: 'e.g. "Twice daily", "Once daily"' },
+        dose_times: { type: 'array', items: { type: 'string' }, description: '24h "HH:mm" times, e.g. ["08:00","20:00"]' },
+        meal_time: { type: 'string', enum: ['Before food', 'After food', 'With food', 'Anytime'] },
+        doctor: { type: 'string' },
+        duration: { type: 'string', description: 'e.g. "7 days", "Ongoing"' },
+        refill_date: { type: 'string' },
+        notes: { type: 'string' },
+      },
+      required: ['parent', 'med_name', 'dosage', 'frequency'],
+    },
+  },
+  {
+    name: 'create_family_task',
+    description: 'Add a shared family task to Family → Tasks. Requires the user to already have at least one accepted family connection (Family → Connections) — if they don\'t, tell them to add one there first.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        assignee_name: { type: 'string', description: 'Name/email of the connected family member this is for, or "myself". Defaults to myself.' },
+        description: { type: 'string' },
+        priority: { type: 'string', enum: ['Low', 'Medium', 'High'] },
+        category: { type: 'string' },
+        due_date: { type: 'string' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'add_pet',
+    description: 'Add a new pet profile to Family → Pet Care.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        species: { type: 'string', description: 'e.g. Dog, Cat, Bird' },
+        breed: { type: 'string' },
+        sex: { type: 'string' },
+        dob: { type: 'string' },
+        weight: { type: 'string' },
+      },
+      required: ['name', 'species'],
+    },
+  },
+  {
+    name: 'add_pet_reminder',
+    description: 'Add a reminder (vet visit, vaccine, grooming, medication) for an existing pet in Family → Pet Care.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pet_name: { type: 'string', description: 'Name of the existing pet this reminder is for' },
+        type: { type: 'string', enum: ['vet', 'vaccine', 'grooming', 'medication', 'other'] },
+        title: { type: 'string', description: 'e.g. "Rabies booster"' },
+        remind_at: { type: 'string', description: 'Future ISO datetime with offset, e.g. 2026-09-25T09:00:00+05:30' },
+        notes: { type: 'string' },
+      },
+      required: ['pet_name', 'type', 'title', 'remind_at'],
+    },
+  },
+  {
+    name: 'add_family_item',
+    description: `Add an item to a family module — pick domain + type, then fill "fields" with exactly the keys listed below (all as strings). Required fields per domain+type:
+- domain=children, type=child: REQUIRED fields.name. optional fields.age, fields.school, fields.grade.
+- domain=children, type=activity: REQUIRED fields.name (activity name), fields.day. optional fields.child, fields.type (category e.g. Sports/Music/Art), fields.time, fields.venue.
+- domain=children, type=event: REQUIRED fields.title, fields.date. optional fields.child, fields.time, fields.notes.
+- domain=home, type=task: REQUIRED fields.title. optional fields.type (category), fields.priority (Low/Medium/High), fields.dueDate, fields.time, fields.notes.
+- domain=home, type=contact: REQUIRED fields.name. optional fields.role, fields.phone, fields.notes.
+- domain=home, type=warranty: REQUIRED fields.item. optional fields.brand, fields.purchaseDate, fields.expiryDate, fields.notes.
+- domain=celebration, type=occasion: REQUIRED fields.person, fields.date. optional fields.type (Birthday/Anniversary/etc), fields.time, fields.notes.
+- domain=celebration, type=gift: REQUIRED fields.person, fields.item. optional fields.occasion, fields.budget, fields.status (Idea/Bought/Wrapped/Given), fields.notes.
+- domain=calendar, type=event: REQUIRED fields.title, fields.date. optional fields.type (category), fields.member, fields.time, fields.notes.
+If a required field for the chosen domain+type is missing from the conversation, ask the user for it before calling this tool.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', enum: ['children', 'home', 'celebration', 'calendar'] },
+        type: { type: 'string', enum: ['child', 'activity', 'event', 'task', 'contact', 'warranty', 'occasion', 'gift'] },
+        fields: { type: 'object', description: 'Type-specific key/value pairs as documented in the tool description.' },
+        remind_at: { type: 'string', description: 'Optional ISO datetime with offset to be reminded about this item.' },
+      },
+      required: ['domain', 'type', 'fields'],
+    },
   },
 ]
 
@@ -817,6 +1129,239 @@ export async function executeTool(name, input, userId) {
         total: notifications.length + ledgers.length + documents.length,
       }
     }
+
+    // ── Data-entry tools: Finance / Health / Family ────────────────────────
+    case 'create_subscription': {
+      const startDate = parseFlexibleDate(input.start_date)
+      const billingCycle = input.billing_cycle || 'Monthly'
+      const sub = await prisma.subscription.create({
+        data: {
+          userId,
+          name: input.name,
+          category: input.category,
+          amount: Number(input.amount),
+          billingCycle,
+          provider: input.provider || null,
+          startDate,
+          nextBillingDate: nextBillingDateFor(startDate, billingCycle),
+          paymentMethod: input.payment_method || null,
+          autoRenewal: input.auto_renewal !== false,
+          notes: input.notes || null,
+        },
+      })
+      ledger.add({ userId, tool: 'create_subscription', input: { name: input.name }, result: { id: sub.id }, status: 'completed' }).catch(() => {})
+      return { success: true, subscriptionId: sub.id, name: sub.name, amount: sub.amount, billingCycle: sub.billingCycle, nextBillingDate: sub.nextBillingDate }
+    }
+    case 'create_loan': {
+      const principal = Number(input.principal_amount)
+      const months = Number(input.number_of_emis)
+      const rate = Number(input.interest_rate)
+      const loanStartDate = parseFlexibleDate(input.loan_start_date)
+      const emiAmount = input.emi_amount != null ? Number(input.emi_amount) : computeEmi(principal, rate, months)
+      if (emiAmount == null) return { success: false, error: 'Could not determine an EMI amount from the figures given — please also provide emi_amount.' }
+      const loan = await prisma.loan.create({
+        data: {
+          userId,
+          name: input.name || `${input.loan_type} loan from ${input.lender_name}`,
+          loanType: input.loan_type,
+          lenderName: input.lender_name,
+          accountNumber: input.account_number || null,
+          originalAmount: principal,
+          outstandingAmount: input.outstanding_amount != null ? Number(input.outstanding_amount) : principal,
+          interestRate: rate,
+          interestType: input.interest_type || 'Fixed',
+          interestCalculation: input.interest_calculation || 'Reducing Balance',
+          emiAmount,
+          emiStartDate: loanStartDate,
+          numberOfEmis: months,
+          loanStartDate,
+          autoDebit: !!input.auto_debit,
+          notes: input.notes || null,
+        },
+      })
+      ledger.add({ userId, tool: 'create_loan', input: { name: loan.name }, result: { id: loan.id }, status: 'completed' }).catch(() => {})
+      return { success: true, loanId: loan.id, name: loan.name, emiAmount: loan.emiAmount, outstandingAmount: loan.outstandingAmount }
+    }
+    case 'create_emi': {
+      const totalAmount = Number(input.total_amount)
+      const downPayment = Number(input.down_payment || 0)
+      const financedAmount = totalAmount - downPayment
+      const months = Number(input.number_of_installments)
+      const rate = Number(input.interest_rate || 0)
+      const startDate = parseFlexibleDate(input.start_date)
+      const emiAmount = input.emi_amount != null ? Number(input.emi_amount) : computeEmi(financedAmount, rate, months)
+      if (emiAmount == null) return { success: false, error: 'Could not determine an EMI amount from the figures given — please also provide emi_amount.' }
+      const emi = await prisma.emi.create({
+        data: {
+          userId,
+          name: input.name || `${input.emi_type} - ${input.product_name || input.provider}`,
+          emiType: input.emi_type,
+          provider: input.provider,
+          productName: input.product_name || null,
+          totalAmount,
+          downPayment: input.down_payment != null ? downPayment : null,
+          financedAmount,
+          emiAmount,
+          interestRate: input.interest_rate != null ? rate : null,
+          numberOfInstallments: months,
+          startDate,
+          autoDebit: !!input.auto_debit,
+          notes: input.notes || null,
+        },
+      })
+      ledger.add({ userId, tool: 'create_emi', input: { name: emi.name }, result: { id: emi.id }, status: 'completed' }).catch(() => {})
+      return { success: true, emiId: emi.id, name: emi.name, emiAmount: emi.emiAmount, financedAmount: emi.financedAmount }
+    }
+    case 'create_fixed_deposit': {
+      const principal = Number(input.principal_amount)
+      const rate = Number(input.interest_rate)
+      const startDate = parseFlexibleDate(input.start_date)
+      const compoundingFrequency = input.compounding_frequency || 'Quarterly'
+      let maturityDate = input.maturity_date ? parseFlexibleDate(input.maturity_date, null) : null
+      let tenureMonths = input.tenure_months != null ? Number(input.tenure_months) : null
+      if (!maturityDate && tenureMonths) maturityDate = addMonthsToDate(startDate, tenureMonths)
+      if (!maturityDate) return { success: false, error: 'Please provide either maturity_date or tenure_months.' }
+      if (!tenureMonths) tenureMonths = Math.round((maturityDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
+      const maturityAmount = computeFdMaturity(principal, rate, tenureMonths, compoundingFrequency)
+      const fd = await prisma.fixedDeposit.create({
+        data: {
+          userId,
+          name: input.name || `FD - ${input.bank_name}`,
+          bankName: input.bank_name,
+          accountNumber: input.account_number || null,
+          principalAmount: principal,
+          interestRate: rate,
+          compoundingFrequency,
+          startDate,
+          maturityDate,
+          tenureMonths,
+          maturityAmount,
+          interestEarned: maturityAmount != null ? Math.round((maturityAmount - principal) * 100) / 100 : null,
+          autoRenewal: !!input.auto_renewal,
+          nominee: input.nominee || null,
+          notes: input.notes || null,
+        },
+      })
+      ledger.add({ userId, tool: 'create_fixed_deposit', input: { name: fd.name }, result: { id: fd.id }, status: 'completed' }).catch(() => {})
+      return { success: true, fixedDepositId: fd.id, name: fd.name, maturityDate: fd.maturityDate, maturityAmount: fd.maturityAmount }
+    }
+    case 'log_health_data': {
+      const fieldMap = {
+        steps: 'steps', heart_rate: 'heartRate', blood_pressure_systolic: 'bloodPressureSystolic',
+        blood_pressure_diastolic: 'bloodPressureDiastolic', blood_oxygen: 'bloodOxygen', weight: 'weight',
+        height: 'height', bmi: 'bmi', body_fat: 'bodyFat', muscle_mass: 'muscleMass', waist: 'waist',
+        body_temp: 'bodyTemp', sleep: 'sleep', calories: 'calories', protein: 'protein',
+        carbs: 'carbs', fat: 'fat', fiber: 'fiber', water: 'water', active_minutes: 'activeMinutes',
+        workout_type: 'workoutType', workout_duration: 'workoutDuration', distance: 'distance',
+      }
+      const provided = Object.entries(fieldMap).filter(([k]) => input[k] != null)
+      if (!provided.length) return { success: false, error: 'Please provide at least one metric to log (e.g. steps, weight, sleep hours).' }
+
+      const userRow = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
+      const prefs = userRow?.preferences || {}
+      const today = new Date().toISOString().slice(0, 10)
+      const existing = prefs.healthLog?.[today] || {}
+      const synced = { ...existing, source: 'ai_chat', lastSynced: new Date().toISOString(), date: today }
+      for (const [inputKey, backendKey] of provided) {
+        synced[backendKey] = typeof input[inputKey] === 'string' ? input[inputKey] : Number(input[inputKey])
+      }
+      prefs.healthLog = { ...(prefs.healthLog || {}), [today]: synced }
+      prefs.healthSync = synced
+      await prisma.user.update({ where: { id: userId }, data: { preferences: prefs } })
+      ledger.add({ userId, tool: 'health_data_synced', input: { fields: provided.map(([k]) => k) }, result: { date: today }, status: 'completed' }).catch(() => {})
+      return { success: true, date: today, logged: Object.fromEntries(provided.map(([, bk]) => [bk, synced[bk]])) }
+    }
+    case 'add_parent_medication': {
+      const med = await prisma.parentMedication.create({
+        data: {
+          userId,
+          parent: input.parent,
+          medName: input.med_name,
+          dosage: input.dosage,
+          frequency: input.frequency,
+          doseTimes: Array.isArray(input.dose_times) ? input.dose_times : [],
+          mealTime: input.meal_time || null,
+          doctor: input.doctor || null,
+          duration: input.duration || null,
+          refillDate: input.refill_date || null,
+          notes: input.notes || null,
+        },
+      })
+      ledger.add({ userId, tool: 'add_parent_medication', input: { medName: med.medName, parent: med.parent }, result: { id: med.id }, status: 'completed' }).catch(() => {})
+      return { success: true, medicationId: med.id, medName: med.medName, parent: med.parent }
+    }
+    case 'create_family_task': {
+      const resolved = await resolveFamilyConnection(userId, input.assignee_name)
+      if (resolved.error === 'no_connections') {
+        return { success: false, error: 'No connected family members yet — add one from Family → Connections first, then try again.' }
+      }
+      if (resolved.error === 'not_found') {
+        return { success: false, error: `Could not find a family connection matching "${input.assignee_name}". Available: ${resolved.available.join(', ') || 'none'}.` }
+      }
+      const { connectionId, assigneeId } = resolved
+      const task = await prisma.familyTask.create({
+        data: {
+          connectionId, creatorId: userId, assigneeId,
+          title: input.title,
+          description: input.description || null,
+          priority: input.priority || 'Medium',
+          category: input.category || null,
+          dueDate: input.due_date || null,
+          status: userId === assigneeId ? 'ACCEPTED' : 'PENDING_ACCEPTANCE',
+        },
+      })
+      emitToUser(userId, 'family:task:new', task)
+      if (assigneeId !== userId) emitToUser(assigneeId, 'family:task:new', task)
+      ledger.add({ userId, tool: 'family_task_created', input: { title: input.title, assigneeId }, result: { taskId: task.id }, status: 'completed' }).catch(() => {})
+      return { success: true, taskId: task.id, title: task.title, assignedTo: assigneeId === userId ? 'you' : input.assignee_name }
+    }
+    case 'add_pet': {
+      const pet = await prisma.pet.create({
+        data: {
+          userId,
+          name: input.name,
+          species: input.species,
+          breed: input.breed || null,
+          sex: input.sex || null,
+          dob: input.dob || null,
+          weight: input.weight || null,
+        },
+      })
+      ledger.add({ userId, tool: 'add_pet', input: { name: pet.name }, result: { id: pet.id }, status: 'completed' }).catch(() => {})
+      return { success: true, petId: pet.id, name: pet.name, species: pet.species }
+    }
+    case 'add_pet_reminder': {
+      const pet = await prisma.pet.findFirst({ where: { userId, name: { equals: input.pet_name, mode: 'insensitive' } } })
+      if (!pet) return { success: false, error: `No pet named "${input.pet_name}" found for this account. Add the pet first with add_pet.` }
+      const timeZone = await getUserTimeZone(userId)
+      const remindAt = normalizeScheduledTime(input.remind_at, timeZone)
+      if (!remindAt || remindAt.getTime() <= Date.now()) return { success: false, error: 'Please provide a valid future date and time for this reminder.' }
+      const reminder = await prisma.petReminder.create({
+        data: { petId: pet.id, userId, type: input.type, title: input.title, remindAt, notes: input.notes || null },
+      })
+      ledger.add({ userId, tool: 'add_pet_reminder', input: { pet: pet.name, title: input.title }, result: { id: reminder.id }, status: 'completed' }).catch(() => {})
+      return { success: true, reminderId: reminder.id, pet: pet.name, title: reminder.title, remindAt: reminder.remindAt }
+    }
+    case 'add_family_item': {
+      const { domain, type, fields = {}, remind_at } = input
+      const requiredForType = FAMILY_ITEM_REQUIRED_FIELDS[domain]?.[type]
+      if (!requiredForType) return { success: false, error: `Unknown domain/type combination: ${domain}/${type}` }
+      const missing = requiredForType.filter((f) => !fields[f])
+      if (missing.length) return { success: false, error: `Missing required field(s) for ${domain}/${type}: ${missing.join(', ')}. Ask the user for these before retrying.` }
+
+      let remindAtDate = null
+      if (remind_at) {
+        const d = new Date(remind_at)
+        if (!isNaN(d.getTime())) remindAtDate = d
+      }
+      const item = await prisma.familyItem.create({ data: { userId, domain, type, data: fields, remindAt: remindAtDate } })
+      const { syncFamilyMemory } = await import('../routes/familyItems.js')
+      await syncFamilyMemory(userId, domain, prisma).catch(() => {})
+      emitToUser(userId, `family:${domain}:created`, { id: item.id, domain, type, data: item.data, remindAt: item.remindAt, done: item.done })
+      ledger.add({ userId, tool: 'family_item_created', input: { domain, type }, result: { itemId: item.id }, status: 'completed' }).catch(() => {})
+      return { success: true, itemId: item.id, domain, type, data: item.data }
+    }
+
     default:                     return { error: `Unknown tool: ${name}` }
   }
 }
@@ -1100,6 +1645,7 @@ CRITICAL RULES:
 17. CALENDAR DATE GROUPING: When showing more than one scheduled item, group them under their actual calendar date (for example, "Today — Thursday 6 August" and "Tomorrow — Friday 7 August"). Never put entries from different dates in one list labelled "today". Do not include past events unless the user specifically asks for history; after creating one reminder or meeting, confirm that item only unless they ask to see their schedule.
 18. AUTONOMY LEVELS ONLY GATE ACTIONS, NEVER ANSWERS: L1-L4 and "Observe mode" only control whether YOU can execute a gated action (sending money, sending an email) without asking approval first — they have nothing to do with your ability to answer questions or share information. Never say something is blocked by "observe mode", trust level, or the Autonomy Engine when the real reason is that you simply have no live/real-time data source for it (e.g. current retail prices, live news, stock quotes). In that case, just say plainly that you don't have live internet access for that, then still answer helpfully from your general knowledge (e.g. a typical price range you're aware of) — never blame autonomy/trust level for a plain information request.
 19. PRODUCT / PRICE QUESTIONS WITH VARIANTS: If a product has multiple variants (storage, size, color, model tier) and the user doesn't specify which one, do NOT ask a clarifying question first — answer directly with ALL variants and their prices in one reply, formatted as a markdown table with a header row and a "|---|---|" separator row (e.g. "| Storage | Price |\n|---|---|\n| 256GB | ₹1,49,900 |\n| 512GB | ₹1,74,900 |"). Default to ₹ (INR) India pricing. If you don't have a live price, use your best general-knowledge estimate for each variant and say once, briefly, that it may not reflect today's live price — do not skip the table because of that.
+20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
 
 USER PROFILE (registered account details — answer any personal questions from this):
 - Full Name: ${user.name || 'Not set'}

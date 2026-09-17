@@ -14,7 +14,9 @@ const fmt = (item) => ({
 })
 
 // ── AI Memory sync ────────────────────────────────────────────────────────────
-async function syncFamilyMemory(userId, domain, prismaClient) {
+// Exported so autonomyEngine.js's add_family_item tool can reuse the exact
+// same memory-sync behavior as this HTTP route, instead of duplicating it.
+export async function syncFamilyMemory(userId, domain, prismaClient) {
   const items = await prismaClient.familyItem.findMany({
     where: { userId, domain },
     orderBy: { createdAt: 'desc' },
