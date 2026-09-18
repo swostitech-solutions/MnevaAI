@@ -34,6 +34,21 @@ const TOOL_META = {
   order_food: { domain: 'lifeops', autonomyStage: 'fully_autonomous' },
   book_flight: { domain: 'lifeops', autonomyStage: 'proposed' },
   book_hotel: { domain: 'lifeops', autonomyStage: 'proposed' },
+  // AI data-entry tools (autonomyEngine.js's executeTool) — these log under
+  // their own tool name (e.g. "add_parent_medication"), which is DIFFERENT
+  // from the name the manual CRUD routes use for the same kind of record
+  // (e.g. "parent_medication_created" in routes/family.js). Both must be
+  // mapped, or the AI-created ones fall through to domain: null and show up
+  // under "Other" in Twin Diary instead of their real module — that was the
+  // actual bug: manual entries were fine, only AI-created ones were misfiled.
+  create_subscription: { domain: 'finance', autonomyStage: 'trusted_automation' },
+  create_loan: { domain: 'finance', autonomyStage: 'trusted_automation' },
+  create_emi: { domain: 'finance', autonomyStage: 'trusted_automation' },
+  create_fixed_deposit: { domain: 'finance', autonomyStage: 'trusted_automation' },
+  add_portfolio_holding: { domain: 'finance', autonomyStage: 'trusted_automation' },
+  add_parent_medication: { domain: 'family', autonomyStage: 'trusted_automation' },
+  add_pet: { domain: 'family', autonomyStage: 'trusted_automation' },
+  add_pet_reminder: { domain: 'family', autonomyStage: 'trusted_automation' },
   parent_medication_created: { domain: 'family', autonomyStage: null },
   parent_medication_updated: { domain: 'family', autonomyStage: null },
   parent_medication_deleted: { domain: 'family', autonomyStage: null },

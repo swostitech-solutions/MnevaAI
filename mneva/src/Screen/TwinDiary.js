@@ -308,6 +308,69 @@ function formatScheduledTime(iso) {
   } catch { return ''; }
 }
 
+// Internal ids that mean nothing to a user reading their own diary — the
+// raw INPUT/RESULT dump below skips these entirely instead of showing them.
+const HIDDEN_DETAIL_KEYS = new Set(['taskId']);
+
+// RESULT carries several tools' worth of pure implementation detail — a
+// delivery-queue status, a raw success/blocked flag already conveyed by the
+// status pill above, an internal database id for the record just created.
+// All genuinely useful for the signed audit chain, but only clutter in a
+// user-facing diary. Every *Id/id-shaped key across every tool (taskId,
+// reminderId, pendingActionId, eventId, bookingId, orderId, itemId, a bare
+// "id"...) gets caught by one regex instead of listing each tool's id field
+// by name — this is meant to hold for a tool added tomorrow too.
+const INTERNAL_RESULT_KEYS = new Set(['queued', 'queueError', 'success', 'blocked']);
+const ID_KEY_RE = /(^id$|Id$)/;
+
+function isIsoDateString(v) {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
+}
+
+// Raw INPUT/RESULT values are often ISO timestamps with a numeric timezone
+// offset (e.g. "2026-09-11T09:00:00+05:30") — meaningless to read at a
+// glance. Reformats those the same friendly way as the "Scheduled ·" line
+// above; every other value is shown as-is.
+function formatDetailValue(value) {
+  if (isIsoDateString(value)) {
+    try {
+      return new Date(value).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+    } catch { return String(value); }
+  }
+  return String(value);
+}
+
+// Two values "mean the same thing" if they're identical, or if both are
+// timestamps for the same instant written in different formats (e.g. the
+// reminder time the user gave with a +05:30 offset vs. the same instant the
+// tool echoes back normalized to UTC) — a plain string comparison would
+// treat those as different and show the same moment twice.
+function valuesRepresentSameInfo(a, b) {
+  if (a === b) return true;
+  if (isIsoDateString(a) && isIsoDateString(b)) {
+    const ta = new Date(a).getTime();
+    const tb = new Date(b).getTime();
+    return Number.isFinite(ta) && ta === tb;
+  }
+  return false;
+}
+
+// RESULT should only ever ADD information beyond what INPUT already showed
+// — so, on top of the internal-key filtering above, drop any RESULT entry
+// whose value already appears somewhere in INPUT (regardless of whether the
+// key name matches — "scheduled" in RESULT restating "time" from INPUT is
+// exactly this case).
+function filterResultEntries(inputData, resultData) {
+  const inputValues = Object.values(inputData || {});
+  return Object.entries(resultData || {}).filter(([k, v]) => {
+    if (HIDDEN_DETAIL_KEYS.has(k) || INTERNAL_RESULT_KEYS.has(k) || ID_KEY_RE.test(k)) return false;
+    if (inputValues.some((iv) => valuesRepresentSameInfo(iv, v))) return false;
+    return true;
+  });
+}
+
 function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, styles }) {
   const icon = TOOL_ICONS[entry.tool] || 'zap';
   const color = mColor(TOOL_COLORS[entry.tool] || '#615FF8', theme);
@@ -325,6 +388,7 @@ function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, s
   } catch { /* malformed action blob */ }
   if (entry.tool === 'set_reminder' && inputData.time) targetTime = inputData.time;
   else if (entry.tool === 'schedule_event' && inputData.start) targetTime = inputData.start;
+  const visibleResultEntries = filterResultEntries(inputData, resultData);
 
   return (
     <View style={styles.timelineRow}>
@@ -371,24 +435,24 @@ function TimelineEntry({ entry, isLast, dotColor, isExpanded, onToggle, theme, s
               <Text style={styles.securityDescription}>{describeSecurityEntry(entry.tool, inputData)}</Text>
             ) : (
               <>
-                {Object.keys(inputData).length > 0 && (
+                {Object.entries(inputData).filter(([k]) => !HIDDEN_DETAIL_KEYS.has(k)).length > 0 && (
                   <View style={styles.entryDetailSection}>
                     <Text style={styles.entryDetailSectionTitle}>INPUT</Text>
-                    {Object.entries(inputData).map(([k, v]) => (
+                    {Object.entries(inputData).filter(([k]) => !HIDDEN_DETAIL_KEYS.has(k)).map(([k, v]) => (
                       <View key={k} style={styles.entryDetailRow}>
                         <Text style={styles.entryDetailKey}>{k}</Text>
-                        <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+                        <Text style={styles.entryDetailVal} numberOfLines={2}>{formatDetailValue(v)}</Text>
                       </View>
                     ))}
                   </View>
                 )}
-                {Object.keys(resultData).length > 0 && (
+                {visibleResultEntries.length > 0 && (
                   <View style={styles.entryDetailSection}>
                     <Text style={styles.entryDetailSectionTitle}>RESULT</Text>
-                    {Object.entries(resultData).map(([k, v]) => (
+                    {visibleResultEntries.map(([k, v]) => (
                       <View key={k} style={styles.entryDetailRow}>
                         <Text style={styles.entryDetailKey}>{k}</Text>
-                        <Text style={styles.entryDetailVal} numberOfLines={2}>{String(v)}</Text>
+                        <Text style={styles.entryDetailVal} numberOfLines={2}>{formatDetailValue(v)}</Text>
                       </View>
                     ))}
                   </View>
