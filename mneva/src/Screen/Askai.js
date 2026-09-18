@@ -778,28 +778,21 @@ export default function AskAI({ navigation }) {
   }, [bootFadeAnim, scrollToLatest]);
 
   // ── Load conversation history from backend (same as web app) ─────────────
+  // Single round trip: GET /api/conversations/latest returns the most recent
+  // conversation (creating one if none exists) AND its messages together.
+  // This used to be two sequential requests — conversations list, then that
+  // conversation's messages — which meant this screen couldn't show
+  // anything until both had completed one after another; now it's one.
   const loadConversation = useCallback(async () => {
     // Never replace the visible conversation while a reply is in flight,
     // or while the user is browsing a past day via the date filter.
     if (aiLoadingRef.current || viewingHistoricalRef.current) return;
     try {
-      const list = await apiFetch("/api/conversations");
-      const conversations = Array.isArray(list) ? list : list.conversations || [];
-
-      let convId;
-      if (conversations.length === 0) {
-        const created = await apiFetch("/api/conversations", {
-          method: "POST",
-          body: { title: "New Conversation" },
-        });
-        convId = created.id;
-      } else {
-        convId = conversations[0].id;
-      }
+      const latest = await apiFetch("/api/conversations/latest");
+      const convId = latest.conversation.id;
       conversationIdRef.current = convId;
 
-      const savedMessages = await apiFetch(`/api/messages/${convId}`);
-      const normalized = normalizeSavedMessages(savedMessages);
+      const normalized = normalizeSavedMessages(latest.messages);
       hasRealHistoryRef.current = true;
 
       if (normalized.length) {
@@ -837,16 +830,11 @@ export default function AskAI({ navigation }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const cachedList = await peekCachedResponse("/api/conversations").catch(() => null);
-      if (cancelled || hasRealHistoryRef.current || !cachedList) return;
-      const conversations = Array.isArray(cachedList) ? cachedList : cachedList.conversations || [];
-      const convId = conversations[0]?.id;
-      if (!convId) return;
-      const cachedMessages = await peekCachedResponse(`/api/messages/${convId}`).catch(() => null);
-      if (cancelled || hasRealHistoryRef.current || !cachedMessages) return;
-      const normalized = normalizeSavedMessages(cachedMessages);
+      const cachedLatest = await peekCachedResponse("/api/conversations/latest").catch(() => null);
+      if (cancelled || hasRealHistoryRef.current || !cachedLatest?.conversation?.id) return;
+      const normalized = normalizeSavedMessages(cachedLatest.messages);
       if (normalized.length) {
-        conversationIdRef.current = convId;
+        conversationIdRef.current = cachedLatest.conversation.id;
         initialHistoryPositioningRef.current = true;
         setMessages(normalized);
         scrollToLatest(false);

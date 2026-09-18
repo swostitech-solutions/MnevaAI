@@ -598,15 +598,16 @@ export const MNEVA_TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        loan_type: { type: 'string', enum: ['Personal', 'Home', 'Car', 'Education', 'Business', 'Gold', 'Other'] },
+        loan_type: { type: 'string', enum: ['Personal Loan', 'Home Loan', 'Car Loan', 'Education Loan', 'Business Loan', 'Gold Loan', 'Other'] },
         lender_name: { type: 'string', description: 'Bank or lender name' },
         principal_amount: { type: 'number', description: 'Original loan amount' },
         interest_rate: { type: 'number', description: 'Annual interest rate, %' },
         number_of_emis: { type: 'number', description: 'Total loan tenure in months' },
-        name: { type: 'string', description: 'A short label for this loan. Defaults to "<loan_type> loan from <lender_name>".' },
+        name: { type: 'string', description: 'A short label for this loan. Defaults to "<loan_type> from <lender_name>".' },
         outstanding_amount: { type: 'number', description: 'Amount still owed. Defaults to the full principal (nothing paid yet).' },
         interest_type: { type: 'string', enum: ['Fixed', 'Floating'], description: 'Defaults to Fixed' },
         interest_calculation: { type: 'string', enum: ['Reducing Balance', 'Flat Rate'], description: 'Defaults to Reducing Balance' },
+        emi_frequency: { type: 'string', enum: ['Monthly', 'Bi-weekly', 'Quarterly'], description: 'Defaults to Monthly' },
         emi_amount: { type: 'number', description: 'Monthly EMI amount. Computed automatically from principal/rate/tenure if omitted.' },
         loan_start_date: { type: 'string', description: 'ISO date the loan started. Defaults to today.' },
         account_number: { type: 'string' },
@@ -631,6 +632,8 @@ export const MNEVA_TOOLS = [
         down_payment: { type: 'number', description: 'Defaults to 0' },
         interest_rate: { type: 'number', description: 'Annual %, defaults to 0 (no-cost EMI)' },
         emi_amount: { type: 'number', description: 'Computed automatically from the financed amount/rate/installments if omitted.' },
+        frequency: { type: 'string', enum: ['Monthly', 'Bi-weekly', 'Quarterly'], description: 'Defaults to Monthly' },
+        payment_method: { type: 'string', enum: ['Card', 'Bank', 'UPI', 'Wallet', 'Other'] },
         start_date: { type: 'string', description: 'Defaults to today' },
         auto_debit: { type: 'boolean' },
         notes: { type: 'string' },
@@ -652,6 +655,7 @@ export const MNEVA_TOOLS = [
         name: { type: 'string', description: 'Defaults to "FD - <bank_name>".' },
         start_date: { type: 'string', description: 'Defaults to today' },
         compounding_frequency: { type: 'string', enum: ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly', 'Cumulative'], description: 'Defaults to Quarterly' },
+        interest_payout: { type: 'string', enum: ['On Maturity', 'Monthly', 'Quarterly', 'Half-Yearly', 'Yearly'], description: 'Defaults to On Maturity' },
         account_number: { type: 'string' },
         nominee: { type: 'string' },
         auto_renewal: { type: 'boolean' },
@@ -699,12 +703,12 @@ export const MNEVA_TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        parent: { type: 'string', description: 'Which parent/elder this is for, e.g. "Mom"' },
+        parent: { type: 'string', enum: ['Dad', 'Mom', 'Both'] },
         med_name: { type: 'string' },
         dosage: { type: 'string', description: 'e.g. "500mg", "1 tablet"' },
-        frequency: { type: 'string', description: 'e.g. "Twice daily", "Once daily"' },
+        frequency: { type: 'string', enum: ['Once daily', 'Twice daily', 'Thrice daily', 'Every 8 hrs', 'Weekly', 'As needed'] },
         dose_times: { type: 'array', items: { type: 'string' }, description: '24h "HH:mm" times, e.g. ["08:00","20:00"]' },
-        meal_time: { type: 'string', enum: ['Before food', 'After food', 'With food', 'Anytime'] },
+        meal_time: { type: 'string', enum: ['Before meal', 'After meal', 'With meal', 'Empty stomach'] },
         doctor: { type: 'string' },
         duration: { type: 'string', description: 'e.g. "7 days", "Ongoing"' },
         refill_date: { type: 'string' },
@@ -722,7 +726,7 @@ export const MNEVA_TOOLS = [
         title: { type: 'string' },
         assignee_name: { type: 'string', description: 'Name/email of the connected family member this is for, or "myself". Defaults to myself.' },
         description: { type: 'string' },
-        priority: { type: 'string', enum: ['Low', 'Medium', 'High'] },
+        priority: { type: 'string', enum: ['Low', 'Medium', 'High', 'Urgent'] },
         category: { type: 'string' },
         due_date: { type: 'string' },
       },
@@ -736,9 +740,9 @@ export const MNEVA_TOOLS = [
       type: 'object',
       properties: {
         name: { type: 'string' },
-        species: { type: 'string', description: 'e.g. Dog, Cat, Bird' },
+        species: { type: 'string', enum: ['Dog', 'Cat', 'Bird', 'Rabbit', 'Fish', 'Other'] },
         breed: { type: 'string' },
-        sex: { type: 'string' },
+        sex: { type: 'string', enum: ['Male', 'Female'] },
         dob: { type: 'string' },
         weight: { type: 'string' },
       },
@@ -752,7 +756,7 @@ export const MNEVA_TOOLS = [
       type: 'object',
       properties: {
         pet_name: { type: 'string', description: 'Name of the existing pet this reminder is for' },
-        type: { type: 'string', enum: ['vet', 'vaccine', 'grooming', 'medication', 'other'] },
+        type: { type: 'string', enum: ['Vaccination', 'Medication', 'Grooming', 'Vet Appointment', 'Feeding'] },
         title: { type: 'string', description: 'e.g. "Rabies booster"' },
         remind_at: { type: 'string', description: 'Future ISO datetime with offset, e.g. 2026-09-25T09:00:00+05:30' },
         notes: { type: 'string' },
@@ -762,16 +766,16 @@ export const MNEVA_TOOLS = [
   },
   {
     name: 'add_family_item',
-    description: `Add an item to a family module — pick domain + type, then fill "fields" with exactly the keys listed below (all as strings). Required fields per domain+type:
+    description: `Add an item to a family module — pick domain + type, then fill "fields" with exactly the keys listed below (all as strings). Wherever a real option list is shown, use one of those EXACT values (matching the app's own dropdowns) — never invent a similar-sounding one. Required fields per domain+type:
 - domain=children, type=child: REQUIRED fields.name. optional fields.age, fields.school, fields.grade.
-- domain=children, type=activity: REQUIRED fields.name (activity name), fields.day. optional fields.child, fields.type (category e.g. Sports/Music/Art), fields.time, fields.venue.
+- domain=children, type=activity: REQUIRED fields.name (activity name), fields.day (day of the WEEK this recurs on, one of: Mon/Tue/Wed/Thu/Fri/Sat/Sun — not a calendar date). optional fields.child, fields.type (one of: School/Sports/Music/Dance/Art/Tuition/Other), fields.time, fields.venue.
 - domain=children, type=event: REQUIRED fields.title, fields.date. optional fields.child, fields.time, fields.notes.
-- domain=home, type=task: REQUIRED fields.title. optional fields.type (category), fields.priority (Low/Medium/High), fields.dueDate, fields.time, fields.notes.
+- domain=home, type=task: REQUIRED fields.title. optional fields.type (one of: Plumbing/Electrical/Cleaning/Painting/Carpentry/AC Service/Pest Control/Other), fields.priority (one of: High/Medium/Low), fields.dueDate, fields.time, fields.notes.
 - domain=home, type=contact: REQUIRED fields.name. optional fields.role, fields.phone, fields.notes.
 - domain=home, type=warranty: REQUIRED fields.item. optional fields.brand, fields.purchaseDate, fields.expiryDate, fields.notes.
-- domain=celebration, type=occasion: REQUIRED fields.person, fields.date. optional fields.type (Birthday/Anniversary/etc), fields.time, fields.notes.
-- domain=celebration, type=gift: REQUIRED fields.person, fields.item. optional fields.occasion, fields.budget, fields.status (Idea/Bought/Wrapped/Given), fields.notes.
-- domain=calendar, type=event: REQUIRED fields.title, fields.date. optional fields.type (category), fields.member, fields.time, fields.notes.
+- domain=celebration, type=occasion: REQUIRED fields.person, fields.date. optional fields.type (one of: Birthday/Anniversary/Festival/Wedding/Graduation/Baby Shower/Other), fields.time, fields.notes.
+- domain=celebration, type=gift: REQUIRED fields.person, fields.item. optional fields.occasion, fields.budget, fields.status (one of: Idea/Ordered/Delivered/Given), fields.notes.
+- domain=calendar, type=event: REQUIRED fields.title, fields.date. optional fields.type (one of: Birthday/Anniversary/School/Medical/Travel/Festival/Meeting/Other), fields.member (one of: Dad/Mom/Self/Spouse/Child/All), fields.time, fields.notes.
 If a required field for the chosen domain+type is missing from the conversation, ask the user for it before calling this tool.`,
     input_schema: {
       type: 'object',
@@ -1184,7 +1188,7 @@ export async function executeTool(name, input, userId) {
       const loan = await prisma.loan.create({
         data: {
           userId,
-          name: input.name || `${input.loan_type} loan from ${input.lender_name}`,
+          name: input.name || `${input.loan_type} from ${input.lender_name}`,
           loanType: input.loan_type,
           lenderName: input.lender_name,
           accountNumber: input.account_number || null,
@@ -1194,6 +1198,7 @@ export async function executeTool(name, input, userId) {
           interestType: input.interest_type || 'Fixed',
           interestCalculation: input.interest_calculation || 'Reducing Balance',
           emiAmount,
+          emiFrequency: input.emi_frequency || 'Monthly',
           emiStartDate: loanStartDate,
           numberOfEmis: months,
           loanStartDate,
@@ -1230,6 +1235,8 @@ export async function executeTool(name, input, userId) {
           emiAmount,
           interestRate: input.interest_rate != null ? rate : null,
           numberOfInstallments: months,
+          frequency: input.frequency || 'Monthly',
+          paymentMethod: input.payment_method || null,
           startDate,
           autoDebit: !!input.auto_debit,
           notes: input.notes || null,
@@ -1262,6 +1269,7 @@ export async function executeTool(name, input, userId) {
           principalAmount: principal,
           interestRate: rate,
           compoundingFrequency,
+          interestPayout: input.interest_payout || 'On Maturity',
           startDate,
           maturityDate,
           tenureMonths,
