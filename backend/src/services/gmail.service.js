@@ -296,24 +296,40 @@ export async function getEmailBody(user, messageId) {
     subject: getHeaderValue(messageData.data.payload.headers, 'Subject'),
     from: getHeaderValue(messageData.data.payload.headers, 'From'),
     body: decodeEmailBody(messageData.data.payload),
+    // Needed to send a reply that actually lands in the same Gmail thread —
+    // threadId groups it in the conversation, and In-Reply-To/References
+    // (built from this RFC822 Message-ID, NOT Gmail's own message id) is
+    // what every mail client uses to thread a reply. Without both, sendEmail
+    // has no way to avoid starting a brand new thread.
+    threadId: messageData.data.threadId,
+    messageIdHeader: getHeaderValue(messageData.data.payload.headers, 'Message-ID'),
   }
 }
 
-export async function sendEmail(user, recipient, subject, body) {
+// `threadId`/`inReplyTo` (the original message's RFC822 Message-ID, from
+// getEmailBody) are optional — when given, this sends as a genuine reply in
+// the same Gmail thread instead of a new, disconnected email. threadId alone
+// isn't enough; Gmail (and every other mail client) also expects the
+// In-Reply-To/References headers to actually chain it to that message.
+export async function sendEmail(user, recipient, subject, body, { threadId, inReplyTo } = {}) {
   const authClient = await getAuthenticatedGmailClient(user)
   const gmail = google.gmail({ version: 'v1', auth: authClient })
-  const raw = Buffer.from([
+  const headers = [
     `From: ${user.email}`,
     `To: ${recipient}`,
     `Subject: ${subject}`,
-    'Content-Type: text/plain; charset=UTF-8',
-    '',
-    body,
-  ].join('\r\n')).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  ]
+  if (inReplyTo) {
+    headers.push(`In-Reply-To: ${inReplyTo}`)
+    headers.push(`References: ${inReplyTo}`)
+  }
+  headers.push('Content-Type: text/plain; charset=UTF-8', '', body)
+
+  const raw = Buffer.from(headers.join('\r\n')).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
   const result = await gmail.users.messages.send({
     userId: 'me',
-    requestBody: { raw },
+    requestBody: { raw, ...(threadId ? { threadId } : {}) },
   })
 
   return result.data

@@ -86,6 +86,10 @@ export default function Communications({ navigation }) {
   const [thread, setThread] = useState(null);
   const [threadBody, setThreadBody] = useState('');
   const [threadLoading, setThreadLoading] = useState(false);
+  // Gmail's own thread id + the original message's RFC822 Message-ID header —
+  // both required to send a reply that actually lands in this same
+  // conversation instead of starting a brand new, disconnected email.
+  const [threadMeta, setThreadMeta] = useState(null);
 
   // Draft
   const [draft, setDraft] = useState('');
@@ -394,13 +398,18 @@ export default function Communications({ navigation }) {
         </View>
       )}
 
-      {/* List */}
+      {/* List — both branches need explicit flex:1 so this area always fills
+          the space between the filters and the tab bar; without it, the
+          shorter loading skeleton left the tab bar sitting right after it
+          instead of pinned to the true bottom, until the real (taller) list
+          loaded in and coincidentally pushed it back down. */}
       {loading ? (
-        <View style={{ paddingHorizontal: hPad, paddingTop: 8 }}>
+        <View style={{ flex: 1, paddingHorizontal: hPad, paddingTop: 8 }}>
           {[1, 2, 3, 4, 5].map(i => <SkeletonRow key={i} styles={styles} />)}
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={visibleEmails}
           keyExtractor={e => e.id}
           contentContainerStyle={{ paddingBottom: tabBarHeight + 16 }}

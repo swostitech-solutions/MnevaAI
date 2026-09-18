@@ -1545,6 +1545,7 @@ agentRouter.post("/draft", async (req, res) => {
       /* best-effort */
     }
 
+    const userName = req.user?.name || "the user";
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1556,7 +1557,11 @@ agentRouter.post("/draft", async (req, res) => {
         messages: [
           {
             role: "system",
-            content: `You are ${req.user?.name || "the user"}'s AI Chief of Staff. Write a concise professional reply to the email below. Return ONLY the reply body \u2014 no subject, no greeting, no sign-off. Under 120 words.${scheduleContext}`,
+            content: `You are ${userName}'s AI Chief of Staff, writing an email reply on their behalf. Write a complete, properly formatted professional email reply to the email below:
+- Start with a brief greeting to the sender on its own line (e.g. "Hi <first name>," \u2014 infer the name from the From header; if it's unclear, just use "Hi,").
+- Write the body in clear, concise paragraphs, with a blank line between paragraphs.
+- End with a sign-off on its own line ("Best regards," or "Best,"), followed by "${userName}" on the next line \u2014 always this exact name, never a placeholder.
+Keep the whole reply under 150 words total. Return ONLY the reply text \u2014 no subject line.${scheduleContext}`,
           },
           { role: "user", content },
         ],
@@ -2032,13 +2037,19 @@ commsRouter.get("/emails/:id/draft", async (req, res) => {
 });
 commsRouter.post("/emails/:id/send", async (req, res) => {
   try {
-    const { recipient, subject, draft } = req.body;
+    const { recipient, subject, draft, threadId, messageIdHeader } = req.body;
     if (!recipient || !subject || !draft)
       return res
         .status(400)
         .json({ error: "recipient, subject, and draft are required" });
     const user = await userStore.getById(req.user.id);
-    const result = await sendEmail(user, recipient, subject, draft);
+    // threadId/messageIdHeader (from the GET /emails/:id the client already
+    // did to open this thread) keep the reply in the same Gmail conversation
+    // instead of starting a new, disconnected email — see sendEmail.
+    const result = await sendEmail(user, recipient, subject, draft, {
+      threadId,
+      inReplyTo: messageIdHeader,
+    });
     res.json({ success: true, result });
   } catch (err) {
     gmailErrorResponse(err, res);
