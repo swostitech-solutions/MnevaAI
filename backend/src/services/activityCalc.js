@@ -78,6 +78,28 @@ export function computeDistanceKmFromSteps(steps, heightCm) {
   return Math.round(((steps * strideM) / 1000) * 100) / 100
 }
 
+// The reverse of the above — logging "walked 5km" with no step count should
+// derive one using the exact same stride-length relationship, so Steps and
+// Distance stay genuinely interchangeable in either direction.
+export function computeStepsFromDistanceKm(distanceKm, heightCm) {
+  const strideM = heightCm ? (heightCm * 0.415) / 100 : 0.71
+  return Math.round((distanceKm * 1000) / strideM)
+}
+
 export function computeCaloriesBurned(met, weightKg, durationMin) {
   return Math.round(met * weightKg * (durationMin / 60))
+}
+
+// Weight/Height/Body Fat/Muscle Mass/Waist don't change day to day — unlike
+// Duration/Calories/Distance there's no formula linking these fields, so the
+// only "auto-fill" that makes sense for them is reusing the most recent day
+// (on or before `todayStr`) that actually logged a value, instead of
+// leaving today's entry blank again just because it wasn't restated today.
+export function getLatestKnownField(healthLog, fieldKey, todayStr) {
+  const dates = Object.keys(healthLog || {}).filter(d => d <= todayStr).sort().reverse()
+  for (const d of dates) {
+    const v = healthLog[d]?.[fieldKey]
+    if (v != null) return v
+  }
+  return null
 }

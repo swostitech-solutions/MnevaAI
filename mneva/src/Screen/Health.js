@@ -76,14 +76,123 @@ const CATEGORY_FIELDS = {
   ],
 };
 
-function LogDataSheet({ visible, onClose, onSynced, bottomInset, theme, styles }) {
+// Mirrors backend/src/services/activityCalc.js exactly (Steps ↔ Distance in
+// either direction, Calories Burned ← MET × weight × duration) so the form
+// shows the same numbers live, as you type, instead of only after the save
+// round-trips through the server. Duration is deliberately NOT auto-filled
+// here — it stays purely manual. Kept in plain JS here rather than imported,
+// since the backend module isn't reachable from the app bundle.
+function metForActivityPreview(workoutType, distanceKm, durationMin) {
+  const type = String(workoutType || '').trim().toLowerCase();
+  const paceKph = distanceKm && durationMin ? distanceKm / (durationMin / 60) : null;
+  if (!type || type.includes('walk')) {
+    if (paceKph == null) return 3.5;
+    if (paceKph < 4) return 2.8;
+    if (paceKph < 5.5) return 3.5;
+    if (paceKph < 6.5) return 4.3;
+    return 5.0;
+  }
+  if (type.includes('run') || type.includes('jog') || type.includes('sprint')) {
+    if (paceKph == null) return 8.3;
+    if (paceKph < 8) return 7.0;
+    if (paceKph < 9.5) return 8.3;
+    if (paceKph < 11) return 9.8;
+    return 11.8;
+  }
+  const MET_TABLE = {
+    cycle: 7.5, cycling: 7.5, bike: 7.5, biking: 7.5,
+    swim: 7.0, swimming: 7.0,
+    yoga: 2.5, stretching: 2.5,
+    gym: 5.0, workout: 5.0, strength: 5.0, 'strength training': 5.0, weights: 5.0, weightlifting: 5.0,
+    dance: 5.5, dancing: 5.5,
+    hike: 6.0, hiking: 6.0,
+    sport: 6.0, sports: 6.0, football: 7.0, basketball: 6.5, badminton: 5.5, tennis: 7.0, cricket: 5.0,
+  };
+  return MET_TABLE[type] ?? 4.5;
+}
+function computeDistanceKmFromStepsPreview(steps, heightCm) {
+  const strideM = heightCm ? (heightCm * 0.415) / 100 : 0.71;
+  return Math.round(((steps * strideM) / 1000) * 100) / 100;
+}
+// Reverse of the above — same stride-length relationship, so Distance can
+// derive Steps just as readily as Steps derives Distance.
+function computeStepsFromDistanceKmPreview(distanceKm, heightCm) {
+  const strideM = heightCm ? (heightCm * 0.415) / 100 : 0.71;
+  return Math.round((distanceKm * 1000) / strideM);
+}
+function computeCaloriesBurnedPreview(met, weightKg, durationMin) {
+  return Math.round(met * weightKg * (durationMin / 60));
+}
+
+function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme, styles }) {
   const [activeTab, setActiveTab] = useState('activity');
   const [form, setForm] = useState({});
+  // Which fields the user has directly typed into (even to clear them) —
+  // the live auto-calc below only ever fills a field that hasn't been
+  // touched, so it never fights a value the user actually chose to enter.
+  const [touched, setTouched] = useState({});
+  // Steps and Distance are mutually derivable, so simple per-field "touched"
+  // gating isn't enough — whichever one the user typed into most recently is
+  // the source of truth, and the OTHER one is what gets recomputed. This
+  // tracks just that, separately from the generic `touched` map.
+  const [lastStepsDistanceEdit, setLastStepsDistanceEdit] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
+  useEffect(() => {
+    if (visible) { setTouched({}); setLastStepsDistanceEdit(null); }
+  }, [visible]);
+
+  const set = (key, val) => {
+    setForm(f => ({ ...f, [key]: val }));
+    setTouched(t => ({ ...t, [key]: true }));
+    if (key === 'steps') setLastStepsDistanceEdit('steps');
+    if (key === 'distance') setLastStepsDistanceEdit('distance');
+  };
+  // Writes a computed default without marking the field "touched", so it
+  // keeps recomputing live as the source fields (steps, active minutes,
+  // workout type...) change, right up until the user edits it themselves.
+  const autoSet = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  // Live preview: Distance ↔ Steps (whichever the user typed into last
+  // drives the other one), Calories Burned ← MET(workout type, distance,
+  // duration) × the user's own weight — same calculation the backend now
+  // applies on save, just run instantly in the form so the field itself
+  // shows the number, not a blank dash. Duration is never auto-filled here;
+  // it stays purely manual, matching the backend. Each autoSet's own state
+  // update re-triggers this effect via the dependency array below, so
+  // values always converge to the latest inputs within one extra render.
+  useEffect(() => {
+    const steps = Number(form.steps) || 0;
+    const distance = Number(form.distance) || 0;
+    const activeMinutes = Number(form.activeMinutes) || 0;
+    const explicitDuration = Number(form.workoutDuration) || 0;
+    const weightKg = Number(metrics?.weight?.value) || null;
+    const heightCm = Number(metrics?.height?.value) || null;
+
+    if (lastStepsDistanceEdit === 'steps' && steps > 0) {
+      const derived = String(computeDistanceKmFromStepsPreview(steps, heightCm));
+      if (form.distance !== derived) autoSet('distance', derived);
+    } else if (lastStepsDistanceEdit === 'distance' && distance > 0) {
+      const derived = String(computeStepsFromDistanceKmPreview(distance, heightCm));
+      if (form.steps !== derived) autoSet('steps', derived);
+    } else if (!touched.distance && steps > 0) {
+      // No explicit edit yet on either field this session (e.g. restored
+      // from a previous tab) — default to the historical Steps→Distance
+      // direction.
+      autoSet('distance', String(computeDistanceKmFromStepsPreview(steps, heightCm)));
+    }
+
+    const effectiveSteps = steps || (distance ? computeStepsFromDistanceKmPreview(distance, heightCm) : 0);
+    const durationForCalc = explicitDuration || activeMinutes || (effectiveSteps ? effectiveSteps / 110 : 0);
+    if (!touched.workoutCalories && weightKg && durationForCalc > 0) {
+      const distanceForCalc = distance || (effectiveSteps ? computeDistanceKmFromStepsPreview(effectiveSteps, heightCm) : null);
+      const met = metForActivityPreview(form.workoutType, distanceForCalc, durationForCalc);
+      autoSet('workoutCalories', String(computeCaloriesBurnedPreview(met, weightKg, durationForCalc)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.steps, form.distance, form.activeMinutes, form.workoutDuration, form.workoutType, touched, lastStepsDistanceEdit, metrics]);
 
   const handleSave = async () => {
     const payload = { source: 'manual' };
@@ -997,6 +1106,7 @@ export default function Health({ navigation }) {
         visible={syncVisible}
         onClose={() => setLogVisible(false)}
         onSynced={() => loadData(true)}
+        metrics={metrics}
         bottomInset={insets.bottom}
         theme={theme}
         styles={styles}

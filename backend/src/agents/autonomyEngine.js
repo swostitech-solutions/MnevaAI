@@ -5,7 +5,7 @@ import { emitToUser } from '../services/realtime.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
 import { getAutonomyPolicy, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction } from '../services/pendingActions.service.js'
-import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeCaloriesBurned } from '../services/activityCalc.js'
+import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from '../services/activityCalc.js'
 
 function validTimeZone(value) {
   try {
@@ -1362,6 +1362,28 @@ export async function executeTool(name, input, userId) {
       // the AI Profile's onboarding-time figures as a last resort.
       const { heightCm, weightKg } = await getBodyMetricsForActivity(userId, synced.weight, synced.height)
 
+      // Steps and Distance are fully interchangeable: mentioning only one
+      // ("ran 5km") derives the other via the same stride-length
+      // relationship, in either direction.
+      if (input.steps == null && input.distance != null) {
+        synced.steps = computeStepsFromDistanceKm(Number(input.distance), heightCm)
+      }
+
+      // ── Carry forward last-known Body metrics ────────────────────────────
+      // Weight/Height/Body Fat/Muscle Mass/Waist don't change day to day —
+      // if this call doesn't restate one but an earlier day logged it, reuse
+      // that instead of leaving it blank again. Only runs when this call
+      // actually touches the Body category, so mentioning e.g. just steps
+      // doesn't get old body data injected into it.
+      if (input.weight != null || input.height != null || input.bmi != null || input.body_fat != null || input.muscle_mass != null || input.waist != null) {
+        for (const key of ['weight', 'height', 'bodyFat', 'muscleMass', 'waist']) {
+          if (synced[key] == null) {
+            const known = getLatestKnownField(prefs.healthLog, key, today)
+            if (known != null) synced[key] = known
+          }
+        }
+      }
+
       // ── Auto-fill BMI from weight/height ──────────────────────────────────
       // Whenever both are known and the user didn't state a BMI themselves,
       // compute it instead of leaving it blank until the user does the
@@ -1380,20 +1402,23 @@ export async function executeTool(name, input, userId) {
       // activity logged later the same day (e.g. a run logged after an
       // earlier steps entry) must recompute from its own numbers, not
       // silently inherit the earlier entry's already-set distance/calories
-      // and skip the calculation entirely.
-      if (input.steps != null || input.workout_duration != null || input.distance != null || input.workout_type != null) {
+      // and skip the calculation entirely. Duration is deliberately NOT
+      // auto-filled — it stays purely manual, only ever set when the user
+      // actually states one — but Active Minutes can still help size a
+      // Calories estimate internally when Duration itself isn't given.
+      if (input.steps != null || input.workout_duration != null || input.active_minutes != null || input.distance != null || input.workout_type != null) {
         if (input.steps != null && input.distance == null) {
           synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm)
         }
 
-        if (weightKg && input.workout_calories == null && (input.workout_duration != null || input.steps != null || input.distance != null)) {
-          // No explicit duration (e.g. "7000 steps" alone) — estimate one
-          // from step count at an average walking cadence (~110 steps/min)
-          // purely to size the calorie estimate; never written back as a
-          // real duration value since the user never actually stated it.
+        if (weightKg && input.workout_calories == null && (input.workout_duration != null || input.active_minutes != null || input.steps != null || input.distance != null)) {
+          // No duration stated at all — fall back to Active Minutes, then
+          // to a steps-derived estimate (~110 steps/min average cadence),
+          // purely to size the calorie estimate; never written back into
+          // the Duration field itself, which the user left unstated.
           const durationMin = input.workout_duration != null
             ? input.workout_duration
-            : (input.steps != null ? input.steps / 110 : null)
+            : (input.active_minutes != null ? input.active_minutes : (input.steps != null ? input.steps / 110 : null))
           if (durationMin) {
             const met = metForActivity(synced.workoutType, synced.distance, durationMin)
             synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin)
@@ -1410,6 +1435,11 @@ export async function executeTool(name, input, userId) {
       if (synced.bmi != null) logged.bmi = synced.bmi
       if (synced.distance != null) logged.distance = synced.distance
       if (synced.workoutCalories != null) logged.workoutCalories = synced.workoutCalories
+      if (synced.workoutDuration != null) logged.workoutDuration = synced.workoutDuration
+      if (input.steps == null && synced.steps != null) logged.steps = synced.steps
+      for (const key of ['weight', 'height', 'bodyFat', 'muscleMass', 'waist']) {
+        if (synced[key] != null) logged[key] = synced[key]
+      }
       return { success: true, date: today, logged }
     }
     case 'add_parent_medication': {

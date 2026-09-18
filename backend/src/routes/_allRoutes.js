@@ -1285,7 +1285,7 @@ import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
 import { resolvePendingAction, listPendingActions } from "../services/pendingActions.service.js";
-import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeCaloriesBurned } from "../services/activityCalc.js";
+import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2200,15 +2200,25 @@ healthRouter.post("/sync", async (req, res) => {
       lastSynced: new Date().toISOString(),
       date: today,
     };
+
+    // Resolved once, up front — needed both for a distance-only entry's
+    // reverse Steps calculation right below and for BMI/Calories later.
+    const { heightCm, weightKg } = await getBodyMetricsForActivity(req.user.id, weight, height);
+
+    // Steps and Distance are now fully interchangeable: whichever one the
+    // user didn't give gets derived from the other via the same
+    // stride-length relationship, in either direction.
+    const effectiveSteps = steps != null ? steps : (distance != null ? computeStepsFromDistanceKm(Number(distance), heightCm) : null);
+
     // Steps is additive, not overwritten: manually logging e.g. a walk
     // Google Fit didn't see should add to today's total, not replace
     // whatever Fit already contributed (and vice versa — see the /metrics
     // auto-log below, which does the same combination the other direction).
     // stepsManual/stepsFit are tracked separately so re-combining on a later
     // update from either source never double-counts the other's share.
-    if (steps != null) {
+    if (effectiveSteps != null) {
       const todayLogExisting = prefs.healthLog?.[today] || {};
-      const stepsManual = Number(steps);
+      const stepsManual = Number(effectiveSteps);
       const stepsFit = todayLogExisting.stepsFit || 0;
       synced.stepsManual = stepsManual;
       synced.stepsFit = stepsFit;
@@ -2252,28 +2262,44 @@ healthRouter.post("/sync", async (req, res) => {
     merge(synced, "periodFlow", periodFlow);
     merge(synced, "symptoms", symptoms);
 
-    // ── Auto-fill BMI / Duration-derived Calories & Distance ──────────────
+    // ── Carry forward last-known Body metrics ──────────────────────────────
+    // Weight/Height/Body Fat/Muscle Mass/Waist don't change day to day —
+    // if today's save doesn't restate one but an earlier day logged it,
+    // reuse that instead of leaving it blank again. Only runs when the save
+    // actually touches the Body category, so an unrelated Nutrition-only
+    // save doesn't get old body data injected into it.
+    if (weight != null || height != null || bmi != null || bodyFat != null || muscleMass != null || waist != null) {
+      for (const key of ['weight', 'height', 'bodyFat', 'muscleMass', 'waist']) {
+        if (synced[key] == null) {
+          const known = getLatestKnownField(prefs.healthLog, key, today);
+          if (known != null) synced[key] = known;
+        }
+      }
+    }
+
+    // ── Auto-fill BMI / Calories & Distance/Steps ─────────────────────────
     // Mirrors exactly what the log_health_data AI tool does (see
-    // activityCalc.js) — this manual form used to leave Duration, Calories
-    // Burned, and Distance blank even when Steps/Activity Minutes/Workout
-    // Type were filled in, because that calculation only ever ran on the AI
-    // tool's code path, never on this one. Never overwrites a value the
-    // user actually entered on this save.
-    const { heightCm, weightKg } = await getBodyMetricsForActivity(req.user.id, synced.weight, synced.height);
+    // activityCalc.js). Duration is deliberately NOT auto-filled here — it
+    // stays purely manual, only ever set when the user actually types a
+    // value into it — but Active Minutes can still help size a Calories
+    // estimate internally when Duration itself is left blank. Never
+    // overwrites a value the user actually entered on this save.
     if (bmi == null) {
       const computedBmi = computeBmi(weightKg, heightCm);
       if (computedBmi != null) synced.bmi = computedBmi;
     }
-    if (steps != null || workoutDuration != null || distance != null || workoutType != null) {
-      if (steps != null && distance == null) {
+    if (effectiveSteps != null || workoutDuration != null || activeMinutes != null || distance != null || workoutType != null) {
+      if (effectiveSteps != null && distance == null) {
         synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm);
       }
-      if (weightKg && workoutCalories == null && (workoutDuration != null || steps != null || distance != null)) {
-        // No explicit duration (e.g. just "7000 steps") — estimate one from
-        // step count at an average walking cadence (~110 steps/min) purely
-        // to size the calorie estimate; never written back as a real
-        // duration value since the user never actually entered one.
-        const durationMin = workoutDuration != null ? workoutDuration : (steps != null ? steps / 110 : null);
+      if (weightKg && workoutCalories == null && (workoutDuration != null || activeMinutes != null || effectiveSteps != null || distance != null)) {
+        // No duration typed in at all — fall back to Active Minutes, then
+        // to a steps-derived estimate (~110 steps/min average cadence),
+        // purely to size the calorie estimate; never written back into the
+        // Duration field itself, which the user left blank on purpose.
+        const durationMin = workoutDuration != null
+          ? workoutDuration
+          : (activeMinutes != null ? activeMinutes : (effectiveSteps != null ? effectiveSteps / 110 : null));
         if (durationMin) {
           const met = metForActivity(synced.workoutType, synced.distance, durationMin);
           synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin);
