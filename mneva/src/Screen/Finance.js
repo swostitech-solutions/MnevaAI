@@ -62,6 +62,7 @@ const ADD_OPTIONS = [
   { key: 'subscription', label: 'Subscription', sub: 'Streaming, software & more', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'], screen: 'SubscriptionScreen' },
   { key: 'bill', label: 'Bill', sub: 'Electricity, rent, internet & more', icon: 'file-text', colors: ['#E0546E', '#C8405A'], screen: 'BillScreen' },
   { key: 'fd', label: 'Fixed Deposit', sub: 'Bank FDs & maturity tracking', icon: 'lock', colors: ['#06B6D4', '#0891B2'], screen: 'FDScreen' },
+  { key: 'portfolio', label: 'Portfolio Holding', sub: 'Stocks, mutual funds, SIPs & more', icon: 'trending-up', colors: ['#615FF8', '#4A47D5'], screen: 'PortfolioScreen' },
 ];
 
 export default function Finance({ navigation }) {
@@ -170,13 +171,6 @@ export default function Finance({ navigation }) {
 
   const pendingBills = bills.filter(b => b.status !== 'Paid' && !b.autoPay).length;
 
-  const STAT_CARDS = [
-    { label: 'Total Spend', value: `₹${(spending?.total || 0).toLocaleString('en-IN')}`, color: '#1F9A5A', sub: 'This month' },
-    { label: 'Bills Pending', value: pendingBills, color: '#F5A623', sub: 'Awaiting payment' },
-    { label: 'Portfolio', value: portfolio ? `₹${((portfolio.totalCurrent || 0) / 1000).toFixed(0)}k` : '—', color: '#615FF8', sub: `+${portfolio?.returnPct || 0}% return` },
-    { label: 'CIBIL Score', value: portfolio?.cibilScore || '—', color: '#4FA6E8', sub: portfolio?.cibilGrade || 'Not connected' },
-  ];
-
   const activeLoans = loans.filter(l => l.status === 'Active');
   const loanOutstanding = activeLoans.reduce((sum, l) => sum + (l.outstandingAmount || 0), 0);
   const activeEmis = emis.filter(e => e.status === 'Active');
@@ -186,21 +180,24 @@ export default function Finance({ navigation }) {
   const activeFds = fixedDeposits.filter(f => f.status === 'Active');
   const fdInvested = activeFds.reduce((sum, f) => sum + (f.principalAmount || 0), 0);
 
+  const STAT_CARDS = [
+    { label: 'Total Spend', value: `₹${(spending?.total || 0).toLocaleString('en-IN')}`, color: '#1F9A5A', sub: 'This month' },
+    { label: 'Bills Pending', value: pendingBills, color: '#F5A623', sub: 'Awaiting payment' },
+    { label: 'Portfolio', value: portfolio ? `₹${((portfolio.totalCurrent || 0) / 1000).toFixed(0)}k` : '—', color: '#615FF8', sub: `+${portfolio?.returnPct || 0}% return` },
+    { label: 'EMI', value: `₹${emiMonthly.toLocaleString('en-IN')}`, color: '#4FA6E8', sub: `${activeEmis.length} active` },
+  ];
+
   const OVERVIEW = [
     { key: 'loan', label: 'Loans', icon: 'briefcase', colors: ['#4FA6E8', '#3D8BFF'], screen: 'LoanScreen', count: activeLoans.length, total: loanOutstanding, totalLabel: 'outstanding' },
     { key: 'emi', label: 'EMIs', icon: 'credit-card', colors: ['#F5A623', '#E0901A'], screen: 'EmiScreen', count: activeEmis.length, total: emiMonthly, totalLabel: 'per month' },
     { key: 'subscription', label: 'Subscriptions', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'], screen: 'SubscriptionScreen', count: activeSubs.length, total: subsTotal, totalLabel: 'billed' },
     { key: 'fd', label: 'Fixed Deposits', icon: 'lock', colors: ['#06B6D4', '#0891B2'], screen: 'FDScreen', count: activeFds.length, total: fdInvested, totalLabel: 'invested' },
+    { key: 'portfolio', label: 'Portfolio', icon: 'trending-up', colors: ['#615FF8', '#4A47D5'], screen: 'PortfolioScreen', count: portfolio?.holdings?.length || 0, total: portfolio?.totalCurrent || 0, totalLabel: 'current value' },
   ];
   const maxOverviewTotal = Math.max(...OVERVIEW.map(ov => ov.total), 1);
 
   const spendChartData = (spending?.categories || []).map((cat, i) => ({
     value: cat.amount || 0,
-    color: SPEND_COLORS[i % SPEND_COLORS.length],
-  }));
-
-  const holdingsChartData = (portfolio?.holdings || []).map((h, i) => ({
-    value: h.current || 0,
     color: SPEND_COLORS[i % SPEND_COLORS.length],
   }));
 
@@ -273,57 +270,6 @@ export default function Finance({ navigation }) {
           </View>
         </View>
 
-        {/* Portfolio */}
-        {portfolio && (
-          <View style={[styles.sectionCard, { marginTop: 16 }]}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Investment Portfolio</Text>
-              <Text style={styles.portfolioReturn}>+{portfolio.returnPct || 0}%</Text>
-            </View>
-            <View style={styles.portfolioSummaryRow}>
-              {[['Invested', `₹${(portfolio.totalInvested || 0).toLocaleString('en-IN')}`, '#6B7280'],
-                ['Current', `₹${(portfolio.totalCurrent || 0).toLocaleString('en-IN')}`, '#1F9A5A'],
-                ['Net Worth', `₹${(portfolio.netWorth || 0).toLocaleString('en-IN')}`, '#615FF8']].map(([k, v, c]) => (
-                <View key={k} style={styles.portfolioStat}>
-                  <Text style={styles.portfolioStatLabel}>{k}</Text>
-                  <Text style={[styles.portfolioStatValue, { color: c }]}>{v}</Text>
-                </View>
-              ))}
-            </View>
-            {(portfolio.holdings || []).length === 0 ? (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyText}>No holdings. Connect Zerodha / Groww to populate.</Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.donutRowCentered}>
-                  <DonutChart
-                    data={holdingsChartData}
-                    centerLabel={`₹${((portfolio.totalCurrent || 0) / 1000).toFixed(1)}k`}
-                    centerSub="allocated"
-                    theme={theme}
-                    styles={styles}
-                  />
-                </View>
-                {(portfolio.holdings || []).map((h, i) => (
-                  <View key={h.id || i} style={[styles.holdingRow, i !== portfolio.holdings.length - 1 && styles.rowDivider]}>
-                    <View style={[styles.spendDot, { backgroundColor: SPEND_COLORS[i % SPEND_COLORS.length] }]} />
-                    <View style={styles.holdingTextWrap}>
-                      <Text style={styles.holdingName}>{h.name}</Text>
-                      <Text style={styles.holdingSub}>{h.sipOn ? `SIP ₹${(h.sipAmt || 0).toLocaleString('en-IN')}/mo` : h.ticker || 'Equity'}</Text>
-                    </View>
-                    <View style={styles.holdingRight}>
-                      <Text style={[styles.holdingReturn, { color: h.ret >= 0 ? '#1F9A5A' : '#E0546E' }]}>
-                        {h.ret >= 0 ? '+' : ''}{h.ret}%
-                      </Text>
-                      <Text style={styles.holdingCurrent}>₹{(h.current || 0).toLocaleString('en-IN')}</Text>
-                    </View>
-                  </View>
-                ))}
-              </>
-            )}
-          </View>
-        )}
 
         {/* Spending */}
         {spending && (
@@ -440,18 +386,6 @@ const createStyles = (theme) => StyleSheet.create({
   emptyWrap: { alignItems: 'center', paddingVertical: 24, gap: 8 },
   emptyText: { fontSize: 13, color: theme.faint, textAlign: 'center', lineHeight: 19 },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
-  portfolioReturn: { fontSize: 13, fontWeight: '800', color: theme.accent },
-  portfolioSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: theme.surfaceAlt, borderRadius: 12, padding: 12, marginBottom: 14 },
-  portfolioStat: { alignItems: 'center' },
-  portfolioStatLabel: { fontSize: 10, color: theme.faint, fontWeight: '600', marginBottom: 4 },
-  portfolioStatValue: { fontSize: 14, fontWeight: '800' },
-  holdingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
-  holdingTextWrap: { flex: 1 },
-  holdingName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
-  holdingSub: { fontSize: 11, color: theme.faint },
-  holdingRight: { alignItems: 'flex-end' },
-  holdingReturn: { fontSize: 13, fontWeight: '800', marginBottom: 2 },
-  holdingCurrent: { fontSize: 12, color: theme.muted },
   savingsRate: { fontSize: 12, fontWeight: '700', color: theme.accent },
   spendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
 
@@ -459,7 +393,6 @@ const createStyles = (theme) => StyleSheet.create({
   donutCenterLabel: { fontSize: 15, fontWeight: '800', color: theme.text },
   donutCenterSub: { fontSize: 10, color: theme.faint, marginTop: 2 },
   donutRow: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8 },
-  donutRowCentered: { alignItems: 'center', marginBottom: 16 },
   legendCol: { flex: 1, marginLeft: 20, gap: 10 },
   legendRow: { flexDirection: 'row', alignItems: 'center' },
   legendName: { flex: 1, fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginLeft: 6 },

@@ -64,6 +64,7 @@ model User {
   subscriptions             Subscription[]
   bills                     Bill[]
   fixedDeposits             FixedDeposit[]
+  portfolioHoldings         PortfolioHolding[]
   reminderSchedules         ReminderSchedule[]
 
   conversations Conversation[]
@@ -708,6 +709,27 @@ model FixedDeposit {
   attachmentDocId            String?
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PortfolioHolding {
+  id             String    @id @default(uuid())
+  userId         String
+  name           String // e.g. "Reliance Industries", "HDFC Flexi Cap Fund"
+  type           String // Stock/Mutual Fund/SIP/ETF/Bonds/Gold/Crypto/Fixed Income/Other
+  platform       String? // Groww/Zerodha/Angel One/Upstox/Kite/Other
+  quantity       Float? // units/shares held — optional since some holdings (gold, bonds) are tracked by value only
+  avgBuyPrice    Float? // per unit
+  currentPrice   Float? // per unit — manually updated, no live market-data feed
+  investedAmount Float
+  currentValue   Float
+  purchaseDate   DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

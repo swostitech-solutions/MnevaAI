@@ -539,20 +539,103 @@ financeRouter.delete('/fixed-deposits/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// ── Portfolio / Spending (unchanged, still not backed by real accounts) ──────
+// ── Portfolio Holdings ───────────────────────────────────────────────────────
 
-financeRouter.get('/portfolio', (_req, res) =>
-  res.json({
-    totalInvested: 0,
-    totalCurrent: 0,
-    returnPct: 0,
-    cibilScore: null,
-    cibilGrade: null,
-    netWorth: 0,
-    holdings: [],
-    accounts: [],
-  }),
-)
+financeRouter.get('/portfolio/holdings', async (req, res) => {
+  try {
+    const holdings = await prisma.portfolioHolding.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+    })
+    res.json({ holdings })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.post('/portfolio/holdings', async (req, res) => {
+  try {
+    const b = req.body
+    if (!b.name?.trim() || !b.type || b.investedAmount === undefined || b.currentValue === undefined) {
+      return res.status(400).json({ error: 'name, type, investedAmount and currentValue are required' })
+    }
+    const holding = await prisma.portfolioHolding.create({
+      data: {
+        userId: req.user.id,
+        name: b.name.trim(),
+        type: b.type,
+        platform: toStr(b.platform),
+        quantity: toFloat(b.quantity),
+        avgBuyPrice: toFloat(b.avgBuyPrice),
+        currentPrice: toFloat(b.currentPrice),
+        investedAmount: toFloat(b.investedAmount),
+        currentValue: toFloat(b.currentValue),
+        purchaseDate: toDate(b.purchaseDate),
+        notes: toStr(b.notes),
+      },
+    })
+    emit(req.app.get('io'), req.user.id, 'portfolio:created', holding)
+    res.status(201).json({ holding })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.patch('/portfolio/holdings/:id', async (req, res) => {
+  try {
+    const existing = await prisma.portfolioHolding.findUnique({ where: { id: req.params.id } })
+    if (!existing) return res.status(404).json({ error: 'Not found' })
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    const b = req.body
+    const holding = await prisma.portfolioHolding.update({
+      where: { id: req.params.id },
+      data: {
+        ...(b.name !== undefined && { name: b.name.trim() }),
+        ...(b.type !== undefined && { type: b.type }),
+        ...(b.platform !== undefined && { platform: toStr(b.platform) }),
+        ...(b.quantity !== undefined && { quantity: toFloat(b.quantity) }),
+        ...(b.avgBuyPrice !== undefined && { avgBuyPrice: toFloat(b.avgBuyPrice) }),
+        ...(b.currentPrice !== undefined && { currentPrice: toFloat(b.currentPrice) }),
+        ...(b.investedAmount !== undefined && { investedAmount: toFloat(b.investedAmount) }),
+        ...(b.currentValue !== undefined && { currentValue: toFloat(b.currentValue) }),
+        ...(b.purchaseDate !== undefined && { purchaseDate: toDate(b.purchaseDate) }),
+        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+      },
+    })
+    emit(req.app.get('io'), req.user.id, 'portfolio:updated', holding)
+    res.json({ holding })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.delete('/portfolio/holdings/:id', async (req, res) => {
+  try {
+    const existing = await prisma.portfolioHolding.findUnique({ where: { id: req.params.id } })
+    if (!existing) return res.status(404).json({ error: 'Not found' })
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    await prisma.portfolioHolding.delete({ where: { id: req.params.id } })
+    emit(req.app.get('io'), req.user.id, 'portfolio:deleted', { id: req.params.id })
+    res.json({ success: true })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// GET /api/finance/portfolio — aggregate summary, computed from real holdings
+// (previously a hardcoded stub returning all zeros/empty — "not backed by
+// real accounts", since there is no live brokerage integration; holdings are
+// tracked manually instead, the same way every other Finance module here is).
+financeRouter.get('/portfolio', async (req, res) => {
+  try {
+    const holdings = await prisma.portfolioHolding.findMany({
+      where: { userId: req.user.id },
+      orderBy: { currentValue: 'desc' },
+    })
+    const totalInvested = holdings.reduce((sum, h) => sum + (h.investedAmount || 0), 0)
+    const totalCurrent = holdings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
+    const returnPct = totalInvested > 0 ? Math.round(((totalCurrent - totalInvested) / totalInvested) * 1000) / 10 : 0
+    res.json({
+      totalInvested,
+      totalCurrent,
+      returnPct,
+      netWorth: totalCurrent,
+      holdings: holdings.map(h => ({ id: h.id, name: h.name, type: h.type, value: h.currentValue })),
+    })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
 // Real spend, computed from Bills actually marked Paid this month plus this
 // month's due EMI/Subscription installments — no separate transactions table
 // exists, so this is the best signal already sitting in the database.

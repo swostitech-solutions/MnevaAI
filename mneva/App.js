@@ -23,6 +23,7 @@ import EmiScreen from "./src/Screen/finance/EmiScreen";
 import SubscriptionScreen from "./src/Screen/finance/SubscriptionScreen";
 import BillScreen from "./src/Screen/finance/BillScreen";
 import FDScreen from "./src/Screen/finance/FDScreen";
+import PortfolioScreen from "./src/Screen/finance/PortfolioScreen";
 import Communications from "./src/Screen/Communications";
 import Health from "./src/Screen/Health";
 import LifeOps from "./src/Screen/LifeOps";
@@ -447,6 +448,7 @@ function AppInner() {
           <Stack.Screen name="SubscriptionScreen" component={SubscriptionScreen} />
           <Stack.Screen name="BillScreen" component={BillScreen} />
           <Stack.Screen name="FDScreen" component={FDScreen} />
+          <Stack.Screen name="PortfolioScreen" component={PortfolioScreen} />
           <Stack.Screen name="Communications" component={Communications} />
           <Stack.Screen name="Health" component={Health} />
           <Stack.Screen name="LifeOps" component={LifeOps} />

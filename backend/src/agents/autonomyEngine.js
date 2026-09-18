@@ -724,6 +724,26 @@ export const MNEVA_TOOLS = [
     },
   },
   {
+    name: 'add_portfolio_holding',
+    description: 'Add an investment holding (stock, mutual fund, SIP, ETF, bonds, gold, crypto, etc.) to Finance → Portfolio. There is no live market-data feed — prices/values are whatever the user states, not fetched.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'e.g. "Reliance Industries", "HDFC Flexi Cap Fund"' },
+        type: { type: 'string', enum: ['Stock', 'Mutual Fund', 'SIP', 'ETF', 'Bonds', 'Gold', 'Crypto', 'Fixed Income', 'Other'] },
+        invested_amount: { type: 'number', description: 'Total amount invested' },
+        current_value: { type: 'number', description: 'Current value. Defaults to invested_amount if not stated (assumes no gain/loss yet).' },
+        platform: { type: 'string', enum: ['Groww', 'Zerodha', 'Angel One', 'Upstox', 'Kite', 'Other'] },
+        quantity: { type: 'number', description: 'Units/shares held' },
+        avg_buy_price: { type: 'number', description: 'Per unit' },
+        current_price: { type: 'number', description: 'Per unit' },
+        purchase_date: { type: 'string' },
+        notes: { type: 'string' },
+      },
+      required: ['name', 'type', 'invested_amount'],
+    },
+  },
+  {
     name: 'log_health_data',
     description: 'Log manual health metrics (Activity, Body, Vitals, or Nutrition) for today into the Health module. Accepts any combination of metrics — provide at least one.',
     input_schema: {
@@ -1343,6 +1363,37 @@ export async function executeTool(name, input, userId) {
       ledger.add({ userId, tool: 'create_fixed_deposit', input: { name: fd.name }, result: { id: fd.id }, status: 'completed' }).catch(() => {})
       return { success: true, fixedDepositId: fd.id, name: fd.name, maturityDate: fd.maturityDate, maturityAmount: fd.maturityAmount }
     }
+    case 'add_portfolio_holding': {
+      const missing = missingRequired(input, [['name', 'name'], ['type', 'type'], ['invested_amount', 'invested_amount']])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
+
+      const investedAmount = Number(input.invested_amount)
+      const currentValue = input.current_value != null ? Number(input.current_value) : investedAmount
+
+      let purchaseDate = null
+      if (input.purchase_date) {
+        const d = new Date(input.purchase_date)
+        if (!isNaN(d.getTime())) purchaseDate = d
+      }
+
+      const holding = await prisma.portfolioHolding.create({
+        data: {
+          userId,
+          name: input.name,
+          type: input.type,
+          platform: input.platform || null,
+          quantity: input.quantity != null ? Number(input.quantity) : null,
+          avgBuyPrice: input.avg_buy_price != null ? Number(input.avg_buy_price) : null,
+          currentPrice: input.current_price != null ? Number(input.current_price) : null,
+          investedAmount,
+          currentValue,
+          purchaseDate,
+          notes: input.notes || null,
+        },
+      })
+      ledger.add({ userId, tool: 'add_portfolio_holding', input: { name: holding.name }, result: { id: holding.id }, status: 'completed' }).catch(() => {})
+      return { success: true, holdingId: holding.id, name: holding.name, type: holding.type, investedAmount: holding.investedAmount, currentValue: holding.currentValue }
+    }
     case 'log_health_data': {
       const fieldMap = {
         steps: 'steps', heart_rate: 'heartRate', blood_pressure_systolic: 'bloodPressureSystolic',
@@ -1805,7 +1856,7 @@ CRITICAL RULES:
 17. CALENDAR DATE GROUPING: When showing more than one scheduled item, group them under their actual calendar date (for example, "Today — Thursday 6 August" and "Tomorrow — Friday 7 August"). Never put entries from different dates in one list labelled "today". Do not include past events unless the user specifically asks for history; after creating one reminder or meeting, confirm that item only unless they ask to see their schedule.
 18. AUTONOMY LEVELS ONLY GATE ACTIONS, NEVER ANSWERS: L1-L4 and "Observe mode" only control whether YOU can execute a gated action (sending money, sending an email) without asking approval first — they have nothing to do with your ability to answer questions or share information. Never say something is blocked by "observe mode", trust level, or the Autonomy Engine when the real reason is that you simply have no live/real-time data source for it (e.g. current retail prices, live news, stock quotes). In that case, just say plainly that you don't have live internet access for that, then still answer helpfully from your general knowledge (e.g. a typical price range you're aware of) — never blame autonomy/trust level for a plain information request.
 19. PRODUCT / PRICE QUESTIONS WITH VARIANTS: If a product has multiple variants (storage, size, color, model tier) and the user doesn't specify which one, do NOT ask a clarifying question first — answer directly with ALL variants and their prices in one reply, formatted as a markdown table with a header row and a "|---|---|" separator row (e.g. "| Storage | Price |\n|---|---|\n| 256GB | ₹1,49,900 |\n| 512GB | ₹1,74,900 |"). Default to ₹ (INR) India pricing. If you don't have a live price, use your best general-knowledge estimate for each variant and say once, briefly, that it may not reflect today's live price — do not skip the table because of that.
-20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
+20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, add_portfolio_holding, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
 21. RESPONSE FORMATTING: The chat renders real markdown — **bold**, "- " bullets, "1. " numbered lists, "### " headers, and pipe tables — so use it the way a polished AI product (ChatGPT/Claude) would, not as plain unbroken prose. Guidelines: bold the 2-3 numbers or terms in a reply that the user's eye should land on first (an amount, a date, a status), never whole sentences. Use a bulleted list for 3+ related items (a list of bills, options, or notes) instead of comma-stuffing them into one sentence. Use short paragraphs (2-3 sentences); a wall of text is exactly what this is meant to avoid. Reach for a "### " header only when a reply genuinely has multiple sections (a daily brief, a full summary) — never for a one-line answer or a single confirmation. Match the weight of the formatting to the weight of the content: a yes/no answer or a single fact is one plain sentence, not a bulleted list of one. Never show the user raw tool-call JSON, field names like "med_name", or an internal error string verbatim — always translate it into a natural sentence first.
 22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
 
