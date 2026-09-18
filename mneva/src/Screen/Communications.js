@@ -114,9 +114,11 @@ export default function Communications({ navigation }) {
 
   // Thread view
   const [thread, setThread] = useState(null);
-  const [threadBody, setThreadBody] = useState('');
-  const [threadHtml, setThreadHtml] = useState('');
-  const [threadHtmlHeight, setThreadHtmlHeight] = useState(200);
+  // The full conversation (oldest first), each message tagged `fromSelf` —
+  // includes replies the user already sent in this thread, not just the
+  // single original inbound message.
+  const [threadMessages, setThreadMessages] = useState([]);
+  const [messageHtmlHeights, setMessageHtmlHeights] = useState({});
   const [threadLoading, setThreadLoading] = useState(false);
   // Gmail's own thread id + the original message's RFC822 Message-ID header —
   // both required to send a reply that actually lands in this same
@@ -170,9 +172,8 @@ export default function Communications({ navigation }) {
 
   const openThread = async (email) => {
     setThread(email);
-    setThreadBody('');
-    setThreadHtml('');
-    setThreadHtmlHeight(200);
+    setThreadMessages([]);
+    setMessageHtmlHeights({});
     setThreadMeta(null);
     setDraft('');
     setDraftReady(false);
@@ -181,10 +182,12 @@ export default function Communications({ navigation }) {
     setThreadLoading(true);
     try {
       const full = await apiFetch(`/api/comms/emails/${email.id}`);
-      setThreadBody(full.body || '');
-      setThreadHtml(full.bodyHtml || '');
+      setThreadMessages(full.messages?.length ? full.messages : [{
+        id: email.id, from: full.from || email.from, fromSelf: false,
+        body: full.body || '', bodyHtml: full.bodyHtml || null,
+      }]);
       setThreadMeta({ threadId: full.threadId || null, messageIdHeader: full.messageIdHeader || null });
-    } catch { setThreadBody(''); }
+    } catch { setThreadMessages([]); }
     finally { setThreadLoading(false); }
   };
 
@@ -194,9 +197,13 @@ export default function Communications({ navigation }) {
     setDraft('');
     setDraftReady(false);
     try {
+      // Base the draft on the other party's most recent message, not
+      // necessarily the very first one — if we've already replied once in
+      // this thread, a follow-up from them should drive the next draft.
+      const lastIncoming = [...threadMessages].reverse().find(m => !m.fromSelf);
       const res = await apiFetch('/api/agent/draft', {
         method: 'POST',
-        body: { subject: thread.subject || '', from: thread.from || '', preview: threadBody || thread.preview || '' },
+        body: { subject: thread.subject || '', from: thread.from || '', preview: lastIncoming?.body || thread.preview || '' },
         // A single LLM call, not the multi-iteration agent loop, but still
         // longer than the 15s default is worth having for a slow model turn.
         timeoutMs: 30000,
@@ -228,7 +235,11 @@ export default function Communications({ navigation }) {
       });
       setDraft('');
       setDraftReady(false);
-      setThread(null);
+      setEditing(false);
+      // Re-fetch the thread so the reply we just sent shows up in the
+      // conversation right away — previously this just closed the thread,
+      // so the sent message only ever existed in Gmail, never in the app.
+      await openThread(thread);
     } catch {}
     finally { setSending(false); }
   };
@@ -243,7 +254,6 @@ export default function Communications({ navigation }) {
 
   // ── THREAD VIEW ────────────────────────────────────────────────────────────
   if (thread) {
-    const color = avatarColor(thread.from);
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -276,44 +286,56 @@ export default function Communications({ navigation }) {
                   {/* Subject */}
                   <Text style={styles.threadSubject}>{thread.subject}</Text>
 
-                  {/* Sender row */}
-                  <View style={styles.threadSenderRow}>
-                    <View style={[styles.threadAvatar, { backgroundColor: color + '20' }]}>
-                      <Text style={[styles.threadAvatarText, { color }]}>{initials(thread.from)}</Text>
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.threadSenderName}>{thread.from}</Text>
-                      <Text style={styles.threadSenderSub}>to me</Text>
-                    </View>
-                  </View>
-
-                  {/* Divider */}
-                  <View style={styles.threadDivider} />
-
-                  {/* Body — rendered as real HTML (banners, images,
-                      formatting) whenever the message actually has an HTML
-                      part; falls back to plain text only when it doesn't. */}
+                  {/* Conversation — every message in the thread, oldest
+                      first, including replies the user already sent (labeled
+                      "You"), not just the single original inbound message. */}
                   {threadLoading ? (
                     <View style={styles.threadBodyLoading}>
                       <ActivityIndicator color={theme.accent} size="small" />
                       <Text style={styles.threadBodyLoadingText}>Loading…</Text>
                     </View>
-                  ) : threadHtml ? (
-                    <WebView
-                      originWhitelist={['*']}
-                      source={{ html: wrapEmailHtml(threadHtml) }}
-                      style={[styles.threadHtmlView, { height: threadHtmlHeight }]}
-                      scrollEnabled={false}
-                      javaScriptEnabled
-                      injectedJavaScript={REPORT_HEIGHT_JS}
-                      onMessage={(e) => {
-                        const h = parseInt(e.nativeEvent.data, 10);
-                        if (!isNaN(h) && h > 0) setThreadHtmlHeight(h);
-                      }}
-                    />
-                  ) : (
-                    <Text style={styles.threadBody}>{threadBody || thread.preview}</Text>
-                  )}
+                  ) : threadMessages.map((msg, idx) => {
+                    const msgColor = msg.fromSelf ? theme.accent : avatarColor(msg.from);
+                    return (
+                      <View key={msg.id || idx}>
+                        {/* Sender row */}
+                        <View style={styles.threadSenderRow}>
+                          <View style={[styles.threadAvatar, { backgroundColor: msgColor + '20' }]}>
+                            <Text style={[styles.threadAvatarText, { color: msgColor }]}>
+                              {msg.fromSelf ? 'Me' : initials(msg.from)}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1, marginLeft: 10 }}>
+                            <Text style={styles.threadSenderName}>{msg.fromSelf ? 'You' : msg.from}</Text>
+                            <Text style={styles.threadSenderSub}>{msg.fromSelf ? 'sent' : 'to me'}</Text>
+                          </View>
+                        </View>
+
+                        {/* Divider */}
+                        <View style={styles.threadDivider} />
+
+                        {/* Body — rendered as real HTML (banners, images,
+                            formatting) whenever the message actually has an
+                            HTML part; falls back to plain text otherwise. */}
+                        {msg.bodyHtml ? (
+                          <WebView
+                            originWhitelist={['*']}
+                            source={{ html: wrapEmailHtml(msg.bodyHtml) }}
+                            style={[styles.threadHtmlView, { height: messageHtmlHeights[msg.id] || 200 }]}
+                            scrollEnabled={false}
+                            javaScriptEnabled
+                            injectedJavaScript={REPORT_HEIGHT_JS}
+                            onMessage={(e) => {
+                              const h = parseInt(e.nativeEvent.data, 10);
+                              if (!isNaN(h) && h > 0) setMessageHtmlHeights(prev => ({ ...prev, [msg.id]: h }));
+                            }}
+                          />
+                        ) : (
+                          <Text style={styles.threadBody}>{msg.body}</Text>
+                        )}
+                      </View>
+                    );
+                  })}
 
                   {/* ── AI Reply composer ── */}
                   <View style={styles.replyBox}>

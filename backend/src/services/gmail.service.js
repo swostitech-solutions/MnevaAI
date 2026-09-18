@@ -317,6 +317,45 @@ export async function getEmailBody(user, messageId) {
     id: messageId,
     format: 'full',
   })
+  const threadId = messageData.data.threadId
+
+  // Fetch the whole conversation, not just this one message — a reply the
+  // user already sent in this thread is its own separate Gmail message
+  // under the same threadId, and would otherwise never show up in the app
+  // even though it's genuinely part of this conversation. Falls back to
+  // just the one message already fetched above if the thread lookup fails
+  // for any reason.
+  let rawMessages = [messageData.data]
+  if (threadId) {
+    try {
+      const threadData = await gmail.users.threads.get({ userId: 'me', id: threadId, format: 'full' })
+      if (threadData.data.messages?.length) rawMessages = threadData.data.messages
+    } catch {
+      // keep the single-message fallback above
+    }
+  }
+
+  const selfEmail = (user.email || '').toLowerCase()
+  const messages = rawMessages
+    .map((m) => {
+      const headers = m.payload?.headers || []
+      const from = getHeaderValue(headers, 'From') || ''
+      const internalDate = m.internalDate ? Number(m.internalDate) : null
+      return {
+        id: m.id,
+        from,
+        // Whether this message in the conversation was sent BY the current
+        // user — lets the thread view label it "You" and tell it apart from
+        // the messages the other party sent, instead of showing every
+        // message in the thread as if it came from the original sender.
+        fromSelf: !!(selfEmail && from.toLowerCase().includes(selfEmail)),
+        date: internalDate ? new Date(internalDate).toISOString() : null,
+        body: decodeEmailBody(m.payload),
+        bodyHtml: decodeEmailHtml(m.payload) || null,
+      }
+    })
+    .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0))
+
   return {
     subject: getHeaderValue(messageData.data.payload.headers, 'Subject'),
     from: getHeaderValue(messageData.data.payload.headers, 'From'),
@@ -331,8 +370,12 @@ export async function getEmailBody(user, messageId) {
     // (built from this RFC822 Message-ID, NOT Gmail's own message id) is
     // what every mail client uses to thread a reply. Without both, sendEmail
     // has no way to avoid starting a brand new thread.
-    threadId: messageData.data.threadId,
+    threadId,
     messageIdHeader: getHeaderValue(messageData.data.payload.headers, 'Message-ID'),
+    // The full conversation, oldest first, each message tagged with
+    // `fromSelf` — this is what the thread view actually renders now,
+    // instead of only ever showing the single original inbound message.
+    messages,
   }
 }
 
