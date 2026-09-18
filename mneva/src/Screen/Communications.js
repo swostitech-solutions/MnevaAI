@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
@@ -14,6 +15,35 @@ const INBOX_TABS = ['All', 'Unread', 'Flagged'];
 const PALETTE = ['#1F9A5A', '#9B72FF', '#F5A623', '#E0546E', '#4FA6E8'];
 const avatarColor = (str = '') => PALETTE[(str.charCodeAt(0) || 0) % PALETTE.length];
 const initials = (str = '') => str.trim().slice(0, 2).toUpperCase();
+
+// A raw email HTML body from Gmail is usually already a full <html> document
+// (see the "You still have 10 credits left" bug report — senders ship full
+// boilerplate, viewport meta included); only wrap it when it's a bare
+// fragment, so we don't double up on <html>/<head>.
+const wrapEmailHtml = (html) => (
+  /<html[\s>]/i.test(html)
+    ? html
+    : `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body style="margin:0;padding:0;font-family:-apple-system,sans-serif;">${html}</body></html>`
+);
+
+// WebView doesn't report its own content height — this reports
+// document.documentElement.scrollHeight back over postMessage so the
+// container can be sized to fit the email exactly, with no internal
+// scrollbar-within-a-scrollbar and no dead whitespace below it. Re-checked
+// after a short delay too, since banner images often finish loading (and
+// change the layout height) after the initial page-load event.
+const REPORT_HEIGHT_JS = `
+  (function () {
+    function postHeight() {
+      window.ReactNativeWebView.postMessage(String(document.documentElement.scrollHeight));
+    }
+    postHeight();
+    window.addEventListener('load', postHeight);
+    setTimeout(postHeight, 600);
+    setTimeout(postHeight, 1500);
+  })();
+  true;
+`;
 
 // ─── Skeleton row ───────────────────────────────────────────────────────────
 function SkeletonRow({ styles }) {
@@ -85,6 +115,8 @@ export default function Communications({ navigation }) {
   // Thread view
   const [thread, setThread] = useState(null);
   const [threadBody, setThreadBody] = useState('');
+  const [threadHtml, setThreadHtml] = useState('');
+  const [threadHtmlHeight, setThreadHtmlHeight] = useState(200);
   const [threadLoading, setThreadLoading] = useState(false);
   // Gmail's own thread id + the original message's RFC822 Message-ID header —
   // both required to send a reply that actually lands in this same
@@ -139,6 +171,9 @@ export default function Communications({ navigation }) {
   const openThread = async (email) => {
     setThread(email);
     setThreadBody('');
+    setThreadHtml('');
+    setThreadHtmlHeight(200);
+    setThreadMeta(null);
     setDraft('');
     setDraftReady(false);
     setEditing(false);
@@ -147,6 +182,8 @@ export default function Communications({ navigation }) {
     try {
       const full = await apiFetch(`/api/comms/emails/${email.id}`);
       setThreadBody(full.body || '');
+      setThreadHtml(full.bodyHtml || '');
+      setThreadMeta({ threadId: full.threadId || null, messageIdHeader: full.messageIdHeader || null });
     } catch { setThreadBody(''); }
     finally { setThreadLoading(false); }
   };
@@ -174,9 +211,20 @@ export default function Communications({ navigation }) {
     if (!draft.trim() || !thread) return;
     setSending(true);
     try {
+      const originalSubject = thread.subject || '';
+      const replySubject = /^re:/i.test(originalSubject.trim()) ? originalSubject : `Re: ${originalSubject}`;
       await apiFetch(`/api/comms/emails/${thread.id}/send`, {
         method: 'POST',
-        body: { recipient: thread.email || thread.from || '', subject: thread.subject || '', draft },
+        // threadId/messageIdHeader (captured in openThread) are what make this
+        // land as a reply in the same Gmail conversation instead of starting
+        // a new, disconnected email — see backend sendEmail.
+        body: {
+          recipient: thread.email || thread.from || '',
+          subject: replySubject,
+          draft,
+          threadId: threadMeta?.threadId || undefined,
+          messageIdHeader: threadMeta?.messageIdHeader || undefined,
+        },
       });
       setDraft('');
       setDraftReady(false);
@@ -242,12 +290,27 @@ export default function Communications({ navigation }) {
                   {/* Divider */}
                   <View style={styles.threadDivider} />
 
-                  {/* Body */}
+                  {/* Body — rendered as real HTML (banners, images,
+                      formatting) whenever the message actually has an HTML
+                      part; falls back to plain text only when it doesn't. */}
                   {threadLoading ? (
                     <View style={styles.threadBodyLoading}>
                       <ActivityIndicator color={theme.accent} size="small" />
                       <Text style={styles.threadBodyLoadingText}>Loading…</Text>
                     </View>
+                  ) : threadHtml ? (
+                    <WebView
+                      originWhitelist={['*']}
+                      source={{ html: wrapEmailHtml(threadHtml) }}
+                      style={[styles.threadHtmlView, { height: threadHtmlHeight }]}
+                      scrollEnabled={false}
+                      javaScriptEnabled
+                      injectedJavaScript={REPORT_HEIGHT_JS}
+                      onMessage={(e) => {
+                        const h = parseInt(e.nativeEvent.data, 10);
+                        if (!isNaN(h) && h > 0) setThreadHtmlHeight(h);
+                      }}
+                    />
                   ) : (
                     <Text style={styles.threadBody}>{threadBody || thread.preview}</Text>
                   )}
@@ -542,6 +605,7 @@ const createStyles = (theme) => StyleSheet.create({
   threadBodyLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 20 },
   threadBodyLoadingText: { fontSize: 13, color: theme.faint },
   threadBody: { fontSize: 15, color: theme.textSecondary, lineHeight: 25, marginBottom: 32 },
+  threadHtmlView: { width: '100%', marginBottom: 32, backgroundColor: 'transparent' },
 
   // Reply box
   replyBox: { borderWidth: 1.5, borderColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#E8F5EE', borderRadius: 20, padding: 16, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.06)' : '#FAFFFE' },

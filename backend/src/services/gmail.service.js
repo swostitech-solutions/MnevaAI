@@ -176,6 +176,31 @@ function decodeEmailBody(payload) {
   return ''
 }
 
+// Gmail payloads are a MIME tree, not a flat list — a multipart/mixed at the
+// top can contain a multipart/alternative nested inside it, so a shallow
+// .find() over payload.parts (like decodeEmailBody above) misses the html
+// part whenever it's one level deeper. Walks the whole tree instead.
+function findMimePart(payload, mimeType) {
+  if (!payload) return null
+  if (payload.mimeType === mimeType && payload.body?.data) return payload
+  if (payload.parts?.length) {
+    for (const part of payload.parts) {
+      const found = findMimePart(part, mimeType)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+// The actual HTML body, for rendering banner/image emails as real HTML
+// (WebView on the client) instead of the plain-text alternative — some
+// senders leave that part empty or, worse, put raw markup straight into it,
+// which is why those emails were showing literal "<!DOCTYPE html>..." text.
+function decodeEmailHtml(payload) {
+  const htmlPart = findMimePart(payload, 'text/html')
+  return htmlPart?.body?.data ? Buffer.from(htmlPart.body.data, 'base64').toString('utf8') : ''
+}
+
 export async function listEmails(user, filter = 'all', limit = 20) {
   const cacheKey = `${user.id}:${filter}:${limit}`
   const cached = _emailListCache.get(cacheKey)
@@ -296,6 +321,11 @@ export async function getEmailBody(user, messageId) {
     subject: getHeaderValue(messageData.data.payload.headers, 'Subject'),
     from: getHeaderValue(messageData.data.payload.headers, 'From'),
     body: decodeEmailBody(messageData.data.payload),
+    // Real HTML, when the message has one — lets the client render actual
+    // banners/images/formatting (via WebView) instead of always falling back
+    // to the plain-text alternative, which several senders leave blank or
+    // fill with raw markup instead of real plain text.
+    bodyHtml: decodeEmailHtml(messageData.data.payload) || null,
     // Needed to send a reply that actually lands in the same Gmail thread —
     // threadId groups it in the conversation, and In-Reply-To/References
     // (built from this RFC822 Message-ID, NOT Gmail's own message id) is
