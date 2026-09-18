@@ -2130,11 +2130,6 @@ healthRouter.get("/metrics", async (req, res) => {
       });
   }
 });
-healthRouter.get("/appointments", (_req, res) =>
-  res.json({ appointments: [] }),
-);
-healthRouter.get("/medications", (_req, res) => res.json({ medications: [] }));
-
 // POST /api/health-data/sync — accepts data from iOS Shortcut / Apple Health / manual
 healthRouter.post("/sync", async (req, res) => {
   try {

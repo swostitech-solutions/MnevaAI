@@ -13,6 +13,12 @@ import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
+const PERIODS = [
+  { key: 'day', label: 'Day' },
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
+];
+
 const LOG_CATEGORIES = [
   { key: 'activity',    label: 'Activity',    icon: 'activity',   color: '#1F9A5A' },
   { key: 'body',        label: 'Body',        icon: 'trending-up',color: '#4FA6E8' },
@@ -333,6 +339,78 @@ function groupLogByWeek(log) {
   return weeks;
 }
 
+// Same idea as groupLogByWeek but bucketed by calendar month ('YYYY-MM') —
+// backs the Month tab's summary stats and "target reached X/Y days" line.
+function groupLogByMonth(log, stepGoal) {
+  const days = Object.entries(log || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, entry]) => ({ date, ...entry }));
+  if (!days.length) return [];
+
+  const buckets = new Map();
+  for (const day of days) {
+    const monthKey = day.date.slice(0, 7);
+    if (!buckets.has(monthKey)) buckets.set(monthKey, []);
+    buckets.get(monthKey).push(day);
+  }
+
+  const todayMonthKey = new Date().toISOString().slice(0, 7);
+
+  const months = Array.from(buckets.entries()).map(([monthKey, monthDays]) => {
+    const stats = {};
+    for (const key of Object.keys(FIELD_META)) {
+      stats[key] = aggregateField(monthDays, key, FIELD_META[key]);
+    }
+    const daysGoalReached = monthDays.filter(d => (d.steps || 0) >= stepGoal).length;
+    return {
+      monthKey,
+      isCurrentMonth: monthKey === todayMonthKey,
+      daysLogged: monthDays.length,
+      daysGoalReached,
+      stats,
+    };
+  });
+
+  months.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  return months;
+}
+
+// Calendar-math helpers for the Month tab's navigable calendar grid — all in
+// UTC to match how healthLog keys are written server-side ('YYYY-MM-DD').
+
+// Every calendar date in a 'YYYY-MM' month, capped at today if it's the
+// current month (future days have no data to show).
+function datesInMonth(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const daysInMonthCount = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dates = [];
+  for (let d = 1; d <= daysInMonthCount; d++) {
+    const dateStr = new Date(Date.UTC(year, month - 1, d)).toISOString().slice(0, 10);
+    if (dateStr > todayStr) break;
+    dates.push(dateStr);
+  }
+  return dates;
+}
+
+// 0 (Sunday) – 6 (Saturday) — how many blank cells to lead the grid with so
+// the 1st lands under the correct weekday column.
+function firstWeekdayOfMonth(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+}
+
+function shiftMonthKey(monthKey, delta) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function fmtMonthLabel(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+}
+
 function WeekCard({ week, styles }) {
   return (
     <View style={styles.weekCard}>
@@ -366,6 +444,305 @@ function WeekCard({ week, styles }) {
       })}
       <Text style={styles.weekDaysLogged}>{week.daysLogged}/7 days logged</Text>
     </View>
+  );
+}
+
+function SummaryStat({ label, value, unit, styles }) {
+  if (value == null) return null;
+  return (
+    <View style={styles.periodSummaryStat}>
+      <Text style={styles.periodSummaryValue}>{Number(value).toLocaleString('en-IN')}{unit ? ` ${unit}` : ''}</Text>
+      <Text style={styles.periodSummaryLabel}>{label}</Text>
+    </View>
+  );
+}
+
+// Day tab — today's activity at a glance. Steps/goal comes from `metrics`
+// (the live Google-Fit-or-fallback reading this screen already fetches);
+// Active Minutes/Calories Burned/Distance aren't part of that payload, so
+// they're read from today's raw log entry instead.
+// A single detail row — icon, label + value, and (when a sensible daily
+// target exists) a slim progress bar underneath. Deliberately a list, not
+// another grid of boxes — TODAY'S VITALS above already covers that shape.
+function DayDetailRow({ icon, label, value, unit, pct, color, theme, styles, last }) {
+  return (
+    <View style={[styles.dayDetailRow, last && styles.dayDetailRowLast]}>
+      <View style={[styles.dayDetailIconWrap, { backgroundColor: color + (theme.isDark ? '2A' : '18') }]}>
+        <Feather name={icon} size={16} color={color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={styles.dayDetailTopRow}>
+          <Text style={styles.dayDetailLabel}>{label}</Text>
+          <Text style={styles.dayDetailValue}>{value != null ? `${Number(value).toLocaleString('en-IN')}${unit ? ' ' + unit : ''}` : '—'}</Text>
+        </View>
+        {pct != null && (
+          <View style={styles.dayDetailBarTrack}>
+            <View style={[styles.dayDetailBarFill, { width: `${Math.max(pct, value > 0 ? 4 : 0)}%`, backgroundColor: color }]} />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+// Shared hero-card + detail-list rendering for "one day's activity
+// breakdown" — used both by the Day tab (today, live-metrics-aware) and by
+// tapping a bar/day cell in the Week/Month tabs (a specific past date, read
+// straight from that date's healthLog entry).
+function DayDetailCard({ dateLabel, steps, stepGoal, activeMinutes, workoutCalories, distance, theme, styles }) {
+  const stepPct = Math.min(100, Math.round((steps / stepGoal) * 100));
+
+  const activeGoal = 90; // a commonly-used daily active-minutes target
+  const activePct = activeMinutes != null ? Math.min(100, Math.round((activeMinutes / activeGoal) * 100)) : null;
+
+  const calorieGoal = 500;
+  const caloriePct = workoutCalories != null ? Math.min(100, Math.round((workoutCalories / calorieGoal) * 100)) : null;
+
+  return (
+    <View>
+      <View style={styles.dayHero}>
+        <View style={styles.dayHeroTopRow}>
+          <View>
+            <Text style={styles.dayHeroLabel}>{dateLabel.toUpperCase()} · STEPS</Text>
+            <View style={styles.dayHeroValueRow}>
+              <Text style={styles.dayHeroValue}>{steps.toLocaleString('en-IN')}</Text>
+              <Text style={styles.dayHeroGoal}> / {stepGoal.toLocaleString('en-IN')}</Text>
+            </View>
+          </View>
+          <View style={styles.dayHeroBadge}>
+            <Feather name="activity" size={20} color="#1F9A5A" />
+          </View>
+        </View>
+        <View style={styles.dayHeroBarTrack}>
+          <LinearGradient
+            colors={['#8FDCB6', '#1F9A5A']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={[styles.dayHeroBarFill, { width: `${Math.max(stepPct, steps > 0 ? 4 : 0)}%` }]}
+          />
+        </View>
+        <Text style={styles.dayHeroPct}>{stepPct}% of daily goal</Text>
+      </View>
+
+      <View style={styles.dayDetailList}>
+        <DayDetailRow icon="clock" label="Active Minutes" value={activeMinutes} unit="min" pct={activePct} color="#4FA6E8" theme={theme} styles={styles} />
+        <DayDetailRow icon="zap" label="Calories Burned" value={workoutCalories} unit="kcal" pct={caloriePct} color="#F5A623" theme={theme} styles={styles} />
+        <DayDetailRow icon="map-pin" label="Distance Covered" value={distance} unit="km" pct={null} color="#9B72FF" theme={theme} styles={styles} last />
+      </View>
+    </View>
+  );
+}
+
+// Day tab — always today, live-metrics-aware (steps prefers the live `metrics`
+// reading; the rest come from today's raw log since `metrics` doesn't carry them).
+function DayActivityView({ metrics, todayLog, theme, styles }) {
+  const steps = metrics?.steps?.value ?? todayLog?.steps ?? 0;
+  const stepGoal = metrics?.steps?.goal || 10000;
+  return (
+    <DayDetailCard
+      dateLabel="Today"
+      steps={steps}
+      stepGoal={stepGoal}
+      activeMinutes={todayLog?.activeMinutes ?? null}
+      workoutCalories={todayLog?.workoutCalories ?? null}
+      distance={todayLog?.distance ?? null}
+      theme={theme}
+      styles={styles}
+    />
+  );
+}
+
+// "Today" for today, else "Tue, 15 Sep" — used as the DayDetailCard header
+// whenever a specific date is tapped in the Week/Month tabs.
+function fmtSelectedDateLabel(dateStr, todayStr) {
+  if (dateStr === todayStr) return 'Today';
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// Week tab — the existing 7-day bar chart (unchanged), plus a totals row
+// summarizing the current Sunday–Saturday week (already computed by
+// groupLogByWeek for the Weekly Tracking section below, reused here).
+function WeekActivityView({ metrics, currentWeek, healthLog, selectedDate, onSelectDate, theme, styles }) {
+  const weekSteps = metrics?.weeklySteps || [];
+  if (!weekSteps.length) return <Text style={styles.emptyStateText}>No step data yet this week.</Text>;
+
+  const goal = metrics?.steps?.goal || 10000;
+  const maxSteps = Math.max(...weekSteps.map(d => d.steps || 0), goal);
+  const goalPct = Math.min((goal / maxSteps) * 100, 94);
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // The tapped bar's detail card only shows while that date is actually one
+  // of the 7 bars on screen — switching to Month and back, or the week
+  // rolling over, shouldn't leave a stale card for a day no longer in view.
+  const selectedDay = weekSteps.find(d => d.date === selectedDate);
+
+  return (
+    <>
+      <View style={styles.chartHeaderRow}>
+        <Text style={styles.sectionCardTitle}>This Week</Text>
+        <View style={styles.chartGoalPill}>
+          <Feather name="target" size={11} color={theme.accent} />
+          <Text style={styles.chartGoalText}>{goal.toLocaleString('en-IN')} goal</Text>
+        </View>
+      </View>
+      <View style={styles.chartArea}>
+        <View style={[styles.goalLine, { bottom: `${goalPct}%` }]} />
+        <View style={styles.barsRow}>
+          {weekSteps.map((day, i) => {
+            const steps = day.steps || 0;
+            const pct = Math.max((steps / maxSteps) * 100, steps > 0 ? 3 : 0);
+            const hitGoal = steps >= goal && steps > 0;
+            const isSelected = day.date === selectedDate;
+            return (
+              <TouchableOpacity key={i} style={styles.barCol} activeOpacity={0.7} onPress={() => onSelectDate(day.date)}>
+                <View style={styles.barTrack} />
+                {hitGoal && (
+                  <View style={[styles.goalBadge, { bottom: `${pct}%` }]}>
+                    <Feather name="check" size={10} color="#FFFFFF" />
+                  </View>
+                )}
+                <LinearGradient
+                  colors={hitGoal ? ['#3CB37A', '#1F9A5A'] : ['#8FDCB6', '#5FC492']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={[styles.weeklyBar, { height: `${pct}%` }, isSelected && styles.weeklyBarSelected]}
+                />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.labelsRow}>
+        {weekSteps.map((day, i) => (
+          <Text
+            key={i}
+            style={[
+              styles.weeklyDayLabel,
+              day.date === todayStr && styles.weeklyDayLabelActive,
+              day.date === selectedDate && styles.weeklyDayLabelSelected,
+            ]}
+          >
+            {day.day || ''}
+          </Text>
+        ))}
+      </View>
+      {currentWeek && (
+        <View style={styles.periodSummaryRow}>
+          <SummaryStat label="Steps" value={currentWeek.stats.steps} styles={styles} />
+          <SummaryStat label="Active" value={currentWeek.stats.activeMinutes} unit="min" styles={styles} />
+          <SummaryStat label="Calories" value={currentWeek.stats.workoutCalories} unit="kcal" styles={styles} />
+        </View>
+      )}
+      {selectedDay && (
+        <View style={styles.selectedDaySection}>
+          <DayDetailCard
+            dateLabel={fmtSelectedDateLabel(selectedDate, todayStr)}
+            steps={healthLog?.[selectedDate]?.steps ?? selectedDay.steps ?? 0}
+            stepGoal={goal}
+            activeMinutes={healthLog?.[selectedDate]?.activeMinutes ?? null}
+            workoutCalories={healthLog?.[selectedDate]?.workoutCalories ?? null}
+            distance={healthLog?.[selectedDate]?.distance ?? null}
+            theme={theme}
+            styles={styles}
+          />
+        </View>
+      )}
+    </>
+  );
+}
+
+// Month tab — a bar per day of the current month so far (horizontally
+// scrollable), plus the same totals row and a "target reached" line, using
+// groupLogByMonth's aggregated stats.
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+// Month tab — a real calendar (Samsung Health / Google Fit style): a day
+// cell per date with a filled dot once that day hit the step goal, a
+// lighter tint for a logged-but-under-goal day, and a plain neutral circle
+// for a day with nothing logged. Prev/Next lets you page back through any
+// earlier month that has data, not just the current one.
+function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, healthLog, goal, selectedDate, onSelectDate, theme, styles }) {
+  const dates = datesInMonth(selectedMonthKey);
+  const leadingBlanks = firstWeekdayOfMonth(selectedMonthKey);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const canGoNext = selectedMonthKey < currentMonthKey;
+  const cells = [...Array.from({ length: leadingBlanks }, () => null), ...dates];
+
+  // Only show the tapped day's detail card while it actually falls in the
+  // month currently being viewed — paging to a different month shouldn't
+  // leave last month's selected-day card hanging around.
+  const selectedDateInView = selectedDate.slice(0, 7) === selectedMonthKey;
+
+  return (
+    <>
+      <View style={styles.monthNavRow}>
+        <TouchableOpacity onPress={() => onChangeMonth(-1)} style={styles.monthNavBtn}>
+          <Feather name="chevron-left" size={18} color={theme.text} />
+        </TouchableOpacity>
+        <Text style={styles.sectionCardTitle}>{fmtMonthLabel(selectedMonthKey)}</Text>
+        <TouchableOpacity onPress={() => canGoNext && onChangeMonth(1)} style={styles.monthNavBtn} disabled={!canGoNext}>
+          <Feather name="chevron-right" size={18} color={canGoNext ? theme.text : theme.disabled} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.calendarWeekdayRow}>
+        {WEEKDAY_LABELS.map((d, i) => (
+          <Text key={i} style={styles.calendarWeekdayLabel}>{d}</Text>
+        ))}
+      </View>
+
+      <View style={styles.calendarGrid}>
+        {cells.map((date, i) => {
+          if (!date) return <View key={`blank-${i}`} style={styles.calendarCell} />;
+          const steps = healthLog?.[date]?.steps || 0;
+          const hasData = steps > 0;
+          const hitGoal = steps >= goal && steps > 0;
+          const isToday = date === todayStr;
+          const isSelected = date === selectedDate;
+          return (
+            <TouchableOpacity key={date} style={styles.calendarCell} activeOpacity={0.7} onPress={() => onSelectDate(date)}>
+              <View style={[
+                styles.calendarDot,
+                hitGoal ? styles.calendarDotGoal : hasData ? styles.calendarDotSome : null,
+                isToday && styles.calendarDotToday,
+                isSelected && styles.calendarDotSelected,
+              ]}>
+                <Text style={[styles.calendarDayNum, hitGoal && styles.calendarDayNumGoal]}>{Number(date.slice(-2))}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {monthStats ? (
+        <>
+          <View style={styles.periodSummaryRow}>
+            <SummaryStat label="Steps" value={monthStats.stats.steps} styles={styles} />
+            <SummaryStat label="Active" value={monthStats.stats.activeMinutes} unit="min" styles={styles} />
+            <SummaryStat label="Calories" value={monthStats.stats.workoutCalories} unit="kcal" styles={styles} />
+          </View>
+          <Text style={styles.monthTargetText}>Target reached {monthStats.daysGoalReached}/{monthStats.daysLogged} days</Text>
+        </>
+      ) : (
+        <Text style={styles.emptyStateText}>No step data logged this month.</Text>
+      )}
+
+      {selectedDateInView && (
+        <View style={styles.selectedDaySection}>
+          <DayDetailCard
+            dateLabel={fmtSelectedDateLabel(selectedDate, todayStr)}
+            steps={healthLog?.[selectedDate]?.steps || 0}
+            stepGoal={goal}
+            activeMinutes={healthLog?.[selectedDate]?.activeMinutes ?? null}
+            workoutCalories={healthLog?.[selectedDate]?.workoutCalories ?? null}
+            distance={healthLog?.[selectedDate]?.distance ?? null}
+            theme={theme}
+            styles={styles}
+          />
+        </View>
+      )}
+    </>
   );
 }
 
@@ -405,11 +782,16 @@ export default function Health({ navigation }) {
   const styles = createStyles(theme);
 
   const [metrics, setMetrics] = useState(null);
-  const [appointments, setAppointments] = useState([]);
-  const [medications, setMedications] = useState([]);
   const [weeklyHistory, setWeeklyHistory] = useState([]);
+  const [monthlyHistory, setMonthlyHistory] = useState([]);
+  const [healthLog, setHealthLog] = useState({});
+  const [period, setPeriod] = useState('week');
+  const [selectedMonthKey, setSelectedMonthKey] = useState(() => new Date().toISOString().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [historyVisible, setHistoryVisible] = useState(false);
   const currentWeek = weeklyHistory.find(w => w.isCurrentWeek) || null;
+  const selectedMonthStats = monthlyHistory.find(m => m.monthKey === selectedMonthKey) || null;
+  const handleChangeMonth = (delta) => setSelectedMonthKey(k => shiftMonthKey(k, delta));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncVisible, setLogVisible] = useState(false);
@@ -420,48 +802,46 @@ export default function Health({ navigation }) {
   // Shared by the real fetch below and by the cache-hydration pass before it,
   // so a returning user sees their last known vitals immediately instead of
   // skeleton cards for however long the network round-trip takes.
-  const applyHealthData = ({ m, a, meds, fitStatus, log }) => {
+  const applyHealthData = ({ m, fitStatus, log }) => {
     if (m) setMetrics(m);
     if (fitStatus) setFitConnected(fitStatus?.connected || false);
-    if (a) setAppointments(a.appointments || []);
-    if (meds) setMedications(meds.medications || []);
-    if (log) setWeeklyHistory(groupLogByWeek(log));
+    if (log) {
+      setHealthLog(log);
+      setWeeklyHistory(groupLogByWeek(log));
+      setMonthlyHistory(groupLogByMonth(log, m?.steps?.goal || 10000));
+    }
   };
 
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
-      const [m, a, meds, fitStatus, logRes] = await Promise.all([
+      const [m, fitStatus, logRes] = await Promise.all([
         apiFetch('/api/health-data/metrics'),
-        apiFetch('/api/health-data/appointments'),
-        apiFetch('/api/health-data/medications'),
         apiFetch('/api/googlefit/status').catch(() => ({ connected: false })),
         apiFetch('/api/health-data/log').catch(() => ({ log: {} })),
       ]);
       hasRealDataRef.current = true;
-      applyHealthData({ m, a, meds, fitStatus, log: logRes?.log });
+      applyHealthData({ m, fitStatus, log: logRes?.log });
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  // Paint the last known vitals/appointments/medications/weekly-history
-  // immediately from cache — otherwise this screen shows skeleton cards on
-  // every single open even though nothing changed since last time. loadData()
-  // below still runs right after and silently replaces this with fresh data;
-  // the ref guard stops a slow cache read from ever clobbering real data.
+  // Paint the last known vitals/weekly-history immediately from cache —
+  // otherwise this screen shows skeleton cards on every single open even
+  // though nothing changed since last time. loadData() below still runs
+  // right after and silently replaces this with fresh data; the ref guard
+  // stops a slow cache read from ever clobbering real data.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [m, a, meds, fitStatus, logRes] = await Promise.all([
+      const [m, fitStatus, logRes] = await Promise.all([
         peekCachedResponse('/api/health-data/metrics').catch(() => null),
-        peekCachedResponse('/api/health-data/appointments').catch(() => null),
-        peekCachedResponse('/api/health-data/medications').catch(() => null),
         peekCachedResponse('/api/googlefit/status').catch(() => null),
         peekCachedResponse('/api/health-data/log').catch(() => null),
       ]);
-      const gotSomething = m || a || meds || fitStatus || logRes;
+      const gotSomething = m || fitStatus || logRes;
       if (!cancelled && !hasRealDataRef.current && gotSomething) {
-        applyHealthData({ m, a, meds, fitStatus, log: logRes?.log });
+        applyHealthData({ m, fitStatus, log: logRes?.log });
         setLoading(false);
       }
     })();
@@ -492,7 +872,7 @@ export default function Health({ navigation }) {
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Health Core</Text>
-            <Text style={styles.headerSubtitle}>Vitals, appointments & meds</Text>
+            <Text style={styles.headerSubtitle}>Vitals & activity</Text>
           </View>
           <View style={styles.headerBadge}>
             <Feather name="heart" size={18} color={theme.danger} />
@@ -527,59 +907,52 @@ export default function Health({ navigation }) {
           }
         </View>
 
-        {/* Weekly Steps — styled after Google Fit's own weekly chart: a
-            dashed goal line and a checkmark badge on any day that reached
-            it, rather than a plain bare bar chart. */}
-        {!loading && (metrics?.weeklySteps || []).length > 0 && (() => {
-          const weekSteps = metrics.weeklySteps || [];
-          const goal = metrics?.steps?.goal || 10000;
-          const maxSteps = Math.max(...weekSteps.map(d => d.steps || 0), goal);
-          const goalPct = Math.min((goal / maxSteps) * 100, 94);
+        {/* Activity Overview — Day / Week / Month tabs (styled after Google
+            Fit's own history view), each showing its own chart/stats built
+            from the same underlying data: `metrics` for today's live
+            reading, and the per-date healthLog for week/month history. */}
+        {!loading && (() => {
+          const stepGoal = metrics?.steps?.goal || 10000;
           const todayStr = new Date().toISOString().slice(0, 10);
           return (
             <View style={styles.sectionCard}>
-              <View style={styles.chartHeaderRow}>
-                <Text style={styles.sectionCardTitle}>Weekly Steps</Text>
-                <View style={styles.chartGoalPill}>
-                  <Feather name="target" size={11} color={theme.accent} />
-                  <Text style={styles.chartGoalText}>{goal.toLocaleString('en-IN')} goal</Text>
-                </View>
-              </View>
-              <View style={styles.chartArea}>
-                <View style={[styles.goalLine, { bottom: `${goalPct}%` }]} />
-                <View style={styles.barsRow}>
-                  {weekSteps.map((day, i) => {
-                    const steps = day.steps || 0;
-                    const pct = Math.max((steps / maxSteps) * 100, steps > 0 ? 3 : 0);
-                    const hitGoal = steps >= goal && steps > 0;
-                    return (
-                      <View key={i} style={styles.barCol}>
-                        {/* Full-height track so short bars still read as "part of a
-                            scale" instead of floating in empty space. */}
-                        <View style={styles.barTrack} />
-                        {hitGoal && (
-                          <View style={[styles.goalBadge, { bottom: `${pct}%` }]}>
-                            <Feather name="check" size={10} color="#FFFFFF" />
-                          </View>
-                        )}
-                        <LinearGradient
-                          colors={hitGoal ? ['#3CB37A', '#1F9A5A'] : ['#8FDCB6', '#5FC492']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 0, y: 1 }}
-                          style={[styles.weeklyBar, { height: `${pct}%` }]}
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-              <View style={styles.labelsRow}>
-                {weekSteps.map((day, i) => (
-                  <Text key={i} style={[styles.weeklyDayLabel, day.date === todayStr && styles.weeklyDayLabelActive]}>
-                    {day.day || ''}
-                  </Text>
+              <View style={styles.periodTabsRow}>
+                {PERIODS.map(p => (
+                  <TouchableOpacity
+                    key={p.key}
+                    style={[styles.periodTab, period === p.key && styles.periodTabActive]}
+                    onPress={() => setPeriod(p.key)}
+                  >
+                    <Text style={[styles.periodTabText, period === p.key && styles.periodTabTextActive]}>{p.label}</Text>
+                  </TouchableOpacity>
                 ))}
               </View>
+
+              {period === 'day' && <DayActivityView metrics={metrics} todayLog={healthLog?.[todayStr]} theme={theme} styles={styles} />}
+              {period === 'week' && (
+                <WeekActivityView
+                  metrics={metrics}
+                  currentWeek={currentWeek}
+                  healthLog={healthLog}
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                  theme={theme}
+                  styles={styles}
+                />
+              )}
+              {period === 'month' && (
+                <MonthActivityView
+                  selectedMonthKey={selectedMonthKey}
+                  onChangeMonth={handleChangeMonth}
+                  monthStats={selectedMonthStats}
+                  healthLog={healthLog}
+                  goal={stepGoal}
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                  theme={theme}
+                  styles={styles}
+                />
+              )}
             </View>
           );
         })()}
@@ -610,61 +983,6 @@ export default function Health({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* Appointments */}
-        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>APPOINTMENTS</Text>
-        <View style={styles.sectionCard}>
-          {loading ? (
-            [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
-          ) : appointments.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="calendar" size={24} color={theme.disabled} />
-              <Text style={styles.emptyText}>No upcoming appointments</Text>
-            </View>
-          ) : (
-            appointments.map((appt, i) => (
-              <View key={appt.id || i} style={[styles.listRow, i !== appointments.length - 1 && styles.listRowDivider]}>
-                <View style={styles.apptIconWrap}>
-                  <Feather name="calendar" size={16} color={theme.info} />
-                </View>
-                <View style={styles.listTextWrap}>
-                  <Text style={styles.listTitle}>{appt.title || appt.doctor}</Text>
-                  <Text style={styles.listSubtitle}>{appt.date} {appt.time ? `· ${appt.time}` : ''}</Text>
-                </View>
-                <View style={styles.apptBadge}>
-                  <Text style={styles.apptBadgeText}>{appt.type || 'Visit'}</Text>
-                </View>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Medications */}
-        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>MEDICATIONS</Text>
-        <View style={styles.sectionCard}>
-          {loading ? (
-            [1, 2].map(i => <View key={i} style={styles.listSkeleton} />)
-          ) : medications.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="package" size={24} color={theme.disabled} />
-              <Text style={styles.emptyText}>No medications tracked</Text>
-            </View>
-          ) : (
-            medications.map((med, i) => (
-              <View key={med.id || i} style={[styles.listRow, i !== medications.length - 1 && styles.listRowDivider]}>
-                <View style={styles.medIconWrap}>
-                  <Feather name="package" size={16} color="#9B72FF" />
-                </View>
-                <View style={styles.listTextWrap}>
-                  <Text style={styles.listTitle}>{med.name}</Text>
-                  <Text style={styles.listSubtitle}>{med.dosage} · {med.frequency}</Text>
-                </View>
-                <View style={[styles.apptBadge, { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE' }]}>
-                  <Text style={[styles.apptBadgeText, { color: '#9B72FF' }]}>{med.time || 'Daily'}</Text>
-                </View>
-              </View>
-            ))
-          )}
-        </View>
       </ScrollView>
 
       {/* FAB — Log Health Data */}
@@ -771,6 +1089,81 @@ const createStyles = (theme) => StyleSheet.create({
   labelsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   weeklyDayLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: theme.faint, fontWeight: '600' },
   weeklyDayLabelActive: { color: theme.text, fontWeight: '800' },
+  weeklyBarSelected: { borderWidth: 2, borderColor: theme.text },
+  weeklyDayLabelSelected: { color: theme.accent, fontWeight: '800' },
+  // Tapped-day detail card, shown below the Week/Month chart
+  selectedDaySection: { marginTop: 4, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.border },
+  // Day / Week / Month segmented control
+  periodTabsRow: { flexDirection: 'row', backgroundColor: theme.surfaceAlt, borderRadius: 12, padding: 3, marginBottom: 16 },
+  periodTab: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 9 },
+  periodTabActive: {
+    backgroundColor: theme.card,
+    shadowColor: '#0F1720', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  periodTabText: { fontSize: 12.5, fontWeight: '700', color: theme.faint },
+  periodTabTextActive: { color: theme.accent },
+  // Day tab — hero Steps card + a detail list (deliberately not another
+  // icon-grid, so it doesn't read as a duplicate of TODAY'S VITALS above).
+  dayHero: {
+    borderRadius: 18, padding: 16, marginBottom: 4,
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.12)' : '#EFFDF6',
+  },
+  dayHeroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
+  dayHeroLabel: { fontSize: 10, fontWeight: '800', color: theme.faint, letterSpacing: 0.5, marginBottom: 4 },
+  dayHeroValueRow: { flexDirection: 'row', alignItems: 'baseline' },
+  dayHeroValue: { fontSize: 28, fontWeight: '800', color: theme.text },
+  dayHeroGoal: { fontSize: 13, fontWeight: '600', color: theme.faint },
+  dayHeroBadge: {
+    width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.2)' : '#FFFFFF',
+  },
+  dayHeroBarTrack: {
+    height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 6,
+    backgroundColor: theme.isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+  },
+  dayHeroBarFill: { height: '100%', borderRadius: 4 },
+  dayHeroPct: { fontSize: 11, fontWeight: '700', color: '#1F9A5A' },
+  dayDetailList: { marginTop: 8 },
+  dayDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border },
+  dayDetailRowLast: { borderBottomWidth: 0 },
+  dayDetailIconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  dayDetailTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  dayDetailLabel: { fontSize: 12.5, fontWeight: '700', color: theme.text },
+  dayDetailValue: { fontSize: 13, fontWeight: '800', color: theme.text },
+  dayDetailBarTrack: { height: 5, borderRadius: 3, backgroundColor: theme.soft, overflow: 'hidden' },
+  dayDetailBarFill: { height: '100%', borderRadius: 3 },
+  // Week/Month totals row, shown below each chart
+  periodSummaryRow: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 12, marginTop: 4, borderTopWidth: 1, borderTopColor: theme.border, marginBottom: 10 },
+  periodSummaryStat: { alignItems: 'center' },
+  periodSummaryValue: { fontSize: 15, fontWeight: '800', color: theme.text },
+  periodSummaryLabel: { fontSize: 10, color: theme.faint, fontWeight: '600', marginTop: 2 },
+  monthTargetText: { fontSize: 11, color: theme.faint, fontWeight: '600', textAlign: 'center', marginBottom: 10 },
+  emptyStateText: { fontSize: 12, color: theme.faint, fontWeight: '600', textAlign: 'center', paddingVertical: 20 },
+  // Month tab — navigable calendar grid
+  monthNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  monthNavBtn: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceAlt },
+  calendarWeekdayRow: { flexDirection: 'row', marginBottom: 4 },
+  calendarWeekdayLabel: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: theme.faint },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+  calendarDot: {
+    width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.surfaceAlt, borderWidth: 2, borderColor: 'transparent',
+  },
+  calendarDotSome: {
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.18)' : '#EFFDF6',
+    borderColor: theme.isDark ? 'rgba(52,199,123,0.4)' : '#8FDCB6',
+  },
+  calendarDotGoal: { backgroundColor: '#1F9A5A', borderColor: '#1F9A5A' },
+  calendarDotToday: { borderColor: theme.accent },
+  // A lift, not a color change — color already carries goal-status and
+  // "today", so the tapped day is distinguished by depth instead.
+  calendarDotSelected: {
+    transform: [{ scale: 1.08 }],
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
+  calendarDayNum: { fontSize: 11, fontWeight: '700', color: theme.text },
+  calendarDayNumGoal: { color: '#FFFFFF' },
   weekCard: {
     backgroundColor: theme.card, borderRadius: 20, padding: 16, marginBottom: 12,
     shadowColor: '#0F1720', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
@@ -790,15 +1183,6 @@ const createStyles = (theme) => StyleSheet.create({
   listSkeleton: { height: 52, backgroundColor: theme.border, borderRadius: 12, marginBottom: 10 },
   emptyWrap: { alignItems: 'center', paddingVertical: 24, gap: 8 },
   emptyText: { fontSize: 13, color: theme.faint, fontWeight: '600' },
-  listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  listRowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
-  apptIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  medIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  listTextWrap: { flex: 1 },
-  listTitle: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
-  listSubtitle: { fontSize: 12, color: theme.faint },
-  apptBadge: { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  apptBadgeText: { fontSize: 10, fontWeight: '800', color: theme.info },
   tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
   tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },

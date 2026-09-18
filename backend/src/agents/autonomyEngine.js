@@ -463,6 +463,65 @@ function missingRequired(input, fieldSpecs) {
   }).map(([, label]) => label)
 }
 
+// ── Activity auto-calculation (log_health_data) ─────────────────────────────
+// Pulls a plain number out of either a raw number or a free-text profile
+// value like "68 kg" / "172 cm" — same normalization the weight-fallback
+// fix in googleFit.service.js uses, duplicated here since it's one line and
+// not worth an extra cross-module import for.
+function parseNumericValue(raw) {
+  if (raw == null) return null
+  if (typeof raw === 'number') return raw
+  const match = String(raw).match(/(\d+(\.\d+)?)/)
+  return match ? Number(match[1]) : null
+}
+
+// Height/weight to use for this calculation — whatever the user just gave in
+// this same message wins, then today's already-logged values, then the AI
+// Profile's onboarding-time figures as a last resort.
+async function getBodyMetricsForActivity(userId, synced) {
+  let weightKg = parseNumericValue(synced.weight)
+  let heightCm = parseNumericValue(synced.height)
+  if (weightKg && heightCm) return { weightKg, heightCm }
+  const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { weight: true, height: true } })
+  if (!weightKg) weightKg = parseNumericValue(profile?.weight)
+  if (!heightCm) heightCm = parseNumericValue(profile?.height)
+  return { weightKg, heightCm }
+}
+
+// MET (Metabolic Equivalent of Task) values, pace-adjusted for walking/
+// running since those vary a lot with speed — everything else uses a flat
+// table value. Same approach any fitness tracker uses to turn "how long"
+// into "how many calories", combined with the person's own weight below.
+function metForActivity(workoutType, distanceKm, durationMin) {
+  const type = String(workoutType || '').trim().toLowerCase()
+  const paceKph = distanceKm && durationMin ? distanceKm / (durationMin / 60) : null
+
+  if (!type || type.includes('walk')) {
+    if (paceKph == null) return 3.5
+    if (paceKph < 4) return 2.8
+    if (paceKph < 5.5) return 3.5
+    if (paceKph < 6.5) return 4.3
+    return 5.0
+  }
+  if (type.includes('run') || type.includes('jog') || type.includes('sprint')) {
+    if (paceKph == null) return 8.3
+    if (paceKph < 8) return 7.0
+    if (paceKph < 9.5) return 8.3
+    if (paceKph < 11) return 9.8
+    return 11.8
+  }
+  const MET_TABLE = {
+    cycle: 7.5, cycling: 7.5, bike: 7.5, biking: 7.5,
+    swim: 7.0, swimming: 7.0,
+    yoga: 2.5, stretching: 2.5,
+    gym: 5.0, workout: 5.0, strength: 5.0, 'strength training': 5.0, weights: 5.0, weightlifting: 5.0,
+    dance: 5.5, dancing: 5.5,
+    hike: 6.0, hiking: 6.0,
+    sport: 6.0, sports: 6.0, football: 7.0, basketball: 6.5, badminton: 5.5, tennis: 7.0, cricket: 5.0,
+  }
+  return MET_TABLE[type] ?? 4.5
+}
+
 // ── 13 Domain Tools (matching pitch deck capabilities) ──────────────────────
 export const MNEVA_TOOLS = [
   {
@@ -690,9 +749,10 @@ export const MNEVA_TOOLS = [
         fiber: { type: 'number', description: 'grams' },
         water: { type: 'number', description: 'Liters' },
         active_minutes: { type: 'number' },
-        workout_type: { type: 'string' },
+        workout_type: { type: 'string', description: 'e.g. walking, running, cycling, swimming, yoga, gym/strength' },
         workout_duration: { type: 'number', description: 'Minutes' },
-        distance: { type: 'number', description: 'km' },
+        workout_calories: { type: 'number', description: 'Calories burned. If omitted, this is estimated automatically from steps/distance/duration and the user\'s own weight — do not calculate it yourself, just pass whatever the user actually gave (steps, workout_type, workout_duration, distance) and leave this out.' },
+        distance: { type: 'number', description: 'km. If omitted but steps are given, this is estimated automatically from the user\'s own height — do not calculate it yourself.' },
       },
       required: [],
     },
@@ -1290,7 +1350,7 @@ export async function executeTool(name, input, userId) {
         height: 'height', bmi: 'bmi', body_fat: 'bodyFat', muscle_mass: 'muscleMass', waist: 'waist',
         body_temp: 'bodyTemp', sleep: 'sleep', calories: 'calories', protein: 'protein',
         carbs: 'carbs', fat: 'fat', fiber: 'fiber', water: 'water', active_minutes: 'activeMinutes',
-        workout_type: 'workoutType', workout_duration: 'workoutDuration', distance: 'distance',
+        workout_type: 'workoutType', workout_duration: 'workoutDuration', workout_calories: 'workoutCalories', distance: 'distance',
       }
       const provided = Object.entries(fieldMap).filter(([k]) => input[k] != null)
       if (!provided.length) return { success: false, error: 'Please provide at least one metric to log (e.g. steps, weight, sleep hours).' }
@@ -1303,11 +1363,63 @@ export async function executeTool(name, input, userId) {
       for (const [inputKey, backendKey] of provided) {
         synced[backendKey] = typeof input[inputKey] === 'string' ? input[inputKey] : Number(input[inputKey])
       }
+
+      // One shared height/weight lookup for everything below — whatever was
+      // just given in this call, then today's already-logged values, then
+      // the AI Profile's onboarding-time figures as a last resort.
+      const { heightCm, weightKg } = await getBodyMetricsForActivity(userId, synced)
+
+      // ── Auto-fill BMI from weight/height ──────────────────────────────────
+      // BMI = weight(kg) / height(m)^2 — whenever both are known and the user
+      // didn't state a BMI themselves, compute it instead of leaving it blank
+      // until the user does the arithmetic and reports it back.
+      if (input.bmi == null && weightKg && heightCm) {
+        const heightM = heightCm / 100
+        synced.bmi = Math.round((weightKg / (heightM * heightM)) * 10) / 10
+      }
+
+      // ── Auto-fill distance/calories burned for an activity entry ─────────
+      // "7000 steps" or "ran 15 min, 2km" shouldn't require the user to do
+      // this math themselves — use their own height/weight the same way a
+      // real fitness tracker would, instead of a flat generic rate. Never
+      // overwrites a value the user actually gave THIS call. Gated on
+      // `input`, not the merged `synced` day-total — a second, unrelated
+      // activity logged later the same day (e.g. a run logged after an
+      // earlier steps entry) must recompute from its own numbers, not
+      // silently inherit the earlier entry's already-set distance/calories
+      // and skip the calculation entirely.
+      if (input.steps != null || input.workout_duration != null || input.distance != null || input.workout_type != null) {
+        const strideM = heightCm ? (heightCm * 0.415) / 100 : 0.71 // ~41.5% of height is the standard walking-stride estimate; 0.71m is a blended average when height isn't on file
+
+        if (input.steps != null && input.distance == null) {
+          synced.distance = Math.round(((synced.steps * strideM) / 1000) * 100) / 100
+        }
+
+        if (weightKg && input.workout_calories == null && (input.workout_duration != null || input.steps != null || input.distance != null)) {
+          // No explicit duration (e.g. "7000 steps" alone) — estimate one
+          // from step count at an average walking cadence (~110 steps/min)
+          // purely to size the calorie estimate; never written back as a
+          // real duration value since the user never actually stated it.
+          const durationMin = input.workout_duration != null
+            ? input.workout_duration
+            : (input.steps != null ? input.steps / 110 : null)
+          if (durationMin) {
+            const met = metForActivity(synced.workoutType, synced.distance, durationMin)
+            synced.workoutCalories = Math.round(met * weightKg * (durationMin / 60))
+          }
+        }
+      }
+
       prefs.healthLog = { ...(prefs.healthLog || {}), [today]: synced }
       prefs.healthSync = synced
       await prisma.user.update({ where: { id: userId }, data: { preferences: prefs } })
       ledger.add({ userId, tool: 'health_data_synced', input: { fields: provided.map(([k]) => k) }, result: { date: today }, status: 'completed' }).catch(() => {})
-      return { success: true, date: today, logged: Object.fromEntries(provided.map(([, bk]) => [bk, synced[bk]])) }
+
+      const logged = Object.fromEntries(provided.map(([, bk]) => [bk, synced[bk]]))
+      if (synced.bmi != null) logged.bmi = synced.bmi
+      if (synced.distance != null) logged.distance = synced.distance
+      if (synced.workoutCalories != null) logged.workoutCalories = synced.workoutCalories
+      return { success: true, date: today, logged }
     }
     case 'add_parent_medication': {
       const missing = missingRequired(input, [
@@ -1695,6 +1807,7 @@ CRITICAL RULES:
 19. PRODUCT / PRICE QUESTIONS WITH VARIANTS: If a product has multiple variants (storage, size, color, model tier) and the user doesn't specify which one, do NOT ask a clarifying question first — answer directly with ALL variants and their prices in one reply, formatted as a markdown table with a header row and a "|---|---|" separator row (e.g. "| Storage | Price |\n|---|---|\n| 256GB | ₹1,49,900 |\n| 512GB | ₹1,74,900 |"). Default to ₹ (INR) India pricing. If you don't have a live price, use your best general-knowledge estimate for each variant and say once, briefly, that it may not reflect today's live price — do not skip the table because of that.
 20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
 21. RESPONSE FORMATTING: The chat renders real markdown — **bold**, "- " bullets, "1. " numbered lists, "### " headers, and pipe tables — so use it the way a polished AI product (ChatGPT/Claude) would, not as plain unbroken prose. Guidelines: bold the 2-3 numbers or terms in a reply that the user's eye should land on first (an amount, a date, a status), never whole sentences. Use a bulleted list for 3+ related items (a list of bills, options, or notes) instead of comma-stuffing them into one sentence. Use short paragraphs (2-3 sentences); a wall of text is exactly what this is meant to avoid. Reach for a "### " header only when a reply genuinely has multiple sections (a daily brief, a full summary) — never for a one-line answer or a single confirmation. Match the weight of the formatting to the weight of the content: a yes/no answer or a single fact is one plain sentence, not a bulleted list of one. Never show the user raw tool-call JSON, field names like "med_name", or an internal error string verbatim — always translate it into a natural sentence first.
+22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
 
 USER PROFILE (registered account details — answer any personal questions from this):
 - Full Name: ${user.name || 'Not set'}

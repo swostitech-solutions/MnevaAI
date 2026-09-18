@@ -783,7 +783,7 @@ export default function AskAI({ navigation }) {
   // This used to be two sequential requests — conversations list, then that
   // conversation's messages — which meant this screen couldn't show
   // anything until both had completed one after another; now it's one.
-  const loadConversation = useCallback(async () => {
+  const loadConversation = useCallback(async (isRetry = false) => {
     // Never replace the visible conversation while a reply is in flight,
     // or while the user is browsing a past day via the date filter.
     if (aiLoadingRef.current || viewingHistoricalRef.current) return;
@@ -812,9 +812,20 @@ export default function AskAI({ navigation }) {
           scrollToLatest(false);
         }
       }
+      dismissBoot();
     } catch {
-      // Keep the current chat on screen; the shared recovery flow will retry.
-    } finally {
+      // apiFetch already retried internally (GETs get up to 5 attempts with
+      // backoff) before this even threw — so a first-load failure here is a
+      // real, if hopefully brief, outage. Dismissing the boot loader on this
+      // path would reveal an empty welcome screen for a moment before a
+      // later background refresh quietly swapped in the real history —
+      // exactly the "loader closes before the response is actually here"
+      // gap. Give it one more shot before giving up so the loader keeps
+      // covering the screen through a longer-than-normal wait too.
+      if (!isRetry && !hasRealHistoryRef.current) {
+        setTimeout(() => loadConversation(true), 1500);
+        return;
+      }
       dismissBoot();
     }
   }, [scrollToLatest, dismissBoot]);

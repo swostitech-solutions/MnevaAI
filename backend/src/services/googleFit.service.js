@@ -626,6 +626,30 @@ export async function getFitAuthClientForUser(user) {
   return getFitAuthClient(user);
 }
 
+// Parses a free-text AI Profile weight value like "68 kg", "68kg", or "68"
+// into a plain number of kg — the profile field is a single string with the
+// unit baked in (AIProfile.js's placeholder is "68 kg"), while Fit/manual
+// sync both store a bare number, so this is the one place that needs to
+// normalize between the two.
+function parseProfileWeightKg(raw) {
+  if (!raw) return null
+  const match = String(raw).match(/(\d+(\.\d+)?)/)
+  return match ? Number(match[1]) : null
+}
+
+// Last-resort fallback when neither Google Fit nor a manual health log has a
+// weight for today — the AI Profile's own "Health Profile → Weight" field
+// (set once during onboarding, or edited in AI Profile) is better than
+// showing nothing.
+async function fallbackWeightFromProfile(userId) {
+  try {
+    const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { weight: true } })
+    return parseProfileWeightKg(profile?.weight)
+  } catch {
+    return null
+  }
+}
+
 // ── Main health data builder ──────────────────────────────────────────────────
 
 export async function getHealthData(user) {
@@ -700,7 +724,11 @@ export async function getHealthData(user) {
         const hr = rawHr || todayLog?.heartRate || null;
         const sl = rawSl || todayLog?.sleep || null;
         const cal = rawCal || todayLog?.calories || null;
-        const wt = rawWt || todayLog?.weight || null;
+        // Fit's own live reading wins; a value manually logged today is next;
+        // the AI Profile's onboarding-time weight is the last resort, so
+        // "Weight (kg)" isn't simply blank for a user who's never opened
+        // Google Fit or logged today but did fill in their profile.
+        const wt = rawWt || todayLog?.weight || (await fallbackWeightFromProfile(user.id));
         const ht = rawHt || todayLog?.height || null;
         return {
           period: "today",
@@ -753,6 +781,7 @@ export async function getHealthData(user) {
     // back to today's last-known (already-combined) total instead of
     // hardcoding 0, which would otherwise blank out real logged data.
     const fallbackToday = prefs.healthLog?.[today] || {};
+    const fallbackWt = fallbackToday.weight || (await fallbackWeightFromProfile(user.id));
     return {
       period: "today",
       lastUpdated: new Date().toISOString(),
@@ -761,7 +790,7 @@ export async function getHealthData(user) {
       steps: { value: fallbackToday.steps || 0, goal: 10000, pct: 0 },
       sleep: null,
       calories: null,
-      weight: null,
+      weight: fallbackWt ? { value: fallbackWt, unit: "kg" } : null,
       weeklySteps: [],
     };
   }
@@ -773,7 +802,7 @@ export async function getHealthData(user) {
     const hr = synced.heartRate || null;
     const sl = synced.sleep || null;
     const cal = synced.calories || null;
-    const wt = synced.weight || null;
+    const wt = synced.weight || (await fallbackWeightFromProfile(user.id));
     const ht = synced.height || null;
     return {
       period: "today",
@@ -806,9 +835,11 @@ export async function getHealthData(user) {
     };
   }
 
-  // No connected provider and no manual sync is a valid empty state.
+  // No connected provider and no manual sync is a valid empty state — but
+  // still worth checking the AI Profile for a weight before giving up.
   // Return a stable payload instead of throwing, so /api/health-data/metrics
   // never becomes a 500 merely because the user has no health data yet.
+  const noProviderWt = await fallbackWeightFromProfile(user.id);
   return {
     period: "today",
     lastUpdated: new Date().toISOString(),
@@ -817,7 +848,7 @@ export async function getHealthData(user) {
     steps: { value: 0, goal: 10000, pct: 0 },
     sleep: null,
     calories: null,
-    weight: null,
+    weight: noProviderWt ? { value: noProviderWt, unit: "kg" } : null,
     height: null,
     weeklySteps: [],
     syncedToday: false,
