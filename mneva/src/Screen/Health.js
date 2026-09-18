@@ -184,12 +184,21 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
       autoSet('distance', String(computeDistanceKmFromStepsPreview(steps, heightCm)));
     }
 
-    const effectiveSteps = steps || (distance ? computeStepsFromDistanceKmPreview(distance, heightCm) : 0);
-    const durationForCalc = explicitDuration || activeMinutes || (effectiveSteps ? effectiveSteps / 110 : 0);
-    if (!touched.workoutCalories && weightKg && durationForCalc > 0) {
-      const distanceForCalc = distance || (effectiveSteps ? computeDistanceKmFromStepsPreview(effectiveSteps, heightCm) : null);
+    // Calories needs a real activity signal — Workout Type plus either
+    // Duration or Active Minutes — not just a step count. Steps (or
+    // Distance) alone must NOT show a Calories estimate anymore; it only
+    // appears once the user has actually said something about the workout
+    // itself, matching the backend's save-time rule exactly.
+    const durationForCalc = explicitDuration || activeMinutes || 0;
+    if (!touched.workoutCalories && weightKg && form.workoutType && durationForCalc > 0) {
+      const distanceForCalc = distance || null;
       const met = metForActivityPreview(form.workoutType, distanceForCalc, durationForCalc);
       autoSet('workoutCalories', String(computeCaloriesBurnedPreview(met, weightKg, durationForCalc)));
+    } else if (!touched.workoutCalories && form.workoutCalories != null && !(form.workoutType && durationForCalc > 0)) {
+      // A previously auto-filled estimate no longer qualifies (e.g. the
+      // user cleared Duration/Active Minutes after Steps alone had somehow
+      // set it) — clear it rather than leave a stale number on screen.
+      autoSet('workoutCalories', undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.steps, form.distance, form.activeMinutes, form.workoutDuration, form.workoutType, touched, lastStepsDistanceEdit, metrics]);

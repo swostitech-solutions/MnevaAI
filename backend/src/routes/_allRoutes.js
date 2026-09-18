@@ -2281,30 +2281,24 @@ healthRouter.post("/sync", async (req, res) => {
     // Mirrors exactly what the log_health_data AI tool does (see
     // activityCalc.js). Duration is deliberately NOT auto-filled here — it
     // stays purely manual, only ever set when the user actually types a
-    // value into it — but Active Minutes can still help size a Calories
-    // estimate internally when Duration itself is left blank. Never
-    // overwrites a value the user actually entered on this save.
+    // value into it. Never overwrites a value the user actually entered on
+    // this save.
     if (bmi == null) {
       const computedBmi = computeBmi(weightKg, heightCm);
       if (computedBmi != null) synced.bmi = computedBmi;
     }
-    if (effectiveSteps != null || workoutDuration != null || activeMinutes != null || distance != null || workoutType != null) {
-      if (effectiveSteps != null && distance == null) {
-        synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm);
-      }
-      if (weightKg && workoutCalories == null && (workoutDuration != null || activeMinutes != null || effectiveSteps != null || distance != null)) {
-        // No duration typed in at all — fall back to Active Minutes, then
-        // to a steps-derived estimate (~110 steps/min average cadence),
-        // purely to size the calorie estimate; never written back into the
-        // Duration field itself, which the user left blank on purpose.
-        const durationMin = workoutDuration != null
-          ? workoutDuration
-          : (activeMinutes != null ? activeMinutes : (effectiveSteps != null ? effectiveSteps / 110 : null));
-        if (durationMin) {
-          const met = metForActivity(synced.workoutType, synced.distance, durationMin);
-          synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin);
-        }
-      }
+    if (effectiveSteps != null && distance == null) {
+      synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm);
+    }
+    // Calories needs a real activity signal — Workout Type plus either an
+    // explicit Duration or Active Minutes — not just a step count. A bare
+    // step count alone (with no other activity detail) no longer estimates
+    // calories, since that produced an unwanted estimate the moment Steps
+    // was typed, before the user had said anything about the activity.
+    if (weightKg && workoutCalories == null && workoutType != null && (workoutDuration != null || activeMinutes != null)) {
+      const durationMin = workoutDuration != null ? workoutDuration : activeMinutes;
+      const met = metForActivity(synced.workoutType, synced.distance, durationMin);
+      synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin);
     }
 
     prefs.healthSync = synced;

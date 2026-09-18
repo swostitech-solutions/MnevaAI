@@ -1404,26 +1404,18 @@ export async function executeTool(name, input, userId) {
       // silently inherit the earlier entry's already-set distance/calories
       // and skip the calculation entirely. Duration is deliberately NOT
       // auto-filled — it stays purely manual, only ever set when the user
-      // actually states one — but Active Minutes can still help size a
-      // Calories estimate internally when Duration itself isn't given.
-      if (input.steps != null || input.workout_duration != null || input.active_minutes != null || input.distance != null || input.workout_type != null) {
-        if (input.steps != null && input.distance == null) {
-          synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm)
-        }
+      // actually states one.
+      if (input.steps != null && input.distance == null) {
+        synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm)
+      }
 
-        if (weightKg && input.workout_calories == null && (input.workout_duration != null || input.active_minutes != null || input.steps != null || input.distance != null)) {
-          // No duration stated at all — fall back to Active Minutes, then
-          // to a steps-derived estimate (~110 steps/min average cadence),
-          // purely to size the calorie estimate; never written back into
-          // the Duration field itself, which the user left unstated.
-          const durationMin = input.workout_duration != null
-            ? input.workout_duration
-            : (input.active_minutes != null ? input.active_minutes : (input.steps != null ? input.steps / 110 : null))
-          if (durationMin) {
-            const met = metForActivity(synced.workoutType, synced.distance, durationMin)
-            synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin)
-          }
-        }
+      // Calories needs a real activity signal — a workout type plus either
+      // a stated duration or active minutes — not just a step count. A bare
+      // step count alone no longer estimates calories on its own.
+      if (weightKg && input.workout_calories == null && input.workout_type != null && (input.workout_duration != null || input.active_minutes != null)) {
+        const durationMin = input.workout_duration != null ? input.workout_duration : input.active_minutes
+        const met = metForActivity(synced.workoutType, synced.distance, durationMin)
+        synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin)
       }
 
       prefs.healthLog = { ...(prefs.healthLog || {}), [today]: synced }
