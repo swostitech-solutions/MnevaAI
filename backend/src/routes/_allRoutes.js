@@ -1285,6 +1285,7 @@ import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
 import { resolvePendingAction, listPendingActions } from "../services/pendingActions.service.js";
+import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeCaloriesBurned } from "../services/activityCalc.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2250,6 +2251,35 @@ healthRouter.post("/sync", async (req, res) => {
     merge(synced, "cycleDay", cycleDay);
     merge(synced, "periodFlow", periodFlow);
     merge(synced, "symptoms", symptoms);
+
+    // ── Auto-fill BMI / Duration-derived Calories & Distance ──────────────
+    // Mirrors exactly what the log_health_data AI tool does (see
+    // activityCalc.js) — this manual form used to leave Duration, Calories
+    // Burned, and Distance blank even when Steps/Activity Minutes/Workout
+    // Type were filled in, because that calculation only ever ran on the AI
+    // tool's code path, never on this one. Never overwrites a value the
+    // user actually entered on this save.
+    const { heightCm, weightKg } = await getBodyMetricsForActivity(req.user.id, synced.weight, synced.height);
+    if (bmi == null) {
+      const computedBmi = computeBmi(weightKg, heightCm);
+      if (computedBmi != null) synced.bmi = computedBmi;
+    }
+    if (steps != null || workoutDuration != null || distance != null || workoutType != null) {
+      if (steps != null && distance == null) {
+        synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm);
+      }
+      if (weightKg && workoutCalories == null && (workoutDuration != null || steps != null || distance != null)) {
+        // No explicit duration (e.g. just "7000 steps") — estimate one from
+        // step count at an average walking cadence (~110 steps/min) purely
+        // to size the calorie estimate; never written back as a real
+        // duration value since the user never actually entered one.
+        const durationMin = workoutDuration != null ? workoutDuration : (steps != null ? steps / 110 : null);
+        if (durationMin) {
+          const met = metForActivity(synced.workoutType, synced.distance, durationMin);
+          synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin);
+        }
+      }
+    }
 
     prefs.healthSync = synced;
     if (!prefs.healthLog) prefs.healthLog = {};

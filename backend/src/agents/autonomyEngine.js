@@ -5,6 +5,7 @@ import { emitToUser } from '../services/realtime.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
 import { getAutonomyPolicy, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction } from '../services/pendingActions.service.js'
+import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeCaloriesBurned } from '../services/activityCalc.js'
 
 function validTimeZone(value) {
   try {
@@ -461,65 +462,6 @@ function missingRequired(input, fieldSpecs) {
     const v = input[key]
     return v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
   }).map(([, label]) => label)
-}
-
-// ── Activity auto-calculation (log_health_data) ─────────────────────────────
-// Pulls a plain number out of either a raw number or a free-text profile
-// value like "68 kg" / "172 cm" — same normalization the weight-fallback
-// fix in googleFit.service.js uses, duplicated here since it's one line and
-// not worth an extra cross-module import for.
-function parseNumericValue(raw) {
-  if (raw == null) return null
-  if (typeof raw === 'number') return raw
-  const match = String(raw).match(/(\d+(\.\d+)?)/)
-  return match ? Number(match[1]) : null
-}
-
-// Height/weight to use for this calculation — whatever the user just gave in
-// this same message wins, then today's already-logged values, then the AI
-// Profile's onboarding-time figures as a last resort.
-async function getBodyMetricsForActivity(userId, synced) {
-  let weightKg = parseNumericValue(synced.weight)
-  let heightCm = parseNumericValue(synced.height)
-  if (weightKg && heightCm) return { weightKg, heightCm }
-  const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { weight: true, height: true } })
-  if (!weightKg) weightKg = parseNumericValue(profile?.weight)
-  if (!heightCm) heightCm = parseNumericValue(profile?.height)
-  return { weightKg, heightCm }
-}
-
-// MET (Metabolic Equivalent of Task) values, pace-adjusted for walking/
-// running since those vary a lot with speed — everything else uses a flat
-// table value. Same approach any fitness tracker uses to turn "how long"
-// into "how many calories", combined with the person's own weight below.
-function metForActivity(workoutType, distanceKm, durationMin) {
-  const type = String(workoutType || '').trim().toLowerCase()
-  const paceKph = distanceKm && durationMin ? distanceKm / (durationMin / 60) : null
-
-  if (!type || type.includes('walk')) {
-    if (paceKph == null) return 3.5
-    if (paceKph < 4) return 2.8
-    if (paceKph < 5.5) return 3.5
-    if (paceKph < 6.5) return 4.3
-    return 5.0
-  }
-  if (type.includes('run') || type.includes('jog') || type.includes('sprint')) {
-    if (paceKph == null) return 8.3
-    if (paceKph < 8) return 7.0
-    if (paceKph < 9.5) return 8.3
-    if (paceKph < 11) return 9.8
-    return 11.8
-  }
-  const MET_TABLE = {
-    cycle: 7.5, cycling: 7.5, bike: 7.5, biking: 7.5,
-    swim: 7.0, swimming: 7.0,
-    yoga: 2.5, stretching: 2.5,
-    gym: 5.0, workout: 5.0, strength: 5.0, 'strength training': 5.0, weights: 5.0, weightlifting: 5.0,
-    dance: 5.5, dancing: 5.5,
-    hike: 6.0, hiking: 6.0,
-    sport: 6.0, sports: 6.0, football: 7.0, basketball: 6.5, badminton: 5.5, tennis: 7.0, cricket: 5.0,
-  }
-  return MET_TABLE[type] ?? 4.5
 }
 
 // ── 13 Domain Tools (matching pitch deck capabilities) ──────────────────────
@@ -1418,15 +1360,15 @@ export async function executeTool(name, input, userId) {
       // One shared height/weight lookup for everything below — whatever was
       // just given in this call, then today's already-logged values, then
       // the AI Profile's onboarding-time figures as a last resort.
-      const { heightCm, weightKg } = await getBodyMetricsForActivity(userId, synced)
+      const { heightCm, weightKg } = await getBodyMetricsForActivity(userId, synced.weight, synced.height)
 
       // ── Auto-fill BMI from weight/height ──────────────────────────────────
-      // BMI = weight(kg) / height(m)^2 — whenever both are known and the user
-      // didn't state a BMI themselves, compute it instead of leaving it blank
-      // until the user does the arithmetic and reports it back.
-      if (input.bmi == null && weightKg && heightCm) {
-        const heightM = heightCm / 100
-        synced.bmi = Math.round((weightKg / (heightM * heightM)) * 10) / 10
+      // Whenever both are known and the user didn't state a BMI themselves,
+      // compute it instead of leaving it blank until the user does the
+      // arithmetic and reports it back.
+      if (input.bmi == null) {
+        const bmi = computeBmi(weightKg, heightCm)
+        if (bmi != null) synced.bmi = bmi
       }
 
       // ── Auto-fill distance/calories burned for an activity entry ─────────
@@ -1440,10 +1382,8 @@ export async function executeTool(name, input, userId) {
       // silently inherit the earlier entry's already-set distance/calories
       // and skip the calculation entirely.
       if (input.steps != null || input.workout_duration != null || input.distance != null || input.workout_type != null) {
-        const strideM = heightCm ? (heightCm * 0.415) / 100 : 0.71 // ~41.5% of height is the standard walking-stride estimate; 0.71m is a blended average when height isn't on file
-
         if (input.steps != null && input.distance == null) {
-          synced.distance = Math.round(((synced.steps * strideM) / 1000) * 100) / 100
+          synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm)
         }
 
         if (weightKg && input.workout_calories == null && (input.workout_duration != null || input.steps != null || input.distance != null)) {
@@ -1456,7 +1396,7 @@ export async function executeTool(name, input, userId) {
             : (input.steps != null ? input.steps / 110 : null)
           if (durationMin) {
             const met = metForActivity(synced.workoutType, synced.distance, durationMin)
-            synced.workoutCalories = Math.round(met * weightKg * (durationMin / 60))
+            synced.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin)
           }
         }
       }
