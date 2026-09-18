@@ -448,6 +448,21 @@ const FAMILY_ITEM_REQUIRED_FIELDS = {
   calendar: { event: ['title', 'date'] },
 }
 
+// Code-level guard for every data-entry tool's required fields — the system
+// prompt already tells the model to ask the user before calling these with
+// something missing, but a model doesn't always comply (observed: it once
+// called add_parent_medication with an empty med_name and a guessed
+// "Father", saving a broken record instead of asking). This makes an
+// incomplete call fail loudly with a specific list of what's missing, so the
+// agent loop is forced to relay that back as a real question instead of
+// silently writing bad data.
+function missingRequired(input, fieldSpecs) {
+  return fieldSpecs.filter(([key]) => {
+    const v = input[key]
+    return v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
+  }).map(([, label]) => label)
+}
+
 // ── 13 Domain Tools (matching pitch deck capabilities) ──────────────────────
 export const MNEVA_TOOLS = [
   {
@@ -1132,6 +1147,8 @@ export async function executeTool(name, input, userId) {
 
     // ── Data-entry tools: Finance / Health / Family ────────────────────────
     case 'create_subscription': {
+      const missing = missingRequired(input, [['name', 'name'], ['category', 'category'], ['amount', 'amount']])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const startDate = parseFlexibleDate(input.start_date)
       const billingCycle = input.billing_cycle || 'Monthly'
       const sub = await prisma.subscription.create({
@@ -1153,6 +1170,11 @@ export async function executeTool(name, input, userId) {
       return { success: true, subscriptionId: sub.id, name: sub.name, amount: sub.amount, billingCycle: sub.billingCycle, nextBillingDate: sub.nextBillingDate }
     }
     case 'create_loan': {
+      const missing = missingRequired(input, [
+        ['loan_type', 'loan_type'], ['lender_name', 'lender_name'], ['principal_amount', 'principal_amount'],
+        ['interest_rate', 'interest_rate'], ['number_of_emis', 'number_of_emis'],
+      ])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const principal = Number(input.principal_amount)
       const months = Number(input.number_of_emis)
       const rate = Number(input.interest_rate)
@@ -1183,6 +1205,10 @@ export async function executeTool(name, input, userId) {
       return { success: true, loanId: loan.id, name: loan.name, emiAmount: loan.emiAmount, outstandingAmount: loan.outstandingAmount }
     }
     case 'create_emi': {
+      const missing = missingRequired(input, [
+        ['emi_type', 'emi_type'], ['provider', 'provider'], ['total_amount', 'total_amount'], ['number_of_installments', 'number_of_installments'],
+      ])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const totalAmount = Number(input.total_amount)
       const downPayment = Number(input.down_payment || 0)
       const financedAmount = totalAmount - downPayment
@@ -1213,6 +1239,10 @@ export async function executeTool(name, input, userId) {
       return { success: true, emiId: emi.id, name: emi.name, emiAmount: emi.emiAmount, financedAmount: emi.financedAmount }
     }
     case 'create_fixed_deposit': {
+      const missing = missingRequired(input, [
+        ['bank_name', 'bank_name'], ['principal_amount', 'principal_amount'], ['interest_rate', 'interest_rate'],
+      ])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const principal = Number(input.principal_amount)
       const rate = Number(input.interest_rate)
       const startDate = parseFlexibleDate(input.start_date)
@@ -1272,6 +1302,10 @@ export async function executeTool(name, input, userId) {
       return { success: true, date: today, logged: Object.fromEntries(provided.map(([, bk]) => [bk, synced[bk]])) }
     }
     case 'add_parent_medication': {
+      const missing = missingRequired(input, [
+        ['parent', 'parent'], ['med_name', 'med_name'], ['dosage', 'dosage'], ['frequency', 'frequency'],
+      ])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const med = await prisma.parentMedication.create({
         data: {
           userId,
@@ -1291,6 +1325,8 @@ export async function executeTool(name, input, userId) {
       return { success: true, medicationId: med.id, medName: med.medName, parent: med.parent }
     }
     case 'create_family_task': {
+      const missing = missingRequired(input, [['title', 'title']])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const resolved = await resolveFamilyConnection(userId, input.assignee_name)
       if (resolved.error === 'no_connections') {
         return { success: false, error: 'No connected family members yet — add one from Family → Connections first, then try again.' }
@@ -1316,6 +1352,8 @@ export async function executeTool(name, input, userId) {
       return { success: true, taskId: task.id, title: task.title, assignedTo: assigneeId === userId ? 'you' : input.assignee_name }
     }
     case 'add_pet': {
+      const missing = missingRequired(input, [['name', 'name'], ['species', 'species']])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const pet = await prisma.pet.create({
         data: {
           userId,
@@ -1331,6 +1369,8 @@ export async function executeTool(name, input, userId) {
       return { success: true, petId: pet.id, name: pet.name, species: pet.species }
     }
     case 'add_pet_reminder': {
+      const missing = missingRequired(input, [['pet_name', 'pet_name'], ['type', 'type'], ['title', 'title'], ['remind_at', 'remind_at']])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
       const pet = await prisma.pet.findFirst({ where: { userId, name: { equals: input.pet_name, mode: 'insensitive' } } })
       if (!pet) return { success: false, error: `No pet named "${input.pet_name}" found for this account. Add the pet first with add_pet.` }
       const timeZone = await getUserTimeZone(userId)
