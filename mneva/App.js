@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { AppState, Linking } from "react-native";
+import { AppState, Linking, Alert } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import NetInfo from "@react-native-community/netinfo";
 import { NavigationContainer, DefaultTheme, DarkTheme } from "@react-navigation/native";
@@ -58,10 +58,10 @@ import CelebrationGifting from "./src/Screen/CelebrationGifting";
 import FamilyCalendar from "./src/Screen/FamilyCalendar";
 import PhoneAlerts from "./src/Screen/PhoneAlerts";
 import PhoneAlertDetail from "./src/Screen/PhoneAlertDetail";
-import { getStoredAuth } from "./src/storage/auth";
+import { getStoredAuth, clearAuth } from "./src/storage/auth";
 import { isAppLockEnabled } from "./src/storage/appLock";
 import * as LocalAuthentication from "expo-local-authentication";
-import { apiFetch, pingBackend } from "./src/api/client";
+import { apiFetch, pingBackend, onSessionExpired } from "./src/api/client";
 // Wake Render backend immediately on JS bundle load — before any screen mounts
 pingBackend();
 import {
@@ -141,6 +141,13 @@ function AppInner() {
   const recoveryAttemptRef = useRef(0);
   const refreshTimersRef = useRef([]);
   const activeRouteRef = useRef(null);
+  // Guards against acting twice: the global onSessionExpired listener below
+  // fires immediately from whichever screen's call first hits a 401, and
+  // recoverSession's own periodic check can independently reach the same
+  // conclusion — without this, several concurrent 401s (a few screens all
+  // mid-load on the kicked-out device at once) could each try to reset
+  // navigation and show their own alert.
+  const sessionSupersededHandledRef = useRef(false);
 
   const clearRecoveryTimer = useCallback(() => {
     if (recoveryTimerRef.current) {
@@ -148,6 +155,33 @@ function AppInner() {
       recoveryTimerRef.current = null;
     }
   }, []);
+
+  // Forces this device back to sign-in because the server says its session
+  // was superseded (another device just logged in with the same account) —
+  // unlike every other 401 case in this file, which deliberately never
+  // forces a logout on its own (see recoverSession below).
+  const forceLogoutForSupersededSession = useCallback(async (reason) => {
+    if (sessionSupersededHandledRef.current) return;
+    sessionSupersededHandledRef.current = true;
+    clearRecoveryTimer();
+    recoveryAttemptRef.current = 0;
+    setSessionExpiredBanner(false);
+    setServerBusyBanner(false);
+    await clearAuth();
+    resetSocket();
+    navigationRef.current?.reset?.({ index: 0, routes: [{ name: "Onboarding" }] });
+    Alert.alert(
+      "Signed out",
+      reason?.message || "Your account was signed in on another device.",
+    );
+  }, [clearRecoveryTimer]);
+
+  // Fires immediately, from whichever screen's own apiFetch call happens to
+  // hit the 401 first — not just from recoverSession's ~60s heartbeat — so
+  // the kicked-out device reacts right away instead of up to a minute late.
+  useEffect(() => onSessionExpired((reason) => {
+    forceLogoutForSupersededSession(reason).catch(() => {});
+  }), [forceLogoutForSupersededSession]);
 
   const refreshMountedData = useCallback(() => {
     // One immediate pass handles a healthy connection; a second pass covers
@@ -197,6 +231,15 @@ function AppInner() {
         refreshMountedData();
         return true;
       } catch (error) {
+        // Redundant safety net — the global onSessionExpired listener above
+        // normally already caught this the moment any apiFetch call hit it.
+        // This only matters if that somehow didn't fire (e.g. this device
+        // was backgrounded through the whole thing and only wakes up here).
+        if (error?.code === "session_superseded") {
+          await forceLogoutForSupersededSession(error);
+          return false;
+        }
+
         // Never auto-logout on 401 — just retry with backoff.
         // The user can only be logged out by pressing the logout button.
         if (error?.status === 401) {
@@ -253,7 +296,7 @@ function AppInner() {
       if (recoveryPromiseRef.current === recovery)
         recoveryPromiseRef.current = null;
     }
-  }, [clearRecoveryTimer, refreshMountedData]);
+  }, [clearRecoveryTimer, refreshMountedData, forceLogoutForSupersededSession]);
 
   // Handle deep links from OAuth callbacks e.g. mneva://contacts?contacts=connected
   useEffect(() => {

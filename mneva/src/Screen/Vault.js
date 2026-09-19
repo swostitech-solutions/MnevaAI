@@ -200,7 +200,9 @@ export default function VaultScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadFiles(true); }} tintColor={theme.accent} colors={[theme.accent]} />}
         ListEmptyComponent={
           loading ? (
-            [1, 2].map((i) => <View key={i} style={styles.skeleton} />)
+            <>
+              {[1, 2].map((i) => <View key={i} style={styles.skeleton} />)}
+            </>
           ) : (
             <View style={styles.emptyWrap}>
               <Feather name="lock" size={32} color={theme.disabled} />

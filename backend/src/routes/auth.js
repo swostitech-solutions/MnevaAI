@@ -11,6 +11,7 @@ import { getRedisClient } from '../config/redis.js'
 import { deletePersistedFile } from '../controllers/document.controller.js'
 import { deleteVaultFileBlob } from '../controllers/vault.controller.js'
 import { logger } from '../config/logger.js'
+import { authMiddleware } from '../middleware/auth.js'
 
 const router = express.Router()
 const SECRET = process.env.JWT_SECRET
@@ -18,12 +19,27 @@ if (!SECRET) throw new Error('JWT_SECRET environment variable is not set')
 
 const REFRESH_TOKEN_TTL_MS = 60 * 24 * 60 * 60 * 1000 // 60 days
 
-const sign = (user) => jwt.sign(
-  { id: user.id, email: user.email, name: user.name, trustLevel: user.trustLevel, onboardingDone: user.onboardingDone || false },
+const sign = (user, sessionId) => jwt.sign(
+  { id: user.id, email: user.email, name: user.name, trustLevel: user.trustLevel, onboardingDone: user.onboardingDone || false, sessionId },
   SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
 )
 
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex')
+
+// Single-device-login enforcement. Called only on a genuine fresh login (NOT
+// on /refresh, which continues an existing session) — generates a new
+// session id, stores it as this user's current one, and deletes every
+// existing refresh token for them. Any other device's access token stops
+// matching the very next time authMiddleware checks it, and its refresh
+// token is simply gone, so it can't silently renew past this either.
+async function startNewSession(userId) {
+  const sessionId = crypto.randomUUID()
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { currentSessionId: sessionId } }),
+    prisma.refreshToken.deleteMany({ where: { userId } }),
+  ])
+  return sessionId
+}
 
 // The access JWT above still expires after 7 days — that's unchanged, and
 // deliberately so (shortening it now would turn every normal API call into a
@@ -63,7 +79,8 @@ router.post('/login',
       if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
       const ok = await bcrypt.compare(password, user.passwordHash)
       if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
-      res.json({ token: sign(user), refreshToken: await issueRefreshToken(user.id), user: toPublicUser(user) })
+      const sessionId = await startNewSession(user.id)
+      res.json({ token: sign(user, sessionId), refreshToken: await issueRefreshToken(user.id), user: toPublicUser(user) })
     } catch (err) {
       const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
       if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
@@ -139,7 +156,8 @@ router.post('/verify-email',
         where: { email },
         data: { emailVerified: true, verifyToken: null, verifyTokenExp: null },
       })
-      res.json({ token: sign(verified), refreshToken: await issueRefreshToken(verified.id), user: toPublicUser(verified) })
+      const sessionId = await startNewSession(verified.id)
+      res.json({ token: sign(verified, sessionId), refreshToken: await issueRefreshToken(verified.id), user: toPublicUser(verified) })
     } catch (err) {
       const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
       if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
@@ -181,39 +199,35 @@ router.post('/resend-otp',
 )
 
 // ── Update Phone ─────────────────────────────────────────────────────────────────
-router.patch('/phone', async (req, res) => {
-  const h = req.headers.authorization
-  if (!h) return res.status(401).json({ error: 'No token' })
+// These five routes used to each do their own inline jwt.verify, bypassing
+// the single-device-session check that every other authenticated route gets
+// via authMiddleware — a device kicked out by a login elsewhere could still
+// successfully call these. Routed through the same middleware now, so the
+// check applies uniformly everywhere, not just on routes mounted with it.
+router.patch('/phone', authMiddleware, async (req, res) => {
   try {
-    const d = jwt.verify(h.split(' ')[1], SECRET)
     const { phone } = req.body
     if (!phone || !/^[6-9]\d{9}$/.test(phone)) return res.status(400).json({ error: 'Valid 10-digit Indian mobile number required' })
-    const existing = await prisma.user.findFirst({ where: { phone, NOT: { id: d.id } } })
+    const existing = await prisma.user.findFirst({ where: { phone, NOT: { id: req.user.id } } })
     if (existing) return res.status(409).json({ error: 'Phone number already registered to another account' })
-    const updated = await prisma.user.update({ where: { id: d.id }, data: { phone } })
+    const updated = await prisma.user.update({ where: { id: req.user.id }, data: { phone } })
     res.json(toPublicUser(updated))
-  } catch { res.status(401).json({ error: 'Invalid token' }) }
+  } catch { res.status(500).json({ error: 'Could not update phone number.' }) }
 })
 
 // ── Update Avatar ─────────────────────────────────────────────────────────────────
-router.patch('/avatar', async (req, res) => {
-  const h = req.headers.authorization
-  if (!h) return res.status(401).json({ error: 'No token' })
+router.patch('/avatar', authMiddleware, async (req, res) => {
   try {
-    const d = jwt.verify(h.split(' ')[1], SECRET)
     const { avatar } = req.body
     if (!avatar) return res.status(400).json({ error: 'avatar required' })
-    const updated = await prisma.user.update({ where: { id: d.id }, data: { avatar } })
+    const updated = await prisma.user.update({ where: { id: req.user.id }, data: { avatar } })
     res.json(toPublicUser(updated))
-  } catch { res.status(401).json({ error: 'Invalid token' }) }
+  } catch { res.status(500).json({ error: 'Could not update avatar.' }) }
 })
 
 // ── User Search (email + phone must both match; graceful if target has no phone yet) ──
-router.get('/users/search', async (req, res) => {
-  const h = req.headers.authorization
-  if (!h) return res.status(401).json({ error: 'No token' })
+router.get('/users/search', authMiddleware, async (req, res) => {
   try {
-    jwt.verify(h.split(' ')[1], SECRET)
     const email = String(req.query.email || '').trim().toLowerCase()
     const phone = String(req.query.phone || '').trim()
     if (!email || !phone) return res.json({ user: null })
@@ -233,19 +247,16 @@ router.get('/users/search', async (req, res) => {
     // but flag it so the app can prompt them to add their phone
     const { phone: _p, ...publicUser } = userByEmail
     res.json({ user: publicUser, targetHasNoPhone: !userByEmail.phone })
-  } catch { res.status(401).json({ error: 'Invalid token' }) }
+  } catch { res.status(500).json({ error: 'Search failed.' }) }
 })
 
 // ── Me ─────────────────────────────────────────────────────────────────────────
-router.get('/me', async (req, res) => {
-  const h = req.headers.authorization
-  if (!h) return res.status(401).json({ error: 'No token' })
+router.get('/me', authMiddleware, async (req, res) => {
   try {
-    const d = jwt.verify(h.split(' ')[1], SECRET)
-    const user = await userStore.getById(d.id)
+    const user = await userStore.getById(req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
     res.json(toPublicUser(user))
-  } catch { res.status(401).json({ error: 'Invalid token' }) }
+  } catch { res.status(500).json({ error: 'Could not load account.' }) }
 })
 
 // ── Refresh ────────────────────────────────────────────────────────────────────
@@ -272,10 +283,22 @@ router.post('/refresh', async (req, res) => {
       await prisma.refreshToken.delete({ where: { id: stored.id } }).catch(() => {})
       return res.status(404).json({ error: 'User not found' })
     }
+    // A refresh token predating single-device-login enforcement (no session
+    // id ever established for this user) must not silently mint a valid
+    // session of its own — that would let an old device keep working
+    // forever without ever going through /login, the only place that
+    // actually establishes a session id. Force a real login instead.
+    if (!user.currentSessionId) {
+      await prisma.refreshToken.delete({ where: { id: stored.id } }).catch(() => {})
+      return res.status(401).json({ error: 'Invalid refresh token' })
+    }
 
     // Rotate: the old token is consumed here and can't be exchanged again.
+    // Re-signed with the user's CURRENT session id (unchanged) — a refresh
+    // continues the same session, it doesn't start a new one, so it must
+    // never invalidate this same device's own access token.
     await prisma.refreshToken.delete({ where: { id: stored.id } })
-    res.json({ token: sign(user), refreshToken: await issueRefreshToken(user.id) })
+    res.json({ token: sign(user, user.currentSessionId), refreshToken: await issueRefreshToken(user.id) })
   } catch (err) {
     res.status(500).json({ error: 'Could not refresh session. Please sign in again.' })
   }
@@ -304,16 +327,14 @@ router.post('/logout', async (req, res) => {
 // etc). What cascade can't reach — files on disk/S3 and vector embeddings in
 // Qdrant, since those live outside Postgres — is cleaned up explicitly here
 // first, using the same helpers already used for single-document deletion.
-router.delete('/account', async (req, res) => {
-  const h = req.headers.authorization
-  if (!h) return res.status(401).json({ error: 'No token' })
+router.delete('/account', authMiddleware, async (req, res) => {
   try {
-    const d = jwt.verify(h.split(' ')[1], SECRET)
-    const user = await prisma.user.findUnique({ where: { id: d.id } })
+    const userId = req.user.id
+    const user = await prisma.user.findUnique({ where: { id: userId } })
     if (!user) return res.status(404).json({ error: 'User not found' })
 
     const documents = await prisma.document.findMany({
-      where: { userId: d.id },
+      where: { userId },
       select: { filePath: true },
     })
     for (const doc of documents) {
@@ -321,7 +342,7 @@ router.delete('/account', async (req, res) => {
     }
 
     const vaultFiles = await prisma.vaultFile.findMany({
-      where: { userId: d.id },
+      where: { userId },
       select: { filePath: true },
     })
     for (const file of vaultFiles) {
@@ -329,23 +350,20 @@ router.delete('/account', async (req, res) => {
     }
 
     await qdrantService.deleteByFilter('mneva_memory', {
-      must: [{ key: 'userId', match: { value: d.id } }],
+      must: [{ key: 'userId', match: { value: userId } }],
     }).catch(() => {})
 
     const redis = getRedisClient()
     if (redis) {
-      await redis.del(`user:${d.id}:memory:recent`).catch(() => {})
-      await redis.del(`session:${d.id}`).catch(() => {})
+      await redis.del(`user:${userId}:memory:recent`).catch(() => {})
+      await redis.del(`session:${userId}`).catch(() => {})
     }
 
-    await prisma.user.delete({ where: { id: d.id } })
+    await prisma.user.delete({ where: { id: userId } })
 
-    logger.info(`Account deleted: ${d.id}`)
+    logger.info(`Account deleted: ${userId}`)
     res.json({ success: true })
   } catch (err) {
-    if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Invalid token' })
-    }
     res.status(500).json({ error: err.message })
   }
 })

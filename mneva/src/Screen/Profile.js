@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Switch,
   useWindowDimensions,
+  Alert,
 } from "react-native";
 import {
   SafeAreaView,
@@ -18,13 +19,17 @@ import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
+// Must match TRUST_LEVELS/LEVEL_NAMES in Settings.js — Automations (Twin
+// Diary's autonomous actions) only actually run once the user is at Trust
+// Level 4 (Inner Circle); below that there's nothing autonomous to show.
+const AUTOMATION_UNLOCK_LEVEL = 4;
+const TRUST_LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner Circle' };
+
 function displayPlanName(plan) {
-  const value = (plan || 'Free').toLowerCase();
-  if (value.includes('plus')) return 'Starter';
-  if (value.includes('inner')) return 'Inner Circle';
-  if (value.includes('professional')) return 'Professional';
-  if (value.includes('starter')) return 'Starter';
-  return 'Free';
+  const value = (plan || '').toLowerCase();
+  if (value.includes('family')) return 'Family';
+  if (value.includes('pro')) return 'Pro';
+  return 'Basic';
 }
 
 const SETTINGS_ROWS = [
@@ -111,6 +116,8 @@ export default function Profile({ navigation }) {
   const { theme, isDark, toggleTheme } = useTheme();
   const styles = createStyles(theme);
   const [user, setUser] = useState(null);
+  const trustLevel = user?.trustLevel || 1;
+  const automationsUnlocked = trustLevel >= AUTOMATION_UNLOCK_LEVEL;
 
   React.useEffect(() => {
     import('../storage/auth').then(({ getStoredAuth }) => {
@@ -178,30 +185,52 @@ export default function Profile({ navigation }) {
         </View>
 
         <View style={styles.settingsCard}>
-          {SETTINGS_ROWS.map((row, index) => (
-            <TouchableOpacity
-              key={row.id}
-              style={[
-                styles.settingsRow,
-                index !== SETTINGS_ROWS.length - 1 && styles.settingsRowDivider,
-              ]}
-              activeOpacity={0.7}
-              onPress={() => {
-                if (!row.screen) return;
-                if (row.title === 'Privacy & Security') navigation?.navigate?.('Settings', { tab: 1 });
-                else if (row.title === 'Notifications') navigation?.navigate?.('Settings', { tab: 2 });
-                else if (row.title === 'Account') navigation?.navigate?.('Settings', { tab: 3 });
-                else navigation?.navigate?.(row.screen);
-              }}
-            >
-              <Feather name={row.icon} size={18} color={row.iconColor} />
-              <Text style={styles.settingsLabel}>{row.title}</Text>
-              {row.value && (
-                <Text style={styles.settingsValue}>{row.value}</Text>
-              )}
-              <Feather name="chevron-right" size={18} color={theme.disabled} />
-            </TouchableOpacity>
-          ))}
+          {SETTINGS_ROWS.map((row, index) => {
+            // Automations (Twin Diary's autonomous actions) only actually
+            // run at Trust Level 4 — below that, tapping through to an
+            // action feed that will always be empty is confusing. Show the
+            // lock state right on the row instead.
+            const isAutomations = row.id === '2';
+            const locked = isAutomations && !automationsUnlocked;
+            const rowIcon = locked ? 'lock' : row.icon;
+            const rowIconColor = locked ? theme.disabled : row.iconColor;
+            const rowValue = isAutomations ? (locked ? 'L4 not activated yet' : row.value) : row.value;
+            return (
+              <TouchableOpacity
+                key={row.id}
+                style={[
+                  styles.settingsRow,
+                  index !== SETTINGS_ROWS.length - 1 && styles.settingsRowDivider,
+                ]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  if (!row.screen) return;
+                  if (locked) {
+                    Alert.alert(
+                      'Automations are locked',
+                      `Automations only run once your account reaches Trust Level 4 — Inner Circle. You're currently at L${trustLevel} (${TRUST_LEVEL_NAMES[trustLevel] || 'Observe'}). Increase your trust level in Trust & Autonomy to unlock this.`,
+                      [
+                        { text: 'Not now', style: 'cancel' },
+                        { text: 'Go to Trust & Autonomy', onPress: () => navigation?.navigate?.('Settings', { tab: 0 }) },
+                      ],
+                    );
+                    return;
+                  }
+                  if (row.title === 'Privacy & Security') navigation?.navigate?.('Settings', { tab: 1 });
+                  else if (row.title === 'Notifications') navigation?.navigate?.('Settings', { tab: 2 });
+                  else if (row.title === 'Account') navigation?.navigate?.('Settings', { tab: 3 });
+                  else navigation?.navigate?.(row.screen);
+                }}
+              >
+                <Feather name={rowIcon} size={18} color={rowIconColor} />
+                <Text style={styles.settingsLabel}>{row.title}</Text>
+                {rowValue && (
+                  <Text style={[styles.settingsValue, locked && styles.settingsValueLocked]}>{rowValue}</Text>
+                )}
+                <Feather name="chevron-right" size={18} color={theme.disabled} />
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ScrollView>
 
@@ -347,6 +376,10 @@ const createStyles = (theme) => StyleSheet.create({
     fontSize: 13,
     color: theme.faint,
     marginRight: 6,
+  },
+  settingsValueLocked: {
+    color: theme.warning,
+    fontWeight: '700',
   },
   tabBar: {
     flexDirection: "row",

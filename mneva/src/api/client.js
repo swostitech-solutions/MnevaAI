@@ -40,8 +40,8 @@ export function onSessionExpired(cb) {
   _sessionExpiredListeners.add(cb);
   return () => _sessionExpiredListeners.delete(cb);
 }
-function _notifySessionExpired() {
-  _sessionExpiredListeners.forEach(cb => cb());
+function _notifySessionExpired(reason) {
+  _sessionExpiredListeners.forEach(cb => cb(reason));
 }
 
 // Cache namespace: the account's own DB id, NOT the JWT. A token is re-issued
@@ -269,9 +269,22 @@ async function doApiFetch(path, options = {}) {
         const data = await res.json().catch(() => ({}));
 
         if (res.status === 401) {
-          // Never auto-logout. Surface the 401 as an error so the caller can
-          // retry or show a message, but never force the user to sign in again.
-          throw { status: 401, message: 'Session expired. Please sign in again.' };
+          // "session_superseded" is a definitive signal (another device just
+          // logged in and took over this account), unlike an ordinary
+          // expired/flaky-token 401 which could just be a cold-start race —
+          // so it fires immediately here, from whichever screen's call
+          // happened to hit it, instead of waiting for App.js's own ~60s
+          // heartbeat to eventually notice via its periodic /me check.
+          if (data.error === 'session_superseded') {
+            _notifySessionExpired({ code: data.error, message: data.message });
+          }
+          // Never auto-logout on a generic/expired-token 401 — surface it as
+          // an error so the caller can retry or show a message, but don't
+          // force sign-in (a cold-start/backend-wake race can look like this
+          // too). `code` preserves the backend's actual reason so App.js's
+          // recoverSession can also tell this apart on its own periodic
+          // check, as a redundant safety net.
+          throw { status: 401, code: data.error, message: data.message || 'Session expired. Please sign in again.' };
         }
         if (res.status === 429) {
           // Open the shared cooldown gate so every other retry loop in the

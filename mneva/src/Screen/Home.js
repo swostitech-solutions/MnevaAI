@@ -6787,6 +6787,32 @@ const FAB_SIZE = 56;
 const FAB_GAP = 16;
 const ORB_SIZE = 64;
 
+// Common short forms people actually type for "Country" in AI Profile that
+// don't match Open-Meteo's own `country`/`country_code` fields directly —
+// e.g. "USA" matches neither "United States" (the full name) nor "US" (the
+// ISO code) it returns, so it needs its own alias.
+const COUNTRY_CODE_ALIASES = {
+  usa: "us", america: "us",
+  uk: "gb", britain: "gb", "great britain": "gb",
+  uae: "ae",
+  holland: "nl",
+};
+
+// Whether a geocoding candidate's country matches what the user typed in
+// AI Profile — checked against the ISO code, the full country name, a
+// substring either way (handles "United States" vs "United States of
+// America"-style naming differences), and the alias table above.
+function placeMatchesCountry(place, countryInput) {
+  const input = String(countryInput || "").trim().toLowerCase();
+  if (!input) return true;
+  const code = String(place?.country_code || "").toLowerCase();
+  const name = String(place?.country || "").toLowerCase();
+  if (code === input || name === input) return true;
+  if (name && (name.includes(input) || input.includes(name))) return true;
+  if (COUNTRY_CODE_ALIASES[input] === code) return true;
+  return false;
+}
+
 function formatRecentLogTime(timestamp, fallback = "") {
   if (!timestamp) return fallback;
   const date = new Date(timestamp);
@@ -7732,14 +7758,21 @@ export default function Home({ navigation }) {
     } catch {}
 
     try {
-      const q = countryOverride
-        ? `${cityOverride}, ${countryOverride}`
-        : cityOverride;
+      // Fetch several candidates for the CITY NAME ALONE, then pick the one
+      // matching the user's country — concatenating "City, Country" into a
+      // single search string (the old approach) silently returns zero
+      // results for common abbreviations like "USA" (confirmed against the
+      // live API: "New York, USA" → no results, "New York, United States"
+      // → works), even though Open-Meteo happily returns "United States" as
+      // a candidate's country when queried by city name alone. This works
+      // for any city/country pair, not just the ones that happen to match
+      // Open-Meteo's exact country-name spelling.
       const geoRes = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`,
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityOverride)}&count=10&language=en&format=json`,
       );
       const geoData = await geoRes.json();
-      const place = geoData?.results?.[0];
+      const candidates = geoData?.results || [];
+      const place = (countryOverride && candidates.find((c) => placeMatchesCountry(c, countryOverride))) || candidates[0];
       if (!place) {
         setWeather({
           temp: "--",

@@ -41,6 +41,13 @@ model User {
   verifyTokenExp DateTime?
   onboardingDone Boolean   @default(false)
   createdAt      DateTime  @default(now())
+  // Regenerated on every fresh login (not on token refresh) — the access
+  // JWT carries a matching claim, and authMiddleware rejects any request
+  // whose token's sessionId doesn't match this, which is what actually
+  // enforces "only one device logged in at a time": logging in on a new
+  // device overwrites this, silently invalidating every other device's
+  // token on its very next request.
+  currentSessionId String?
 
   notifications             Notification[]
   deviceNotificationTokens  DeviceNotificationToken[]
