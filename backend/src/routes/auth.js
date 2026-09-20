@@ -5,7 +5,7 @@ import crypto from 'node:crypto'
 import { body, validationResult } from 'express-validator'
 import { toPublicUser, userStore } from '../models/userStore.js'
 import { prisma } from '../config/prisma.js'
-import { sendOtpEmail } from '../services/email.service.js'
+import { sendOtpEmail, sendPasswordResetEmail } from '../services/email.service.js'
 import { qdrantService } from '../services/qdrant.service.js'
 import { getRedisClient } from '../config/redis.js'
 import { deletePersistedFile } from '../controllers/document.controller.js'
@@ -194,6 +194,91 @@ router.post('/resend-otp',
       const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
       if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
       res.status(500).json({ error: 'Failed to resend OTP. Please try again.' })
+    }
+  }
+)
+
+// ── Forgot Password ───────────────────────────────────────────────────────────
+// Deliberately returns the same { sent: true } response whether or not this
+// email is registered — a forgot-password endpoint is a well-known target
+// for account enumeration (probing emails one by one to learn which are
+// registered), and leaking that here would be worse than on /register's
+// "already registered" check, which the user themself triggered on purpose.
+router.post('/forgot-password',
+  [body('email').isEmail()],
+  async (req, res) => {
+    try {
+      const errs = validationResult(req)
+      if (!errs.isEmpty()) return res.status(400).json({ error: 'Valid email required' })
+
+      const email = req.body.email.toLowerCase().trim()
+      const user = await prisma.user.findUnique({ where: { email } })
+      if (!user) return res.json({ sent: true })
+
+      const otp = generateOtp()
+      const exp = new Date(Date.now() + 10 * 60 * 1000)
+      await prisma.user.update({ where: { id: user.id }, data: { resetToken: otp, resetTokenExp: exp } })
+
+      try {
+        await sendPasswordResetEmail(email, user.name, otp)
+        res.json({ sent: true })
+      } catch {
+        console.warn(`[DEV] Password reset OTP for ${email}: ${otp}`)
+        res.json({ sent: true, devOtp: otp })
+      }
+    } catch (err) {
+      const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
+      if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
+      res.status(500).json({ error: 'Failed to send reset code. Please try again.' })
+    }
+  }
+)
+
+// ── Reset Password ────────────────────────────────────────────────────────────
+// One generic "Invalid or expired code" for a wrong OTP, an OTP for an email
+// that never requested one, and a nonexistent email alike — never reveals
+// which case it was, for the same account-enumeration reason as above.
+// Rotates the session on success (see startNewSession) exactly like Change
+// Password does, and for the same reason, only more so — a password reset
+// is very often triggered by "someone else might have my password", so
+// every existing session, on any device, is invalidated. The device that
+// completed the reset gets a fresh token pair back so it's logged straight
+// in, no separate sign-in step needed.
+router.post('/reset-password',
+  [body('email').isEmail(), body('otp').isLength({ min: 6, max: 6 })],
+  async (req, res) => {
+    try {
+      const errs = validationResult(req)
+      if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid request' })
+
+      const { otp, newPassword } = req.body
+      const email = req.body.email.toLowerCase().trim()
+      if (!newPassword || newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' })
+
+      const user = await prisma.user.findUnique({ where: { email } })
+      if (!user || !user.resetToken || user.resetToken !== otp) {
+        return res.status(400).json({ error: 'Invalid or expired code' })
+      }
+      if (user.resetTokenExp && new Date() > user.resetTokenExp) {
+        return res.status(400).json({ error: 'Code expired. Request a new one.' })
+      }
+
+      const newHash = await bcrypt.hash(newPassword, 10)
+      const updated = await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: newHash, resetToken: null, resetTokenExp: null },
+      })
+
+      const sessionId = await startNewSession(updated.id)
+      res.json({
+        token: sign(updated, sessionId),
+        refreshToken: await issueRefreshToken(updated.id),
+        user: toPublicUser(updated),
+      })
+    } catch (err) {
+      const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
+      if (isDbDown) return res.status(503).json({ error: 'service_unavailable', message: 'Database is temporarily unavailable. Please try again in a moment.' })
+      res.status(500).json({ error: 'Could not reset password. Please try again.' })
     }
   }
 )

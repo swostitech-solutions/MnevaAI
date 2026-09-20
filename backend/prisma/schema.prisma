@@ -48,6 +48,12 @@ model User {
   // device overwrites this, silently invalidating every other device's
   // token on its very next request.
   currentSessionId String?
+  // Separate from verifyToken/verifyTokenExp above (email verification) —
+  // sharing one column risked a password-reset OTP accidentally completing
+  // an unrelated pending email-verification, or vice versa, since neither
+  // flow tags what a stored code is actually FOR.
+  resetToken       String?
+  resetTokenExp    DateTime?
 
   notifications             Notification[]
   deviceNotificationTokens  DeviceNotificationToken[]

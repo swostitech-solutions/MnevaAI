@@ -12,6 +12,7 @@ import Onboarding from "./src/Screen/Onboarding";
 import Signin from "./src/Screen/Signin";
 import Signup from "./src/Screen/Signup";
 import VerifyOtp from "./src/Screen/VerifyOtp";
+import ForgotPassword from "./src/Screen/ForgotPassword";
 import Home from "./src/Screen/Home";
 import Priorities from "./src/Screen/Priorities";
 import Askai from "./src/Screen/Askai";
@@ -480,6 +481,7 @@ function AppInner() {
           <Stack.Screen name="Signin" component={Signin} />
           <Stack.Screen name="Signup" component={Signup} />
           <Stack.Screen name="VerifyOtp" component={VerifyOtp} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
           <Stack.Screen name="Home" component={Home} />
           <Stack.Screen name="Priorities" component={Priorities} />
           <Stack.Screen name="AskAI" component={Askai} />

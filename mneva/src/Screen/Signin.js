@@ -209,6 +209,13 @@ export default function Signin({ navigation }) {
         </View>
 
         <TouchableOpacity
+          style={styles.forgotPasswordLink}
+          onPress={() => navigation.navigate('ForgotPassword')}
+        >
+          <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.signinButton, loading && styles.signinButtonDisabled]}
           onPress={handleSignin}
           disabled={loading}
@@ -349,6 +356,16 @@ const createStyles = (theme) => StyleSheet.create({
   },
   eyeButton: {
     padding: 8,
+  },
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginTop: -4,
+    marginBottom: 8,
+  },
+  forgotPasswordText: {
+    color: theme.accentAlt,
+    fontSize: 13,
+    fontWeight: '600',
   },
   signinButton: {
     width: '100%',
