@@ -26,6 +26,33 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// Used to autosuggest a correctly-spelled country as the user types in the
+// Country field — checked locally (no network call needed, unlike City
+// below) since this is a short, fixed, offline-friendly list.
+const COUNTRY_LIST = [
+  'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Argentina', 'Armenia', 'Australia',
+  'Austria', 'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium',
+  'Belize', 'Benin', 'Bhutan', 'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei',
+  'Bulgaria', 'Burkina Faso', 'Burundi', 'Cambodia', 'Cameroon', 'Canada', 'Chad', 'Chile', 'China',
+  'Colombia', 'Costa Rica', 'Croatia', 'Cuba', 'Cyprus', 'Czech Republic', 'Denmark', 'Djibouti',
+  'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador', 'Estonia', 'Ethiopia', 'Fiji', 'Finland',
+  'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Guatemala', 'Guinea',
+  'Guyana', 'Haiti', 'Honduras', 'Hong Kong', 'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran',
+  'Iraq', 'Ireland', 'Israel', 'Italy', 'Ivory Coast', 'Jamaica', 'Japan', 'Jordan', 'Kazakhstan',
+  'Kenya', 'Kuwait', 'Kyrgyzstan', 'Laos', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya',
+  'Liechtenstein', 'Lithuania', 'Luxembourg', 'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali',
+  'Malta', 'Mauritius', 'Mexico', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco',
+  'Mozambique', 'Myanmar', 'Namibia', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua', 'Niger',
+  'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Oman', 'Pakistan', 'Panama',
+  'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Qatar', 'Romania',
+  'Russia', 'Rwanda', 'Saudi Arabia', 'Senegal', 'Serbia', 'Singapore', 'Slovakia', 'Slovenia',
+  'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Sweden',
+  'Switzerland', 'Syria', 'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Togo',
+  'Trinidad and Tobago', 'Tunisia', 'Turkey', 'Turkmenistan', 'Uganda', 'Ukraine',
+  'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan', 'Venezuela',
+  'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
+];
+
 // ── Section definitions ──────────────────────────────────────────────────────
 const SECTIONS = [
   {
@@ -192,6 +219,109 @@ function ChipsField({ options, value, single, onChange, styles, theme }) {
   );
 }
 
+// Autosuggests correct spellings for City/Country as the user types, so a
+// typo (or an abbreviation like "USA" that Home.js's weather lookup can't
+// use directly — see the "N degree, USA doesn't show weather" fix) gets
+// caught and corrected right at entry instead of silently breaking whatever
+// reads these fields later. Country is matched against a fixed offline list;
+// City calls the same Open-Meteo geocoding search the weather feature uses,
+// debounced so it isn't refetching on every keystroke.
+const CITY_SUGGEST_DEBOUNCE_MS = 350;
+
+function LocationSuggestField({ field, value, onChangeText, onCitySelected, styles, theme }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const debounceRef = useRef(null);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
+
+  const filterCountry = (text) => {
+    const q = text.trim().toLowerCase();
+    if (!q) return setSuggestions([]);
+    const startsWith = COUNTRY_LIST.filter((c) => c.toLowerCase().startsWith(q));
+    const includes = COUNTRY_LIST.filter((c) => !c.toLowerCase().startsWith(q) && c.toLowerCase().includes(q));
+    setSuggestions([...startsWith, ...includes].slice(0, 6).map((c) => ({ id: c, label: c, country: c })));
+  };
+
+  const fetchCity = async (text) => {
+    const q = text.trim();
+    if (q.length < 2) return setSuggestions([]);
+    const myRequestId = ++requestIdRef.current;
+    try {
+      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`);
+      const data = await res.json();
+      if (myRequestId !== requestIdRef.current) return; // a newer keystroke already superseded this
+      const results = (data?.results || []).map((r) => ({
+        id: String(r.id),
+        label: r.admin1 && r.admin1 !== r.name ? `${r.name}, ${r.admin1}, ${r.country}` : `${r.name}, ${r.country}`,
+        city: r.name,
+        country: r.country,
+      }));
+      setSuggestions(results);
+    } catch {
+      if (myRequestId === requestIdRef.current) setSuggestions([]);
+    }
+  };
+
+  const handleChangeText = (text) => {
+    onChangeText(text);
+    setShowSuggestions(true);
+    if (field.name === 'country') {
+      filterCountry(text);
+    } else {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => fetchCity(text), CITY_SUGGEST_DEBOUNCE_MS);
+    }
+  };
+
+  const handleSelect = (item) => {
+    setShowSuggestions(false);
+    setSuggestions([]);
+    if (field.name === 'country') {
+      onChangeText(item.country);
+    } else {
+      onChangeText(item.city);
+      // Correcting the city to its real spelling also tells us its real
+      // country — filling that in too (only if Country is still blank) is
+      // exactly the pairing the weather feature needs to work correctly.
+      onCitySelected?.(item.country);
+    }
+  };
+
+  return (
+    <View>
+      <TextInput
+        style={styles.textInput}
+        value={value || ''}
+        onChangeText={handleChangeText}
+        onFocus={() => setShowSuggestions(true)}
+        // Delay lets a suggestion's onPress register before the list
+        // disappears — a plain onBlur would hide it first and swallow the tap.
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+        placeholder={field.placeholder}
+        placeholderTextColor={theme.placeholder}
+        autoCorrect={false}
+        autoCapitalize="words"
+      />
+      {showSuggestions && suggestions.length > 0 && (
+        <View style={styles.suggestBox}>
+          {suggestions.map((s, i) => (
+            <TouchableOpacity
+              key={s.id}
+              style={[styles.suggestRow, i === suggestions.length - 1 && styles.suggestRowLast]}
+              onPress={() => handleSelect(s)}
+            >
+              <Feather name="map-pin" size={13} color={theme.accent} />
+              <Text style={styles.suggestText} numberOfLines={1}>{s.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function SectionCard({ sec, formData, onChange, onSave, saving, saved, styles, theme }) {
   const [open, setOpen] = useState(false);
   const fillPct = getSectionFill(sec, formData);
@@ -226,7 +356,18 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved, styles, t
             <View key={f.name} style={styles.fieldWrap}>
               <Text style={styles.fieldLabel}>{f.label}</Text>
 
-              {f.type === 'text' && (
+              {f.type === 'text' && (f.name === 'city' || f.name === 'country') && (
+                <LocationSuggestField
+                  field={f}
+                  value={formData[f.name]}
+                  onChangeText={v => onChange(f.name, v)}
+                  onCitySelected={(country) => { if (!formData.country) onChange('country', country); }}
+                  styles={styles}
+                  theme={theme}
+                />
+              )}
+
+              {f.type === 'text' && f.name !== 'city' && f.name !== 'country' && (
                 <TextInput
                   style={styles.textInput}
                   value={formData[f.name] || ''}
@@ -536,6 +677,11 @@ const createStyles = (theme) => StyleSheet.create({
 
   textInput: { backgroundColor: theme.surfaceAlt, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: theme.text, borderWidth: 1, borderColor: theme.borderStrong },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
+
+  suggestBox: { marginTop: 6, backgroundColor: theme.card, borderRadius: 12, borderWidth: 1, borderColor: theme.border, overflow: 'hidden' },
+  suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border },
+  suggestRowLast: { borderBottomWidth: 0 },
+  suggestText: { flex: 1, fontSize: 13, color: theme.text },
 
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.borderStrong },

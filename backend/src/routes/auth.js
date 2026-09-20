@@ -225,6 +225,45 @@ router.patch('/avatar', authMiddleware, async (req, res) => {
   } catch { res.status(500).json({ error: 'Could not update avatar.' }) }
 })
 
+// ── Change Password ────────────────────────────────────────────────────────────
+// Requires the CURRENT password — proves this is genuinely the account
+// owner, not just whoever's holding a still-valid session on a shared or
+// lost device — and rotates the session afterward via the same
+// single-device mechanism a fresh login uses (startNewSession above). Any
+// other copy of the old session (a lost/stolen device, an old login
+// somewhere) is invalidated the moment the password changes, which is
+// exactly what a password change is supposed to guarantee. The device
+// making this call gets a fresh token pair back so it isn't logged out by
+// its own request.
+router.patch('/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new password are required' })
+    if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' })
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' })
+
+    const sameAsOld = await bcrypt.compare(newPassword, user.passwordHash)
+    if (sameAsOld) return res.status(400).json({ error: 'New password must be different from your current password' })
+
+    const newHash = await bcrypt.hash(newPassword, 10)
+    const updated = await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } })
+
+    const sessionId = await startNewSession(user.id)
+    res.json({
+      success: true,
+      token: sign(updated, sessionId),
+      refreshToken: await issueRefreshToken(user.id),
+    })
+  } catch (err) {
+    res.status(500).json({ error: 'Could not change password. Please try again.' })
+  }
+})
+
 // ── User Search (email + phone must both match; graceful if target has no phone yet) ──
 router.get('/users/search', authMiddleware, async (req, res) => {
   try {

@@ -7,7 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
-import { clearAuth } from '../storage/auth';
+import { clearAuth, saveTokens } from '../storage/auth';
 import { isAppLockEnabled, setAppLockEnabled } from '../storage/appLock';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { AppState, Platform } from 'react-native';
@@ -66,6 +66,42 @@ const LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner C
 const APPROVALS_TO_LEVEL_UP = 5;
 const REJECTIONS_TO_LEVEL_DOWN = 2;
 
+// A masked password field with an eye button to reveal what was actually
+// typed — every field in the Change Password modal uses this, since a
+// typo is otherwise invisible until the submit fails.
+function PasswordField({ value, onChangeText, placeholder, visible, onToggleVisible, theme, styles, autoFocus }) {
+  return (
+    <View style={styles.pwFieldWrap}>
+      <TextInput
+        style={styles.pwInput}
+        placeholder={placeholder}
+        placeholderTextColor={theme.placeholder}
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!visible}
+        autoFocus={autoFocus}
+      />
+      <TouchableOpacity style={styles.pwEyeBtn} onPress={onToggleVisible} hitSlop={8}>
+        <Feather name={visible ? 'eye-off' : 'eye'} size={18} color={theme.faint} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// A more prominent alert card (icon + message) for password-form errors,
+// in place of a plain line of red text — the "new password = current
+// password" case in particular is easy to trigger by mistake (muscle memory
+// retypes the old one) and deserves to actually stand out.
+function PwAlertBox({ message, theme, styles }) {
+  if (!message) return null;
+  return (
+    <View style={styles.pwAlertBox}>
+      <Feather name="alert-circle" size={16} color={theme.danger} />
+      <Text style={styles.pwAlertText}>{message}</Text>
+    </View>
+  );
+}
+
 function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -73,6 +109,47 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
   const [phoneInput, setPhoneInput] = useState('');
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [phoneError, setPhoneError] = useState('');
+
+  const [pwModal, setPwModal] = useState(false);
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState('');
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
+
+  const closePwModal = () => {
+    setPwModal(false);
+    setCurrentPw(''); setNewPw(''); setConfirmPw(''); setPwError('');
+    setShowCurrentPw(false); setShowNewPw(false); setShowConfirmPw(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (newPw.length < 8) { setPwError('New password must be at least 8 characters'); return; }
+    if (newPw !== confirmPw) { setPwError('New passwords do not match'); return; }
+    if (newPw === currentPw) { setPwError("That's your current password — please choose a different one for your new password."); return; }
+    setPwSaving(true); setPwError('');
+    try {
+      // The server rotates this account's session on a successful change
+      // (same single-device mechanism a fresh login uses) and hands back a
+      // fresh token pair specifically so THIS device isn't logged out by its
+      // own request — has to be saved here, or the next API call from this
+      // same screen would immediately get "signed in on another device".
+      const res = await apiFetch('/api/auth/change-password', {
+        method: 'PATCH',
+        body: { currentPassword: currentPw, newPassword: newPw },
+      });
+      if (res?.token) await saveTokens(res.token, res.refreshToken);
+      closePwModal();
+      Alert.alert('Password changed', 'Your password has been updated.');
+    } catch (err) {
+      setPwError(err.message || 'Failed to change password');
+    } finally {
+      setPwSaving(false);
+    }
+  };
 
   const handleSavePhone = async () => {
     if (!/^[6-9]\d{9}$/.test(phoneInput.trim())) {
@@ -180,12 +257,17 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
         <Text style={styles.upgradeBtnText}>  Upgrade to Inner Circle — ₹999/mo</Text>
       </TouchableOpacity>
 
-      {/* Secure Vault */}
+      {/* Secure Vault + Change Password */}
       <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Privacy</Text>
       <View style={styles.card}>
-        <TouchableOpacity style={styles.dangerRow} onPress={() => navigation?.navigate?.('Vault')} activeOpacity={0.7}>
+        <TouchableOpacity style={[styles.dangerRow, styles.divider]} onPress={() => navigation?.navigate?.('Vault')} activeOpacity={0.7}>
           <Feather name="lock" size={16} color={theme.accent} />
           <Text style={[styles.dangerLabel, { color: theme.text }]}>Secure Vault</Text>
+          <Feather name="chevron-right" size={16} color={theme.disabled} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.dangerRow} onPress={() => setPwModal(true)} activeOpacity={0.7}>
+          <Feather name="key" size={16} color={theme.accent} />
+          <Text style={[styles.dangerLabel, { color: theme.text }]}>Change Password</Text>
           <Feather name="chevron-right" size={16} color={theme.disabled} />
         </TouchableOpacity>
       </View>
@@ -230,6 +312,57 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
               </TouchableOpacity>
               <TouchableOpacity style={styles.phoneModalSave} onPress={handleSavePhone} disabled={phoneSaving}>
                 {phoneSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.phoneModalSaveText}>Save</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change Password modal */}
+      <Modal visible={pwModal} transparent animationType="fade" onRequestClose={closePwModal}>
+        <View style={styles.phoneModalOverlay}>
+          <View style={styles.phoneModalBox}>
+            <Text style={styles.phoneModalTitle}>Change Password</Text>
+            <Text style={styles.phoneModalSub}>You'll stay signed in here — every other device gets signed out.</Text>
+            <PasswordField
+              placeholder="Current password"
+              value={currentPw}
+              onChangeText={setCurrentPw}
+              visible={showCurrentPw}
+              onToggleVisible={() => setShowCurrentPw(v => !v)}
+              theme={theme}
+              styles={styles}
+              autoFocus
+            />
+            <PasswordField
+              placeholder="New password (min. 8 characters)"
+              value={newPw}
+              onChangeText={setNewPw}
+              visible={showNewPw}
+              onToggleVisible={() => setShowNewPw(v => !v)}
+              theme={theme}
+              styles={styles}
+            />
+            <PasswordField
+              placeholder="Confirm new password"
+              value={confirmPw}
+              onChangeText={setConfirmPw}
+              visible={showConfirmPw}
+              onToggleVisible={() => setShowConfirmPw(v => !v)}
+              theme={theme}
+              styles={styles}
+            />
+            <PwAlertBox message={pwError} theme={theme} styles={styles} />
+            <View style={styles.phoneModalBtns}>
+              <TouchableOpacity style={styles.phoneModalCancel} onPress={closePwModal}>
+                <Text style={styles.phoneModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.phoneModalSave, (!currentPw || !newPw || !confirmPw || pwSaving) && { opacity: 0.5 }]}
+                onPress={handleChangePassword}
+                disabled={!currentPw || !newPw || !confirmPw || pwSaving}
+              >
+                {pwSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.phoneModalSaveText}>Save</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -785,6 +918,11 @@ const createStyles = (theme) => StyleSheet.create({
   phoneModalPrefix:    { paddingHorizontal: 12, paddingVertical: 13, backgroundColor: theme.soft, borderRightWidth: 1, borderRightColor: theme.border },
   phoneModalPrefixText:{ fontSize: 13, fontWeight: '600', color: theme.textSecondary },
   phoneModalInput:     { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: theme.text },
+  pwFieldWrap:         { position: 'relative', marginBottom: 10 },
+  pwInput:             { borderWidth: 1, borderColor: theme.border, borderRadius: 12, paddingHorizontal: 14, paddingRight: 44, paddingVertical: 13, fontSize: 15, color: theme.text },
+  pwEyeBtn:            { position: 'absolute', right: 4, top: 0, bottom: 0, width: 40, alignItems: 'center', justifyContent: 'center' },
+  pwAlertBox:          { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: theme.isDark ? 'rgba(224,84,110,0.14)' : '#FCEAED', borderRadius: 12, borderWidth: 1, borderColor: theme.danger + '40', padding: 12, marginBottom: 10 },
+  pwAlertText:         { flex: 1, fontSize: 12.5, color: theme.danger, lineHeight: 17, fontWeight: '600' },
   phoneModalError:     { fontSize: 12, color: theme.danger, marginBottom: 10 },
   phoneModalBtns:      { flexDirection: 'row', gap: 10, marginTop: 6 },
   phoneModalCancel:    { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center' },
