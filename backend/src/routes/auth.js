@@ -11,7 +11,7 @@ import { getRedisClient } from '../config/redis.js'
 import { deletePersistedFile } from '../controllers/document.controller.js'
 import { deleteVaultFileBlob } from '../controllers/vault.controller.js'
 import { logger } from '../config/logger.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { authMiddleware, setSessionCache } from '../middleware/auth.js'
 
 const router = express.Router()
 const SECRET = process.env.JWT_SECRET
@@ -38,6 +38,11 @@ async function startNewSession(userId) {
     prisma.user.update({ where: { id: userId }, data: { currentSessionId: sessionId } }),
     prisma.refreshToken.deleteMany({ where: { userId } }),
   ])
+  // Keeps authMiddleware's short-lived session cache correct the instant
+  // this changes, instead of it possibly serving a stale value for up to
+  // its TTL — both directions matter: the device that just logged in must
+  // not get rejected, and a now-superseded device must not keep working.
+  setSessionCache(userId, sessionId)
   return sessionId
 }
 

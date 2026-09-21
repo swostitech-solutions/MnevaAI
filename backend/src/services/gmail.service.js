@@ -532,68 +532,87 @@ async function classifyUrgencyWithAI(emails) {
 
 // Fetch today's unread primary emails and return only the genuinely urgent
 // ones, ranked by urgency.
+// The actual Gmail-list + N-gets + OpenAI-classification work, pulled out of
+// getUrgentEmails so it can be run either awaited (first-ever call for a
+// user) or fire-and-forget in the background (every call after that — see
+// below).
+async function fetchUrgentEmailsFresh(user, maxResults) {
+  const authClient = await getAuthenticatedGmailClient(user)
+  const gmail = google.gmail({ version: 'v1', auth: authClient })
+
+  // today's unread primary inbox emails
+  const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
+  const q = `in:inbox is:unread after:${todayStr} category:primary`
+
+  const listRes = await gmail.users.messages.list({
+    userId: 'me',
+    q,
+    maxResults,
+  })
+
+  const messages = listRes.data.messages || []
+  if (!messages.length) return []
+
+  const emails = await Promise.all(messages.map(async (msg) => {
+    const data = await gmail.users.messages.get({
+      userId: 'me',
+      id: msg.id,
+      format: 'metadata',
+      metadataHeaders: ['Subject', 'From', 'Date'],
+    })
+    const headers = data.data.payload?.headers || []
+    const subject = getHeaderValue(headers, 'Subject') || '(No subject)'
+    const from    = getHeaderValue(headers, 'From')    || 'Unknown'
+    const snippet = data.data.snippet || ''
+    const internalDate = data.data.internalDate
+    const ts = internalDate ? Number(internalDate) : Date.now()
+    const time = new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    return { id: msg.id, subject, from, snippet, time }
+  }))
+
+  // Prefer real AI classification — falls back to the keyword heuristic
+  // only if OpenAI isn't configured or the call fails, so a misconfigured
+  // key never silently means "flag everything" again.
+  const aiResults = await classifyUrgencyWithAI(emails)
+  return aiResults
+    ? emails
+        .map(e => {
+          const ai = aiResults.get(e.id)
+          return { ...e, urgencyScore: ai?.score ?? 0, urgent: ai?.urgent ?? false, reason: ai?.reason || null }
+        })
+        .filter(e => e.urgent)
+        .sort((a, b) => b.urgencyScore - a.urgencyScore)
+        .slice(0, 5)
+    : emails
+        .map(e => ({ ...e, urgencyScore: scoreEmailByKeywords(e.subject, e.snippet, e.from) }))
+        .filter(e => e.urgencyScore >= 2)
+        .sort((a, b) => b.urgencyScore - a.urgencyScore)
+        .slice(0, 5)
+}
+
 export async function getUrgentEmails(user, maxResults = 20) {
   const cacheKey = `${user.id}:${maxResults}`
   const cached = _urgentEmailsCache.get(cacheKey)
-  if (cached && Date.now() - cached.at < URGENT_EMAILS_CACHE_TTL_MS) {
+  const isFresh = cached && Date.now() - cached.at < URGENT_EMAILS_CACHE_TTL_MS
+  if (isFresh) return cached.data
+
+  // Stale-while-revalidate: once anything has ever been cached for this
+  // user, no caller waits through a fresh Gmail-list + N-gets +
+  // OpenAI-classification round trip again — the last-known result comes
+  // back immediately (this is what Home and Priorities' dashboard cards
+  // read on every open), and a background refresh updates the cache for
+  // whoever asks next. Only a user's very first call ever (nothing cached
+  // yet, e.g. right after this server process started) pays the full
+  // synchronous cost.
+  if (cached) {
+    fetchUrgentEmailsFresh(user, maxResults)
+      .then(result => _urgentEmailsCache.set(cacheKey, { at: Date.now(), data: result }))
+      .catch(() => {}) // stale data stays cached as-is; the next expiry retries for real
     return cached.data
   }
+
   try {
-    const authClient = await getAuthenticatedGmailClient(user)
-    const gmail = google.gmail({ version: 'v1', auth: authClient })
-
-    // today's unread primary inbox emails
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
-    const q = `in:inbox is:unread after:${todayStr} category:primary`
-
-    const listRes = await gmail.users.messages.list({
-      userId: 'me',
-      q,
-      maxResults,
-    })
-
-    const messages = listRes.data.messages || []
-    if (!messages.length) {
-      _urgentEmailsCache.set(cacheKey, { at: Date.now(), data: [] })
-      return []
-    }
-
-    const emails = await Promise.all(messages.map(async (msg) => {
-      const data = await gmail.users.messages.get({
-        userId: 'me',
-        id: msg.id,
-        format: 'metadata',
-        metadataHeaders: ['Subject', 'From', 'Date'],
-      })
-      const headers = data.data.payload?.headers || []
-      const subject = getHeaderValue(headers, 'Subject') || '(No subject)'
-      const from    = getHeaderValue(headers, 'From')    || 'Unknown'
-      const snippet = data.data.snippet || ''
-      const internalDate = data.data.internalDate
-      const ts = internalDate ? Number(internalDate) : Date.now()
-      const time = new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
-      return { id: msg.id, subject, from, snippet, time }
-    }))
-
-    // Prefer real AI classification — falls back to the keyword heuristic
-    // only if OpenAI isn't configured or the call fails, so a misconfigured
-    // key never silently means "flag everything" again.
-    const aiResults = await classifyUrgencyWithAI(emails)
-    const result = aiResults
-      ? emails
-          .map(e => {
-            const ai = aiResults.get(e.id)
-            return { ...e, urgencyScore: ai?.score ?? 0, urgent: ai?.urgent ?? false, reason: ai?.reason || null }
-          })
-          .filter(e => e.urgent)
-          .sort((a, b) => b.urgencyScore - a.urgencyScore)
-          .slice(0, 5)
-      : emails
-          .map(e => ({ ...e, urgencyScore: scoreEmailByKeywords(e.subject, e.snippet, e.from) }))
-          .filter(e => e.urgencyScore >= 2)
-          .sort((a, b) => b.urgencyScore - a.urgencyScore)
-          .slice(0, 5)
-
+    const result = await fetchUrgentEmailsFresh(user, maxResults)
     _urgentEmailsCache.set(cacheKey, { at: Date.now(), data: result })
     return result
   } catch {
