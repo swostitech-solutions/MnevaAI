@@ -28,11 +28,14 @@ const TRUST_LEVELS = [
   { level: 4, name: 'Inner Circle', desc: 'Execute goals autonomously' },
 ];
 
-const AUTONOMY_TOGGLES = [
-  { key: 'finance',       label: 'Finance',       icon: 'credit-card' },
-  { key: 'communications',label: 'Communications', icon: 'mail' },
-  { key: 'health',        label: 'Health',         icon: 'heart' },
-  { key: 'lifeops',       label: 'Life Ops',       icon: 'navigation' },
+// The 4 domains from "Stages in Mneva AI.pdf" — each earns trust on its own
+// clock (see backend/src/services/pendingActions.service.js). Finance stays
+// first/default per that same spec.
+const DOMAIN_TABS = [
+  { key: 'finance',        label: 'Finance',       icon: 'credit-card' },
+  { key: 'communications', label: 'Communication', icon: 'mail' },
+  { key: 'health',         label: 'Health Core',   icon: 'heart' },
+  { key: 'family',         label: 'Family',        icon: 'users' },
 ];
 
 const PRIVACY_TOGGLES = [
@@ -60,11 +63,15 @@ function formatLeadTime(minutes) {
 }
 
 const LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner Circle' };
-// Must match APPROVALS_TO_LEVEL_UP / REJECTIONS_TO_LEVEL_DOWN in
-// backend/src/services/pendingActions.service.js — purely a display
-// constant, changing this alone doesn't change how leveling actually works.
-const APPROVALS_TO_LEVEL_UP = 5;
-const REJECTIONS_TO_LEVEL_DOWN = 2;
+// Must match the thresholds in backend/src/services/pendingActions.service.js
+// — purely display constants for the progress text, changing them alone
+// doesn't change how leveling actually works.
+const L1_MIN_DAYS = 14;
+const L1_MIN_ACTIONS = 15;
+const L2_MIN_DAYS = 30;
+const L2_ACCEPT_RATE_TO_L3 = 80;
+const L3_ACCEPT_RATE_TO_L4 = 90;
+const L3_REJECT_RATE_DEMOTE = 20;
 
 // A masked password field with an eye button to reveal what was actually
 // typed — every field in the Change Password modal uses this, since a
@@ -382,12 +389,16 @@ export default function Settings({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Legacy global level — still shown as a read-only row in the Account tab
+  // (see AccountTab below); the Trust tab itself now runs entirely on
+  // per-domain data (domainTrust), sourced from /api/auth/me's trustLevel
+  // rather than the old flat trust/settings response.
   const [currentLevel, setCurrentLevel] = useState(1);
-  const [trustScore, setTrustScore] = useState(0);
-  const [approvedActions, setApprovedActions] = useState(0);
-  const [approvalStreak, setApprovalStreak] = useState(0);
-  const [rejectionStreak, setRejectionStreak] = useState(0);
-  const [autonomy, setAutonomy] = useState({});
+  // One row per Finance/Communication/Health Core/Family — see "Stages in
+  // Mneva AI.pdf" and backend/src/services/pendingActions.service.js.
+  const [domainTrust, setDomainTrust] = useState({});
+  const [selectedDomain, setSelectedDomain] = useState('finance');
+  const [confirmingLevel, setConfirmingLevel] = useState(false);
   const [privacy, setPrivacy] = useState({ biometricGate: true, e2eEncryption: true, signedLedger: true, dataSharing: false });
   const [notifications, setNotifications] = useState({ email: true, payments: true, rides: true, aiInsights: true, system: true });
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
@@ -407,20 +418,18 @@ export default function Settings({ navigation, route }) {
   const hasRealDataRef = useRef(false);
   const applySettingsData = (data, me) => {
     if (data) {
-      setCurrentLevel(data.currentLevel || 1);
-      setTrustScore(data.trustScore || 0);
-      setApprovedActions(data.approvedActions || 0);
-      setApprovalStreak(data.approvalStreak || 0);
-      setRejectionStreak(data.rejectionStreak || 0);
+      if (data.domains) setDomainTrust(data.domains);
       const prefs = data.preferences || {};
-      if (prefs.autonomy)      setAutonomy(prefs.autonomy);
       if (prefs.privacy)       setPrivacy(p => ({ ...p, ...prefs.privacy }));
       if (prefs.notifications) setNotifications(n => ({ ...n, ...prefs.notifications }));
       if (Array.isArray(prefs.notificationLeadTimes) && prefs.notificationLeadTimes.length) {
         setLeadTimes(prefs.notificationLeadTimes);
       }
     }
-    if (me) setUser(me);
+    if (me) {
+      setUser(me);
+      setCurrentLevel(me.trustLevel || 1);
+    }
   };
 
   // Paint the last known settings immediately from cache — otherwise this
@@ -474,16 +483,23 @@ export default function Settings({ navigation, route }) {
     await setAppLockEnabled(val);
   };
 
-  // Trust level can now change on its own (auto-adjusted after a streak of
-  // approvals/denials in chat, not just a manual pick here) — this keeps the
-  // Trust tab in sync live instead of only reflecting reality on next load.
-  useEffect(() => on('trust:levelChanged', ({ level }) => {
-    setCurrentLevel(level);
-    // The server resets both streaks to 0 the moment a level change fires —
-    // reflect that immediately instead of showing a stale streak count
-    // until the next full settings reload.
-    setApprovalStreak(0);
-    setRejectionStreak(0);
+  // A domain's trust level can change on its own (auto-adjusted after
+  // enough approvals/denials in chat, not just earned by tapping something
+  // here) — this keeps the Trust tab in sync live instead of only
+  // reflecting reality on next load. The server resets that domain's
+  // counters to zero the moment a level change fires — reflect that
+  // immediately instead of showing stale stats until the next full reload.
+  useEffect(() => on('domainTrust:levelChanged', ({ domain, level }) => {
+    setDomainTrust(prev => ({
+      ...prev,
+      [domain]: { ...prev[domain], level, actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, acceptRate: null, daysAtLevel: 0, pendingL2Confirm: false },
+    }));
+  }), [on]);
+
+  // Finance-only: fires once L1's 14-day/15-action bar is met, so the
+  // "ready for Suggest mode" banner appears without waiting for a reload.
+  useEffect(() => on('domainTrust:pendingConfirm', ({ domain }) => {
+    setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], pendingL2Confirm: true } }));
   }), [on]);
 
   // Android's settings page is outside the app, so confirm the final consent
@@ -506,10 +522,26 @@ export default function Settings({ navigation, route }) {
     setSaving(false);
   }, []);
 
-  const toggleAutonomy = (key, val) => {
-    const next = { ...autonomy, [key]: val };
-    setAutonomy(next);
-    save({ autonomy: next });
+  const toggleDomainEnabled = (domain, val) => {
+    setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], enabled: val } }));
+    save({ domain, enabled: val });
+  };
+
+  // Finance-only: confirms the L1->L2 promotion the PDF says finance must
+  // ask for explicitly, instead of auto-promoting silently like the other
+  // 3 domains.
+  const confirmFinanceLevel = async () => {
+    setConfirmingLevel(true);
+    try {
+      const res = await apiFetch('/api/trust/confirm-level', { method: 'POST', body: { domain: 'finance' } });
+      if (res?.success) {
+        setDomainTrust(prev => ({
+          ...prev,
+          finance: { ...prev.finance, level: 2, pendingL2Confirm: false, actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, acceptRate: null, daysAtLevel: 0 },
+        }));
+      }
+    } catch {}
+    finally { setConfirmingLevel(false); }
   };
 
   const togglePrivacy = (key, val) => {
@@ -604,85 +636,145 @@ export default function Settings({ navigation, route }) {
         showsVerticalScrollIndicator={false}
       >
         {/* ── TRUST TAB ── */}
-        {activeTab === 0 && (
-          <>
-            {/* Progress to next level — 5 consecutive approvals is what
-                actually raises the level (see applyTrustFeedback on the
-                backend), so this shows real progress toward that, not a
-                cosmetic score bar disconnected from what triggers it. */}
-            <View style={styles.card}>
-              <Text style={styles.sectionLabel}>Trust Score</Text>
-              <View style={styles.scoreRow}>
-                <Text style={styles.scoreNum}>{trustScore}</Text>
-                <Text style={styles.scoreHint}>{approvedActions} approved actions</Text>
-              </View>
+        {activeTab === 0 && (() => {
+          const dt = domainTrust[selectedDomain] || {};
+          const level = dt.level || 1;
+          const total = (dt.acceptedAtLevel || 0) + (dt.rejectedAtLevel || 0);
+          const acceptPct = total > 0 ? Math.round(((dt.acceptedAtLevel || 0) / total) * 100) : 0;
 
-              {currentLevel >= 4 ? (
-                <View style={styles.streakMaxRow}>
-                  <Feather name="award" size={15} color={theme.accent} />
-                  <Text style={styles.streakMaxText}>Inner Circle reached — full autonomy unlocked</Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.barBg}>
-                    <View style={[styles.barFill, { width: `${Math.min(100, Math.round((approvalStreak / APPROVALS_TO_LEVEL_UP) * 100))}%` }]} />
-                  </View>
-                  <Text style={styles.streakLabel}>
-                    {Math.min(100, Math.round((approvalStreak / APPROVALS_TO_LEVEL_UP) * 100))}% to {LEVEL_NAMES[currentLevel + 1]}
-                  </Text>
-                </>
-              )}
-
-              {rejectionStreak > 0 && currentLevel > 1 && (
-                <View style={styles.streakWarnRow}>
-                  <Feather name="alert-triangle" size={12} color={theme.warning} />
-                  <Text style={styles.streakWarnText}>
-                    {REJECTIONS_TO_LEVEL_DOWN - rejectionStreak === 1
-                      ? 'One more declined action will lower your level'
-                      : `${rejectionStreak}/${REJECTIONS_TO_LEVEL_DOWN} declines toward a level drop`}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Level display — earned automatically (a streak of approvals/
-                denials in chat moves this), never set by tapping a card. */}
-            <Text style={styles.sectionLabel}>Autonomy Level</Text>
-            <Text style={styles.levelHint}>Earned automatically as you approve or decline what Mneva proposes — not something you set directly.</Text>
-            {TRUST_LEVELS.map(({ level, name, desc }) => (
-              <View
-                key={level}
-                style={[styles.levelCard, currentLevel === level && styles.levelCardActive, currentLevel !== level && styles.levelCardInactive]}
+          return (
+            <>
+              {/* Domain sub-tabs — each of the 4 PDF domains earns trust on
+                  its own clock, so everything below is scoped to whichever
+                  one is selected here. Finance is the default. Horizontally
+                  scrollable, content-sized chips (matches Health.js's
+                  category tabs) rather than 4 equal-flex slots — "Communication"
+                  is meaningfully longer than the other 3 labels and wrapped
+                  awkwardly when forced into an even share of the row. */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.domainTabScroll}
+                contentContainerStyle={styles.domainTabRow}
               >
-                <View style={[styles.levelBadge, currentLevel === level && styles.levelBadgeActive]}>
-                  <Text style={[styles.levelBadgeText, currentLevel === level && styles.levelBadgeTextActive]}>L{level}</Text>
-                </View>
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={[styles.levelName, currentLevel === level && styles.levelNameActive]}>{name}</Text>
-                  <Text style={styles.levelDesc}>{desc}</Text>
-                </View>
-                {currentLevel === level && <Feather name="check-circle" size={18} color={theme.accent} />}
-              </View>
-            ))}
+                {DOMAIN_TABS.map(({ key, label, icon }) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={[styles.domainTabBtn, selectedDomain === key && styles.domainTabBtnActive]}
+                    onPress={() => setSelectedDomain(key)}
+                  >
+                    <Feather name={icon} size={13} color={selectedDomain === key ? '#FFFFFF' : theme.muted} />
+                    <Text style={[styles.domainTabText, selectedDomain === key && styles.domainTabTextActive]} numberOfLines={1}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
 
-            {/* Per-domain toggles */}
-            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Domain Autonomy</Text>
-            <View style={styles.card}>
-              {AUTONOMY_TOGGLES.map(({ key, label, icon }, i) => (
-                <View key={key} style={[styles.toggleRow, i !== AUTONOMY_TOGGLES.length - 1 && styles.divider]}>
-                  <Feather name={icon} size={16} color={theme.accent} />
-                  <Text style={styles.toggleLabel}>{label}</Text>
+              {/* Finance-only: L1's 14-day/15-action bar is met, but
+                  promotion waits on an explicit yes (see the PDF). */}
+              {selectedDomain === 'finance' && dt.pendingL2Confirm && (
+                <View style={styles.confirmBanner}>
+                  <Feather name="zap" size={16} color={theme.accent} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.confirmBannerTitle}>Ready for Suggest mode</Text>
+                    <Text style={styles.confirmBannerDesc}>Mneva has learned enough about your finance habits to start suggesting actions.</Text>
+                  </View>
+                  <TouchableOpacity style={styles.confirmBannerBtn} onPress={confirmFinanceLevel} disabled={confirmingLevel}>
+                    {confirmingLevel ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.confirmBannerBtnText}>Turn on</Text>}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Progress to next level — the exact thresholds this domain
+                  needs to cross next, not a cosmetic score disconnected from
+                  what actually triggers a change. */}
+              <View style={styles.card}>
+                <Text style={styles.sectionLabel}>{DOMAIN_TABS.find(d => d.key === selectedDomain)?.label} Trust</Text>
+                <View style={styles.scoreRow}>
+                  <Text style={styles.scoreNum}>L{level}</Text>
+                  <Text style={styles.scoreHint}>{LEVEL_NAMES[level]}</Text>
+                </View>
+
+                {level >= 4 ? (
+                  <View style={styles.streakMaxRow}>
+                    <Feather name="award" size={15} color={theme.accent} />
+                    <Text style={styles.streakMaxText}>Inner Circle reached — full autonomy unlocked</Text>
+                  </View>
+                ) : level === 1 ? (
+                  <>
+                    <View style={styles.barBg}>
+                      <View style={[styles.barFill, { width: `${Math.min(100, Math.round(((dt.actionsAtLevel || 0) / L1_MIN_ACTIONS) * 100))}%` }]} />
+                    </View>
+                    <Text style={styles.streakLabel}>
+                      {dt.actionsAtLevel || 0}/{L1_MIN_ACTIONS} actions observed · {dt.daysAtLevel || 0}/{L1_MIN_DAYS} days
+                    </Text>
+                  </>
+                ) : level === 2 ? (
+                  <>
+                    <View style={styles.barBg}>
+                      <View style={[styles.barFill, { width: `${Math.min(100, total > 0 ? acceptPct : 0)}%` }]} />
+                    </View>
+                    <Text style={styles.streakLabel}>
+                      {total > 0 ? `${acceptPct}% accepted (need ${L2_ACCEPT_RATE_TO_L3}%)` : 'No suggestions yet'} · {dt.daysAtLevel || 0}/{L2_MIN_DAYS} days
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.barBg}>
+                      <View style={[styles.barFill, { width: `${Math.min(100, total > 0 ? acceptPct : 0)}%` }]} />
+                    </View>
+                    <Text style={styles.streakLabel}>
+                      {total > 0 ? `${acceptPct}% accepted (need ${L3_ACCEPT_RATE_TO_L4}%)` : 'No one-tap actions yet'}
+                    </Text>
+                  </>
+                )}
+
+                {level === 3 && total > 0 && (100 - acceptPct) > 0 && (
+                  <View style={styles.streakWarnRow}>
+                    <Feather name="alert-triangle" size={12} color={theme.warning} />
+                    <Text style={styles.streakWarnText}>
+                      Reject rate must stay under {L3_REJECT_RATE_DEMOTE}% or this drops back to L2 · currently {100 - acceptPct}%
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Level display — earned automatically (enough approvals/
+                  declines in chat moves this), never set by tapping a card. */}
+              <Text style={styles.sectionLabel}>Autonomy Level</Text>
+              <Text style={styles.levelHint}>Earned automatically as you approve or decline what Mneva proposes for this domain — not something you set directly.</Text>
+              {TRUST_LEVELS.map(({ level: l, name, desc }) => (
+                <View
+                  key={l}
+                  style={[styles.levelCard, level === l && styles.levelCardActive, level !== l && styles.levelCardInactive]}
+                >
+                  <View style={[styles.levelBadge, level === l && styles.levelBadgeActive]}>
+                    <Text style={[styles.levelBadgeText, level === l && styles.levelBadgeTextActive]}>L{l}</Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 14 }}>
+                    <Text style={[styles.levelName, level === l && styles.levelNameActive]}>{name}</Text>
+                    <Text style={styles.levelDesc}>{desc}</Text>
+                  </View>
+                  {level === l && <Feather name="check-circle" size={18} color={theme.accent} />}
+                </View>
+              ))}
+
+              {/* This domain's on/off switch */}
+              <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Domain Autonomy</Text>
+              <View style={styles.card}>
+                <View style={styles.toggleRow}>
+                  <Feather name={DOMAIN_TABS.find(d => d.key === selectedDomain)?.icon} size={16} color={theme.accent} />
+                  <Text style={styles.toggleLabel}>{DOMAIN_TABS.find(d => d.key === selectedDomain)?.label}</Text>
                   <Switch
-                    value={!!autonomy[key]}
-                    onValueChange={v => toggleAutonomy(key, v)}
+                    value={dt.enabled !== false}
+                    onValueChange={v => toggleDomainEnabled(selectedDomain, v)}
                     trackColor={{ false: theme.borderStrong, true: theme.accent }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
-              ))}
-            </View>
-          </>
-        )}
+              </View>
+            </>
+          );
+        })()}
 
         {/* ── PRIVACY TAB ── */}
         {activeTab === 1 && (
@@ -852,6 +944,19 @@ const createStyles = (theme) => StyleSheet.create({
   tabBtnTextActive:{ color: theme.accent },
   card:            { backgroundColor: theme.card, borderRadius: 18, paddingHorizontal: 18, marginBottom: 16 },
   sectionLabel:    { fontSize: 12, fontWeight: '700', color: theme.faint, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 },
+
+  domainTabScroll: { marginBottom: 16 },
+  domainTabRow: { flexDirection: 'row', gap: 8, paddingVertical: 2, paddingRight: 4 },
+  domainTabBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: theme.soft },
+  domainTabBtnActive: { backgroundColor: theme.accent },
+  domainTabText: { fontSize: 12.5, fontWeight: '700', color: theme.muted },
+  domainTabTextActive: { color: '#FFFFFF' },
+
+  confirmBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(52,199,123,0.14)' : '#EFFBF4', borderRadius: 14, borderWidth: 1, borderColor: theme.accent, padding: 14, marginBottom: 16 },
+  confirmBannerTitle: { fontSize: 13.5, fontWeight: '800', color: theme.text },
+  confirmBannerDesc: { fontSize: 11.5, color: theme.muted, marginTop: 2, lineHeight: 15 },
+  confirmBannerBtn: { backgroundColor: theme.accent, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9, marginLeft: 10 },
+  confirmBannerBtnText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' },
   scoreRow:        { flexDirection: 'row', alignItems: 'baseline', marginBottom: 10 },
   scoreNum:        { fontSize: 32, fontWeight: '800', color: theme.accent, marginRight: 10 },
   scoreHint:       { fontSize: 13, color: theme.faint },

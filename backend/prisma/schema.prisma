@@ -63,6 +63,7 @@ model User {
   pendingActions            PendingAction[]
   vaultFiles                VaultFile[]
   trustScore                TrustScore?
+  domainTrusts              DomainTrust[]
   userProfile               UserProfile?
   familyConnectionsSent     FamilyConnection[]        @relation("ConnectionRequester")
   familyConnectionsReceived FamilyConnection[]        @relation("ConnectionReceiver")
@@ -465,6 +466,11 @@ model FamilyTask {
   @@index([assigneeId])
 }
 
+// Legacy — global, single-level trust tracking. Superseded by DomainTrust
+// below (one row per domain, per the Finance/Communication/Health/Family
+// per-domain trust redesign); kept as-is (not migrated/deleted) since a few
+// other spots (Profile.js's L4 "Automations" gate, the JWT payload) still
+// read the old global User.trustLevel and are out of scope for that change.
 model TrustScore {
   id              String @id @default(uuid())
   userId          String @unique
@@ -472,13 +478,35 @@ model TrustScore {
   approvedActions Int    @default(0)
   rejectedActions Int    @default(0)
   executedActions Int    @default(0)
-  // Consecutive approvals/denials since the last one of the opposite kind
-  // (or the last level change) — what actually drives auto trust-level
-  // changes, since a lifetime total never resets and would let one good week
-  // years ago paper over recent rejections. See applyTrustFeedback().
   approvalStreak  Int    @default(0)
   rejectionStreak Int    @default(0)
   user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// One row per user per domain ('finance' | 'communications' | 'health' |
+// 'family') — each domain earns trust on its own clock, per
+// pendingActions.service.js's recordDomainAction(). Replaces the single
+// global User.trustLevel for gating/leveling purposes going forward.
+model DomainTrust {
+  id             String   @id @default(uuid())
+  userId         String
+  domain         String
+  level          Int      @default(1)
+  levelEnteredAt DateTime @default(now())
+  actionsAtLevel  Int     @default(0)
+  acceptedAtLevel Int     @default(0)
+  rejectedAtLevel Int     @default(0)
+  enabled        Boolean  @default(true)
+  // Finance-only: L1->L2 conditions (14 days + 15 actions) are met but
+  // promotion waits on the user's explicit confirmation — every other
+  // domain auto-promotes silently. Always false for non-finance domains.
+  pendingL2Confirm Boolean @default(false)
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, domain])
+  @@index([userId])
 }
 
 model Pet {

@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
-import { getAutonomyPolicy, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction } from '../services/pendingActions.service.js'
+import { GATED_DOMAINS, getDomainTrust, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction, recordDomainAction } from '../services/pendingActions.service.js'
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from '../services/activityCalc.js'
 
 function validTimeZone(value) {
@@ -812,8 +812,73 @@ If a required field for the chosen domain+type is missing from the conversation,
   },
 ]
 
+// Human-readable label for a blocked gated action's message, and a short
+// summary for the PendingAction card shown while it awaits approval.
+const ACTION_LABELS = {
+  initiate_payment: 'make this payment',
+  create_subscription: 'add this subscription',
+  create_loan: 'add this loan',
+  create_emi: 'add this EMI',
+  create_fixed_deposit: 'add this fixed deposit',
+  add_portfolio_holding: 'add this to your portfolio',
+  send_email: 'send this email',
+  schedule_event: 'schedule this meeting',
+  log_health_data: 'log this health data',
+  add_parent_medication: 'add this medication',
+  create_family_task: 'create this family task',
+  add_pet: 'add this pet',
+  add_pet_reminder: 'set this pet reminder',
+  add_family_item: 'add this item',
+}
+function describeAction(name) {
+  return ACTION_LABELS[name] || 'do this automatically'
+}
+
+function buildActionSummary(name, input) {
+  switch (name) {
+    case 'initiate_payment': return `Pay ₹${(Number(input.amount) || 0).toLocaleString('en-IN')} to ${input.payee || 'payee'}`
+    case 'create_subscription': return `Add subscription: ${input.name || 'Untitled'}`
+    case 'create_loan': return `Add loan: ${input.name || `${input.loan_type || 'Loan'} from ${input.lender_name || 'lender'}`}`
+    case 'create_emi': return `Add EMI: ${input.name || input.emi_type || 'Untitled'}`
+    case 'create_fixed_deposit': return `Add fixed deposit: ${input.name || `FD - ${input.bank_name || ''}`}`
+    case 'add_portfolio_holding': return `Add to portfolio: ${input.name || 'Untitled'}`
+    case 'send_email': return `Send email to ${input.recipient || 'recipient'}`
+    case 'schedule_event': return `Schedule meeting: ${input.title || 'Untitled'}`
+    case 'log_health_data': return 'Log health data'
+    case 'add_parent_medication': return `Add medication: ${input.med_name || 'Untitled'} for ${input.parent || ''}`
+    case 'create_family_task': return `Add family task: ${input.title || 'Untitled'}`
+    case 'add_pet': return `Add pet: ${input.name || 'Untitled'}`
+    case 'add_pet_reminder': return `Reminder for ${input.pet_name || 'pet'}: ${input.title || 'Untitled'}`
+    case 'add_family_item': return `Add ${input.type || 'item'} to ${input.domain || 'Family'}`
+    default: return 'Pending action'
+  }
+}
+
 // ── Tool Executor ────────────────────────────────────────────────────────────
-export async function executeTool(name, input, userId) {
+// The gate check below runs ONCE, generically, for every domain-gated tool
+// (see GATED_DOMAINS in pendingActions.service.js) — L1 blocks it outright,
+// L2/L3 defer it to a PendingAction and return early, L4 (or an ungated
+// tool) falls through to the switch below to actually run. `opts.skipGate`
+// is used only by resolvePendingAction's internal re-invocation on
+// approval, so a just-approved action doesn't get deferred to pending all
+// over again.
+export async function executeTool(name, input, userId, opts = {}) {
+  const domain = GATED_DOMAINS[name]
+  if (domain && !opts.skipGate) {
+    const domainTrust = await getDomainTrust(userId, domain)
+    const amount = name === 'initiate_payment' ? Number(input.amount) || 0 : 0
+    const gate = decideGate(name, domainTrust, amount)
+    if (gate.mode === 'blocked') {
+      return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, describeAction(name)) }
+    }
+    if (gate.mode === 'pending') {
+      await recordDomainAction(userId, domain, 'observed')
+      const pending = await createPendingAction(userId, name, domain, input, buildActionSummary(name, input))
+      return { success: true, status: 'pending_approval', pendingActionId: pending.id, requiresBiometric: name === 'initiate_payment' && amount >= 1000, message: "I've prepared this — approve it in the app to send it." }
+    }
+    // gate.mode === 'execute' — falls through to the real work below.
+    await recordDomainAction(userId, domain, 'observed')
+  }
   switch (name) {
     case 'get_daily_brief': {
       const timeZone = await getUserTimeZone(userId)
@@ -870,18 +935,9 @@ export async function executeTool(name, input, userId) {
       }
     }
     case 'query_bills':          return []
+    // Gating (blocked/pending) already handled generically above — this
+    // case only ever runs once the gate says 'execute'.
     case 'initiate_payment': {
-      const policy = await getAutonomyPolicy(userId)
-      const amount = Number(input.amount) || 0
-      const gate = decideGate('initiate_payment', policy, amount)
-      if (gate.mode === 'blocked') {
-        return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, 'make this payment') }
-      }
-      if (gate.mode === 'pending') {
-        const summary = `Pay ₹${amount.toLocaleString('en-IN')} to ${input.payee || 'payee'}`
-        const pending = await createPendingAction(userId, 'initiate_payment', gate.domain, input, summary)
-        return { success: true, status: 'pending_approval', pendingActionId: pending.id, requiresBiometric: amount >= 1000, message: "I've prepared this payment — approve it in the app to send it." }
-      }
       return await executePaymentSideEffect(userId, input)
     }
     case 'get_portfolio':        return { totalInvested: 0, totalCurrent: 0, holdings: [], accounts: [] }
@@ -895,17 +951,8 @@ export async function executeTool(name, input, userId) {
       } catch { return { emails: [], total: 0, unreadCount: 0 } }
     }
     case 'draft_reply':          return { error: 'No connected email data found' }
+    // Gating (blocked/pending) already handled generically above.
     case 'send_email': {
-      const policy = await getAutonomyPolicy(userId)
-      const gate = decideGate('send_email', policy)
-      if (gate.mode === 'blocked') {
-        return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, 'send this email') }
-      }
-      if (gate.mode === 'pending') {
-        const summary = `Send email to ${input.recipient || 'recipient'}`
-        const pending = await createPendingAction(userId, 'send_email', gate.domain, input, summary)
-        return { success: true, status: 'pending_approval', pendingActionId: pending.id, message: "I've drafted this email — approve it in the app to send it." }
-      }
       try {
         return await executeSendEmailSideEffect(userId, input)
       } catch (err) { return { success: false, error: err.message } }
@@ -1192,7 +1239,6 @@ export async function executeTool(name, input, userId) {
           notes: input.notes || null,
         },
       })
-      ledger.add({ userId, tool: 'create_subscription', input: { name: input.name }, result: { id: sub.id }, status: 'completed' }).catch(() => {})
       return { success: true, subscriptionId: sub.id, name: sub.name, amount: sub.amount, billingCycle: sub.billingCycle, nextBillingDate: sub.nextBillingDate }
     }
     case 'create_loan': {
@@ -1228,7 +1274,6 @@ export async function executeTool(name, input, userId) {
           notes: input.notes || null,
         },
       })
-      ledger.add({ userId, tool: 'create_loan', input: { name: loan.name }, result: { id: loan.id }, status: 'completed' }).catch(() => {})
       return { success: true, loanId: loan.id, name: loan.name, emiAmount: loan.emiAmount, outstandingAmount: loan.outstandingAmount }
     }
     case 'create_emi': {
@@ -1264,7 +1309,6 @@ export async function executeTool(name, input, userId) {
           notes: input.notes || null,
         },
       })
-      ledger.add({ userId, tool: 'create_emi', input: { name: emi.name }, result: { id: emi.id }, status: 'completed' }).catch(() => {})
       return { success: true, emiId: emi.id, name: emi.name, emiAmount: emi.emiAmount, financedAmount: emi.financedAmount }
     }
     case 'create_fixed_deposit': {
@@ -1302,7 +1346,6 @@ export async function executeTool(name, input, userId) {
           notes: input.notes || null,
         },
       })
-      ledger.add({ userId, tool: 'create_fixed_deposit', input: { name: fd.name }, result: { id: fd.id }, status: 'completed' }).catch(() => {})
       return { success: true, fixedDepositId: fd.id, name: fd.name, maturityDate: fd.maturityDate, maturityAmount: fd.maturityAmount }
     }
     case 'add_portfolio_holding': {
@@ -1333,7 +1376,6 @@ export async function executeTool(name, input, userId) {
           notes: input.notes || null,
         },
       })
-      ledger.add({ userId, tool: 'add_portfolio_holding', input: { name: holding.name }, result: { id: holding.id }, status: 'completed' }).catch(() => {})
       return { success: true, holdingId: holding.id, name: holding.name, type: holding.type, investedAmount: holding.investedAmount, currentValue: holding.currentValue }
     }
     case 'log_health_data': {
@@ -1454,7 +1496,6 @@ export async function executeTool(name, input, userId) {
           notes: input.notes || null,
         },
       })
-      ledger.add({ userId, tool: 'add_parent_medication', input: { medName: med.medName, parent: med.parent }, result: { id: med.id }, status: 'completed' }).catch(() => {})
       return { success: true, medicationId: med.id, medName: med.medName, parent: med.parent }
     }
     case 'create_family_task': {
@@ -1498,7 +1539,6 @@ export async function executeTool(name, input, userId) {
           weight: input.weight || null,
         },
       })
-      ledger.add({ userId, tool: 'add_pet', input: { name: pet.name }, result: { id: pet.id }, status: 'completed' }).catch(() => {})
       return { success: true, petId: pet.id, name: pet.name, species: pet.species }
     }
     case 'add_pet_reminder': {
@@ -1512,7 +1552,6 @@ export async function executeTool(name, input, userId) {
       const reminder = await prisma.petReminder.create({
         data: { petId: pet.id, userId, type: input.type, title: input.title, remindAt, notes: input.notes || null },
       })
-      ledger.add({ userId, tool: 'add_pet_reminder', input: { pet: pet.name, title: input.title }, result: { id: reminder.id }, status: 'completed' }).catch(() => {})
       return { success: true, reminderId: reminder.id, pet: pet.name, title: reminder.title, remindAt: reminder.remindAt }
     }
     case 'add_family_item': {
@@ -1963,7 +2002,18 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         : await executeTool(tb.name, tb.input, user.id)
       if (identity) executedActionResults.set(identity, result)
 
-      const actionTools = ['initiate_payment','send_email','book_cab','order_food','set_reminder','schedule_event']
+      // book_cab/order_food/set_reminder aren't domain-gated (not one of the
+      // 4 PDF trust domains) but still get logged here like every other
+      // action tool. log_health_data/create_family_task/add_family_item are
+      // deliberately excluded — they self-log under an aliased tool name
+      // inside their own case body (see LEDGER_TOOL_ALIAS in
+      // pendingActions.service.js) to match the label the equivalent manual
+      // creation routes use; logging them again here would double the entry.
+      const actionTools = [
+        'initiate_payment', 'send_email', 'book_cab', 'order_food', 'set_reminder', 'schedule_event',
+        'create_subscription', 'create_loan', 'create_emi', 'create_fixed_deposit', 'add_portfolio_holding',
+        'add_parent_medication', 'add_pet', 'add_pet_reminder',
+      ]
       if (actionTools.includes(tb.name) && !(identity && allToolResults.some(entry => actionIdentity(entry.tool, entry.input) === identity))) {
         const ledgerEntry = await ledger.add({
           userId: user.id,

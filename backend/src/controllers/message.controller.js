@@ -1,6 +1,5 @@
 import { prisma } from '../config/prisma.js'
 import { memoryService } from '../services/memory.service.js'
-import { checkObserveGraduation } from '../services/pendingActions.service.js'
 
 export async function createMessage(req, res) {
   try {
@@ -49,10 +48,6 @@ export async function createMessage(req, res) {
       lastMessageId: message.id,
       lastUpdatedAt: message.createdAt,
     })
-
-    if (role === 'user') {
-      checkObserveGraduation(req.user.id).catch(() => {})
-    }
 
     res.status(201).json(message)
   } catch (err) {

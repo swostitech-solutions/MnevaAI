@@ -19,11 +19,16 @@ import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
-// Must match TRUST_LEVELS/LEVEL_NAMES in Settings.js — Automations (Twin
-// Diary's autonomous actions) only actually run once the user is at Trust
-// Level 4 (Inner Circle); below that there's nothing autonomous to show.
+// Must match TRUST_LEVELS/LEVEL_NAMES in Settings.js and the domain list in
+// backend/src/services/pendingActions.service.js — Automations (Twin
+// Diary's autonomous actions) only actually run once EVERY domain has
+// reached Trust Level 4 (Inner Circle); below that, at least one domain is
+// still asking for approval or observing, so there's nothing fully
+// autonomous to show yet.
 const AUTOMATION_UNLOCK_LEVEL = 4;
 const TRUST_LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner Circle' };
+const DOMAIN_LABELS = { finance: 'Finance', communications: 'Communication', health: 'Health Core', family: 'Family' };
+const DOMAINS_COUNT = Object.keys(DOMAIN_LABELS).length;
 
 function displayPlanName(plan) {
   const value = (plan || '').toLowerCase();
@@ -116,23 +121,32 @@ export default function Profile({ navigation }) {
   const { theme, isDark, toggleTheme } = useTheme();
   const styles = createStyles(theme);
   const [user, setUser] = useState(null);
-  const trustLevel = user?.trustLevel || 1;
-  const automationsUnlocked = trustLevel >= AUTOMATION_UNLOCK_LEVEL;
+  // Per-domain trust (Finance/Communication/Health Core/Family) — Automations
+  // unlocks only once every one of these has independently reached L4.
+  const [domainTrust, setDomainTrust] = useState(null);
+  const domainsBelowL4 = domainTrust
+    ? Object.entries(domainTrust).filter(([, d]) => (d.level || 1) < AUTOMATION_UNLOCK_LEVEL)
+    : [];
+  // Before the trust data has loaded, default to locked rather than
+  // flashing an unlocked row that immediately re-locks once the real
+  // per-domain levels come in.
+  const automationsUnlocked = !!domainTrust && domainsBelowL4.length === 0;
+
+  const loadProfileData = () => {
+    import('../api/client').then(({ apiFetch }) => {
+      apiFetch('/api/auth/me').then(me => setUser(me)).catch(() => {});
+      apiFetch('/api/trust/settings').then(data => { if (data?.domains) setDomainTrust(data.domains); }).catch(() => {});
+    });
+  };
 
   React.useEffect(() => {
     import('../storage/auth').then(({ getStoredAuth }) => {
       getStoredAuth().then(({ user: stored }) => { if (stored) setUser(stored); });
     });
-    import('../api/client').then(({ apiFetch }) => {
-      apiFetch('/api/auth/me').then(me => setUser(me)).catch(() => {});
-    });
+    loadProfileData();
   }, []);
 
-  React.useEffect(() => onAppDataRefresh(() => {
-    import('../api/client').then(({ apiFetch }) => {
-      apiFetch('/api/auth/me').then(me => setUser(me)).catch(() => {});
-    });
-  }), []);
+  React.useEffect(() => onAppDataRefresh(loadProfileData), []);
 
   const getInitials = (name) => {
     if (!name) return 'ME';
@@ -187,14 +201,17 @@ export default function Profile({ navigation }) {
         <View style={styles.settingsCard}>
           {SETTINGS_ROWS.map((row, index) => {
             // Automations (Twin Diary's autonomous actions) only actually
-            // run at Trust Level 4 — below that, tapping through to an
-            // action feed that will always be empty is confusing. Show the
-            // lock state right on the row instead.
+            // run once EVERY domain has reached Trust Level 4 — below that,
+            // tapping through to an action feed that will always be
+            // incomplete is confusing. Show the lock state right on the row
+            // instead.
             const isAutomations = row.id === '2';
             const locked = isAutomations && !automationsUnlocked;
             const rowIcon = locked ? 'lock' : row.icon;
             const rowIconColor = locked ? theme.disabled : row.iconColor;
-            const rowValue = isAutomations ? (locked ? 'L4 not activated yet' : row.value) : row.value;
+            const rowValue = isAutomations
+              ? (locked ? (domainTrust ? `${DOMAINS_COUNT - domainsBelowL4.length}/${DOMAINS_COUNT} at Inner Circle` : 'Checking…') : row.value)
+              : row.value;
             return (
               <TouchableOpacity
                 key={row.id}
@@ -206,9 +223,12 @@ export default function Profile({ navigation }) {
                 onPress={() => {
                   if (!row.screen) return;
                   if (locked) {
+                    const behindList = domainsBelowL4
+                      .map(([domain, d]) => `${DOMAIN_LABELS[domain] || domain}: L${d.level || 1} (${TRUST_LEVEL_NAMES[d.level || 1] || 'Observe'})`)
+                      .join('\n');
                     Alert.alert(
                       'Automations are locked',
-                      `Automations only run once your account reaches Trust Level 4 — Inner Circle. You're currently at L${trustLevel} (${TRUST_LEVEL_NAMES[trustLevel] || 'Observe'}). Increase your trust level in Trust & Autonomy to unlock this.`,
+                      `Automations only run once every domain reaches Trust Level 4 — Inner Circle. Still catching up:\n\n${behindList}\n\nIncrease trust in Trust & Autonomy to unlock this.`,
                       [
                         { text: 'Not now', style: 'cancel' },
                         { text: 'Go to Trust & Autonomy', onPress: () => navigation?.navigate?.('Settings', { tab: 0 }) },

@@ -1284,7 +1284,7 @@ import { createDeviceToken, hashToken } from "./deviceNotifications.js";
 import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
-import { resolvePendingAction, listPendingActions } from "../services/pendingActions.service.js";
+import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2 } from "../services/pendingActions.service.js";
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
 
 const upload = multer({
@@ -3315,33 +3315,44 @@ trustRouter.patch("/level", async (req, res) => {
   res.json({ success: true, newLevel: user.trustLevel });
 });
 
+// Per-domain trust: one row per Finance/Communication/Health Core/Family
+// (see "Stages in Mneva AI.pdf" and pendingActions.service.js's
+// recordDomainAction) — replaces the old single global
+// currentLevel/trustScore/approvalStreak shape.
 trustRouter.get("/settings", async (req, res) => {
-  const [user, trustScore] = await Promise.all([
+  const [user, domainTrust] = await Promise.all([
     userStore.getById(req.user.id),
-    prisma.trustScore.findUnique({ where: { userId: req.user.id } }),
+    getAllDomainTrust(req.user.id),
   ]);
-  res.json({
-    currentLevel: user?.trustLevel || 1,
-    trustScore: trustScore?.score || 0,
-    approvedActions: trustScore?.approvedActions || 0,
-    rejectedActions: trustScore?.rejectedActions || 0,
-    // What actually drives the next auto level-up/down — see
-    // applyTrustFeedback() in pendingActions.service.js (5 consecutive
-    // approvals raises the level by one, 2 consecutive denials lowers it).
-    approvalStreak: trustScore?.approvalStreak || 0,
-    rejectionStreak: trustScore?.rejectionStreak || 0,
-    plan: user?.plan || "Free",
-    preferences: user?.preferences || {},
-  });
+  const domains = Object.fromEntries(DOMAINS.map((domain) => {
+    const row = domainTrust[domain];
+    const total = row.acceptedAtLevel + row.rejectedAtLevel;
+    return [domain, {
+      level: row.level,
+      levelEnteredAt: row.levelEnteredAt,
+      daysAtLevel: Math.floor((Date.now() - new Date(row.levelEnteredAt).getTime()) / (24 * 60 * 60 * 1000)),
+      actionsAtLevel: row.actionsAtLevel,
+      acceptedAtLevel: row.acceptedAtLevel,
+      rejectedAtLevel: row.rejectedAtLevel,
+      acceptRate: total > 0 ? Math.round((row.acceptedAtLevel / total) * 100) : null,
+      enabled: row.enabled,
+      pendingL2Confirm: row.pendingL2Confirm,
+    }];
+  }));
+  res.json({ domains, plan: user?.plan || "Free", preferences: user?.preferences || {} });
 });
 
 trustRouter.patch("/settings", async (req, res) => {
-  const { autonomy, privacy, notifications: notifPrefs, notificationLeadTimes } = req.body;
+  const { domain, enabled, notifications: notifPrefs, notificationLeadTimes } = req.body;
+
+  if (domain !== undefined) {
+    if (!DOMAINS.includes(domain)) return res.status(400).json({ error: `domain must be one of: ${DOMAINS.join(", ")}` });
+    const row = await getDomainTrust(req.user.id, domain);
+    await prisma.domainTrust.update({ where: { id: row.id }, data: { enabled: !!enabled } });
+  }
+
   const user = await userStore.getById(req.user.id);
   const prefs = user?.preferences || {};
-  const autonomyBefore = { ...(prefs.autonomy || {}) };
-  if (autonomy) prefs.autonomy = { ...(prefs.autonomy || {}), ...autonomy };
-  if (privacy) prefs.privacy = { ...(prefs.privacy || {}), ...privacy };
   if (notifPrefs)
     prefs.notifications = { ...(prefs.notifications || {}), ...notifPrefs };
   if (Array.isArray(notificationLeadTimes)) {
@@ -3355,23 +3366,20 @@ trustRouter.patch("/settings", async (req, res) => {
     )].sort((a, b) => b - a).slice(0, 5);
     prefs.notificationLeadTimes = cleaned;
   }
-  await prisma.user.update({
-    where: { id: req.user.id },
-    data: { preferences: prefs },
-  });
-  if (autonomy) {
-    const changedKeys = Object.keys(autonomy).filter((k) => autonomyBefore[k] !== prefs.autonomy[k]);
-    if (changedKeys.length) {
-      ledger.add({
-        userId: req.user.id,
-        tool: "autonomy_toggle_changed",
-        input: { changes: Object.fromEntries(changedKeys.map((k) => [k, { from: autonomyBefore[k], to: prefs.autonomy[k] }])) },
-        result: { autonomy: prefs.autonomy },
-        status: "completed",
-      }).catch(() => {});
-    }
+  if (notifPrefs || Array.isArray(notificationLeadTimes)) {
+    await prisma.user.update({ where: { id: req.user.id }, data: { preferences: prefs } });
   }
   res.json({ success: true, preferences: prefs });
+});
+
+// Finance-only: confirms the L1->L2 promotion the PDF says finance must ask
+// for explicitly (every other domain auto-promotes silently).
+trustRouter.post("/confirm-level", async (req, res) => {
+  const { domain } = req.body;
+  if (domain !== "finance") return res.status(400).json({ error: "Only finance requires manual confirmation" });
+  const outcome = await confirmFinanceL2(req.user.id);
+  if (outcome.error) return res.status(400).json(outcome);
+  res.json(outcome);
 });
 
 // search.js — a genuinely global search: fans out across every domain the
