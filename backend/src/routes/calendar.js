@@ -1,5 +1,5 @@
 import express from 'express'
-import { createCalendarAuthUrl, exchangeCodeForTokens, saveCalendarTokens, listEvents, clearCalendarConnection, createMeetingWithGoogleMeet } from '../services/calendar.service.js'
+import { createCalendarAuthUrl, exchangeCodeForTokens, saveCalendarTokens, listEvents, clearCalendarConnection, createMeetingWithGoogleMeet, MEETING_TIME_ZONE } from '../services/calendar.service.js'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
@@ -120,7 +120,18 @@ router.post('/meetings', async (req, res) => {
   try {
     const { title, start, end, description, attendees } = req.body
     if (!title || !start) return res.status(400).json({ error: 'title and start are required' })
+    const startDt = new Date(start)
+    if (Number.isNaN(startDt.getTime())) return res.status(400).json({ success: false, error: 'That start date and time is not valid.' })
+    // One minute of grace: the scheduler's default time is "now", which is
+    // already a few seconds old by the time the request lands.
+    if (startDt.getTime() < Date.now() - 60 * 1000) {
+      return res.status(400).json({ success: false, error: 'That date and time is in the past — please pick a future date and time.' })
+    }
+    if (end && new Date(end).getTime() <= startDt.getTime()) {
+      return res.status(400).json({ success: false, error: 'The meeting must end after it starts.' })
+    }
     const endTime = end || new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString()
+    const timeZone = MEETING_TIME_ZONE
     const meeting = await createMeetingWithGoogleMeet(req.user.id, { title, start, end: endTime, description, attendees: attendees || [] })
     const ledgerEntry = await ledger.add({
       userId: req.user.id,
@@ -142,7 +153,10 @@ router.post('/meetings', async (req, res) => {
       data: {
         userId: req.user.id,
         title,
-        description: `Meeting · ${new Date(start).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`,
+        // Formatted in the meeting's own zone — with no zone given this used the
+        // server's clock (UTC on Render), so the task showed a different time
+        // than the one that was scheduled.
+        description: `Meeting · ${new Date(start).toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })}`,
         status: 'PENDING',
       },
     })

@@ -83,7 +83,16 @@ export async function createEventIfConnected(userId, event) {
   }
 }
 
+// Meetings are always read and shown in India Standard Time (IST) — the
+// calendar event, the invite email Google sends to attendees, and every
+// in-app label — regardless of the phone's or server's own timezone.
+export const MEETING_TIME_ZONE = 'Asia/Kolkata'
+export async function resolveMeetingTimeZone() {
+  return MEETING_TIME_ZONE
+}
+
 export async function createMeetingWithGoogleMeet(userId, { title, start, end, description = '', attendees = [] }) {
+  const meetingTimeZone = MEETING_TIME_ZONE
   const user = await prisma.user.findUnique({ where: { id: userId } })
   const oauth2 = await getAuthClientForUser(user)
   if (!oauth2) throw new Error('Google Calendar not connected. Connect it in Settings → Integrations.')
@@ -93,9 +102,11 @@ export async function createMeetingWithGoogleMeet(userId, { title, start, end, d
 
   const eventBody = {
     summary: title,
-    description,
-    start: { dateTime: new Date(start).toISOString(), timeZone: 'Asia/Kolkata' },
-    end: { dateTime: new Date(end).toISOString(), timeZone: 'Asia/Kolkata' },
+    // States the time in words too, so the invite reads "IST" explicitly
+    // and can't be mistaken for another zone.
+    description: `${description ? description + '\n\n' : ''}Time: ${new Date(start).toLocaleString('en-IN', { timeZone: MEETING_TIME_ZONE, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })} IST (India Standard Time)`,
+    start: { dateTime: new Date(start).toISOString(), timeZone: meetingTimeZone },
+    end: { dateTime: new Date(end).toISOString(), timeZone: meetingTimeZone },
     conferenceData: { createRequest: { requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } },
     extendedProperties: { private: { mnevaSource: 'meeting' } },
     // Without this, Google Calendar applies the user's own default reminder
@@ -119,5 +130,5 @@ export async function createMeetingWithGoogleMeet(userId, { title, start, end, d
     || ev.hangoutLink
     || null
 
-  return { eventId: ev.id, htmlLink: ev.htmlLink, meetLink, title: ev.summary, start: ev.start?.dateTime, end: ev.end?.dateTime }
+  return { eventId: ev.id, htmlLink: ev.htmlLink, meetLink, title: ev.summary, start: ev.start?.dateTime, end: ev.end?.dateTime, timeZone: meetingTimeZone }
 }

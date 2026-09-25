@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Modal,
@@ -467,9 +468,11 @@ function MessageBubble({ message, theme, styles, animate, onDoneTyping, isEditin
         ]}>
           {!!message.attachment && <AttachmentPreview attachment={message.attachment} theme={theme} styles={styles} />}
           {!!message.text && (
-            animate
-              ? <TypewriterText text={message.text} isUser={isUser} styles={styles} onDone={onDoneTyping} />
-              : <RichText text={message.text} isUser={isUser} styles={styles} />
+            <View style={message.attachment ? { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 6 } : undefined}>
+              {animate
+                ? <TypewriterText text={message.text} isUser={isUser} styles={styles} onDone={onDoneTyping} />
+                : <RichText text={message.text} isUser={isUser} styles={styles} />}
+            </View>
           )}
         </View>
       </View>
@@ -514,6 +517,137 @@ function AttachmentPreview({ attachment, theme, styles }) {
   );
 }
 
+
+// ── Voice listening overlay ──────────────────────────────────────────────────
+// Full-screen "agent is listening" experience shown while recording: a
+// gradient orb with expanding pulse rings, a live-looking waveform, an
+// elapsed timer, and clear Stop / Cancel actions — instead of the mic button
+// just turning red with nothing else on screen.
+const WAVE_BARS = [0.5, 0.8, 1, 0.7, 0.95, 0.6, 0.85, 0.55, 0.9];
+function VoiceListeningOverlay({ visible, onStop, onCancel, theme }) {
+  const rings = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+  const bars = useRef(WAVE_BARS.map(() => new Animated.Value(0.25))).current;
+  const orbPulse = useRef(new Animated.Value(1)).current;
+  const [seconds, setSeconds] = useState(0);
+  const voiceStyles = React.useMemo(() => createVoiceStyles(!!theme.isDark), [theme.isDark]);
+
+  useEffect(() => {
+    if (!visible) { setSeconds(0); return undefined; }
+    const timer = setInterval(() => setSeconds((v) => v + 1), 1000);
+
+    const ringLoops = rings.map((r, i) => {
+      r.setValue(0);
+      const loop = Animated.loop(Animated.sequence([
+        Animated.delay(i * 600),
+        Animated.timing(r, { toValue: 1, duration: 1800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]));
+      loop.start();
+      return loop;
+    });
+    const barLoops = bars.map((b, i) => {
+      const loop = Animated.loop(Animated.sequence([
+        Animated.timing(b, { toValue: WAVE_BARS[i], duration: 280 + (i % 4) * 90, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(b, { toValue: 0.2, duration: 280 + ((i + 2) % 4) * 90, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]));
+      loop.start();
+      return loop;
+    });
+    const orbLoop = Animated.loop(Animated.sequence([
+      Animated.timing(orbPulse, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(orbPulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    orbLoop.start();
+
+    return () => {
+      clearInterval(timer);
+      ringLoops.forEach((l) => l.stop());
+      barLoops.forEach((l) => l.stop());
+      orbLoop.stop();
+    };
+  }, [visible]);
+
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={voiceStyles.backdrop}>
+        <View style={voiceStyles.statusPill}>
+          <View style={voiceStyles.liveDot} />
+          <Text style={voiceStyles.statusText}>Mneva is listening</Text>
+        </View>
+
+        <View style={voiceStyles.orbArea}>
+          {rings.map((r, i) => (
+            <Animated.View
+              key={i}
+              style={[
+                voiceStyles.ring,
+                { borderColor: theme.accent, opacity: r.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] }), transform: [{ scale: r.interpolate({ inputRange: [0, 1], outputRange: [1, 2.3] }) }] },
+              ]}
+            />
+          ))}
+          <Animated.View style={{ transform: [{ scale: orbPulse }] }}>
+            <LinearGradient colors={[theme.accentAlt, theme.accent]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={voiceStyles.orb}>
+              <Feather name="mic" size={40} color="#FFFFFF" />
+            </LinearGradient>
+          </Animated.View>
+        </View>
+
+        <View style={voiceStyles.waveRow}>
+          {bars.map((b, i) => (
+            <Animated.View key={i} style={[voiceStyles.waveBar, { backgroundColor: i % 2 ? theme.accent : theme.accentAlt, transform: [{ scaleY: b }] }]} />
+          ))}
+        </View>
+
+        <Text style={voiceStyles.timer}>{mm}:{ss}</Text>
+        <Text style={voiceStyles.hint}>Speak naturally — tap Done when you're finished</Text>
+
+        <View style={voiceStyles.actions}>
+          <TouchableOpacity style={voiceStyles.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
+            <Feather name="x" size={18} color={theme.isDark ? "#FFFFFF" : "#14171F"} />
+            <Text style={voiceStyles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onStop} activeOpacity={0.85} style={voiceStyles.doneWrap}>
+            <LinearGradient colors={[theme.accentAlt, theme.accent]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={voiceStyles.doneBtn}>
+              <Feather name="check" size={18} color="#FFFFFF" />
+              <Text style={voiceStyles.doneText}>Done</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Dark theme keeps the deep-navy look; light theme gets a soft, bright
+// backdrop with dark text so the overlay still feels native to the app.
+const createVoiceStyles = (isDark) => {
+  const text = isDark ? "#FFFFFF" : "#14171F";
+  const textSoft = isDark ? "rgba(255,255,255,0.6)" : "#6B7280";
+  const chip = isDark ? "rgba(255,255,255,0.08)" : "rgba(20,23,31,0.06)";
+  const chipStrong = isDark ? "rgba(255,255,255,0.12)" : "rgba(20,23,31,0.08)";
+  return StyleSheet.create({
+    backdrop: { flex: 1, backgroundColor: isDark ? "rgba(8,10,20,0.94)" : "rgba(246,247,251,0.97)", alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
+    statusPill: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: chip, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 56 },
+    liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#FF5A6E" },
+    statusText: { color: isDark ? "rgba(255,255,255,0.9)" : "#374151", fontSize: 13, fontWeight: "700", letterSpacing: 0.3 },
+    orbArea: { width: 220, height: 220, alignItems: "center", justifyContent: "center", marginBottom: 40 },
+    ring: { position: "absolute", width: 112, height: 112, borderRadius: 56, borderWidth: 2 },
+    orb: { width: 112, height: 112, borderRadius: 56, alignItems: "center", justifyContent: "center", shadowColor: "#7B5FE8", shadowOffset: { width: 0, height: isDark ? 0 : 8 }, shadowOpacity: isDark ? 0.7 : 0.35, shadowRadius: isDark ? 24 : 20, elevation: 12 },
+    waveRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 56, marginBottom: 20 },
+    waveBar: { width: 5, height: 52, borderRadius: 3 },
+    timer: { color: text, fontSize: 30, fontWeight: "800", letterSpacing: 2, fontVariant: ["tabular-nums"] },
+    hint: { color: textSoft, fontSize: 13, marginTop: 8, textAlign: "center" },
+    actions: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 56, alignSelf: "stretch" },
+    cancelBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15, borderRadius: 16, backgroundColor: chipStrong },
+    cancelText: { color: text, fontSize: 15, fontWeight: "700" },
+    doneWrap: { flex: 1.4, borderRadius: 16, overflow: "hidden" },
+    doneBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15 },
+    doneText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
+  });
+};
+
 // ── Meeting Scheduler Modal ──────────────────────────────────────────────────
 function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles }) {
   const [title, setTitle] = useState("");
@@ -526,6 +660,40 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // How far the sheet must be lifted so the on-screen keyboard never covers
+  // the field being typed into. Measured against the keyboard's real top
+  // edge instead of trusting KeyboardAvoidingView/adjustResize, which behave
+  // differently inside an Android Modal window from device to device.
+  const [keyboardLift, setKeyboardLift] = useState(0);
+  const sheetRef = useRef(null);
+  // The sheet's height is capped to what is actually free on THIS device
+  // (screen height minus the footer, keyboard and status bar) instead of a
+  // percentage — a percentage let tall content run under the status bar on
+  // real phones and pushed the header and buttons off-screen, while looking
+  // fine on the emulator's particular screen size.
+  // Rendered inline inside the screen (not a native Modal window), so its
+  // coordinates are the screen's own — the footer sits exactly beneath it,
+  // with no per-device gap, and the space it has is measured, not guessed.
+  const [containerHeight, setContainerHeight] = useState(useWindowDimensions().height);
+  // containerHeight is already below the status bar (the screen's own safe
+  // area), so only a small breathing margin is kept at the top.
+  const availableHeight = Math.max(260, containerHeight - bottomInset - keyboardLift - 16);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      const keyboardTop = e.endCoordinates.screenY;
+      setTimeout(() => {
+        sheetRef.current?.measureInWindow((x, y, w, h) => {
+          const overlap = y + h - keyboardTop;
+          setKeyboardLift((prev) => (overlap > 0 ? prev + overlap : prev));
+        });
+      }, 80);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardLift(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   const fmtDate = (d) => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   const fmtTime = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -535,13 +703,24 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
     setError("");
     setLoading(true);
     try {
-      const start = new Date(selectedDate);
-      start.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+      // The date/time picked is India Standard Time, whatever timezone the
+      // phone itself is set to — build the exact instant from the picked
+      // clock values with an explicit +05:30 offset.
+      const two = (n) => String(n).padStart(2, "0");
+      const start = new Date(
+        `${selectedDate.getFullYear()}-${two(selectedDate.getMonth() + 1)}-${two(selectedDate.getDate())}` +
+        `T${two(selectedTime.getHours())}:${two(selectedTime.getMinutes())}:00+05:30`
+      );
+      if (start.getTime() < Date.now() - 60 * 1000) {
+        setError("That date and time is in the past — please pick a future date and time.");
+        setLoading(false);
+        return;
+      }
       const end = new Date(start.getTime() + Number(duration) * 60000);
       const attendeeList = attendees ? attendees.split(",").map(s => s.trim()).filter(Boolean) : [];
       const res = await apiFetch("/api/calendar/meetings", {
         method: "POST",
-        body: { title, start: start.toISOString(), end: end.toISOString(), description, attendees: attendeeList },
+                body: { title, start: start.toISOString(), end: end.toISOString(), description, attendees: attendeeList },
       });
       if (!res.success) throw new Error(res.error || "Failed to create meeting");
       onCreated(res.meeting);
@@ -555,13 +734,15 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
     }
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <View style={StyleSheet.absoluteFill} onLayout={(e) => setContainerHeight(e.nativeEvent.layout.height)}>
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.modalOverlay} />
+        <View style={[styles.modalOverlay, { bottom: bottomInset }]} />
       </TouchableWithoutFeedback>
-      <KeyboardAvoidingView style={styles.modalSheet} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <View style={[styles.modalContent, { paddingBottom: 20 + bottomInset }]}>
+      <View ref={sheetRef} collapsable={false} style={[styles.modalSheet, { bottom: bottomInset + keyboardLift }]}>
+        <View style={[styles.modalContent, { paddingBottom: 20, maxHeight: availableHeight }]}>
           <View style={styles.sheetHandle} />
 
           <View style={styles.modalHeader}>
@@ -579,7 +760,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
             <Text style={styles.meetBadgeText}>Google Meet link auto-generated</Text>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={styles.fieldLabel}>Meeting Title *</Text>
             <TextInput
               style={styles.fieldInput}
@@ -618,7 +799,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
             <Text style={styles.fieldLabel}>Time *</Text>
             <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowTimePicker(true)}>
               <Feather name="clock" size={16} color={theme.accent} />
-              <Text style={styles.pickerBtnText}>{fmtTime(selectedTime)}</Text>
+              <Text style={styles.pickerBtnText}>{fmtTime(selectedTime)} IST</Text>
               <Feather name="chevron-down" size={16} color={theme.faint} />
             </TouchableOpacity>
             {showTimePicker && (
@@ -674,27 +855,29 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
               multiline
             />
 
-            {!!error && <Text style={styles.errorText}>{error}</Text>}
-
-            <View style={styles.modalBtns}>
-              <TouchableOpacity
-                style={[styles.createBtn, loading && { opacity: 0.6 }]}
-                onPress={handleCreate}
-                disabled={loading}
-              >
-                {loading
-                  ? <ActivityIndicator size="small" color="#FFFFFF" />
-                  : <Text style={styles.createBtnText}>📹 Create Meeting + Meet Link</Text>
-                }
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
           </ScrollView>
+
+          {/* Pinned below the scrolling form so Create/Cancel are always
+              reachable, however small the screen or tall the form. */}
+          {!!error && <Text style={styles.errorText}>{error}</Text>}
+          <View style={styles.modalBtns}>
+            <TouchableOpacity
+              style={[styles.createBtn, loading && { opacity: 0.6 }]}
+              onPress={handleCreate}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color="#FFFFFF" />
+                : <Text style={styles.createBtnText}>📹 Create Meeting + Meet Link</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </View>
   );
 }
 
@@ -721,8 +904,15 @@ export default function AskAI({ navigation }) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // A picked file/photo waits here (shown in the input bar) until Send —
+  // it is not uploaded the moment it's chosen, so a question can be typed
+  // alongside it first.
+  const [pendingAttachment, setPendingAttachment] = useState(null);
   const [attachModal, setAttachModal] = useState(false);
   const [meetModal, setMeetModal] = useState(false);
+  // Measured footer height — the Schedule sheet sits above it so the whole
+  // footer stays visible.
+  const [tabBarH, setTabBarH] = useState(0);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [speaking, setSpeaking] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // { id, summary, tool, domain, input }
@@ -1087,7 +1277,7 @@ export default function AskAI({ navigation }) {
   // history instead of the current `messages` state — needed because the
   // truncation from handleSaveEdit is a scheduled state update, not yet
   // visible to this closure if we read `messages` directly right after it.
-  const handleSend = async (text, historyBase) => {
+  const handleSend = async (text, historyBase, attachment) => {
     const content = (text || input).trim();
     if (!content || aiLoading) return;
     if (!text) setInput("");
@@ -1102,7 +1292,7 @@ export default function AskAI({ navigation }) {
     }
 
     const baseMessages = historyBase || messages;
-    const userMsg = { id: String(Date.now()), sender: "user", text: content, ts: new Date().toISOString() };
+    const userMsg = { id: String(Date.now()), sender: "user", text: content, ts: new Date().toISOString(), ...(attachment ? { attachment } : {}) };
     const updatedMessages = [...baseMessages, userMsg];
     setMessages(updatedMessages);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -1110,13 +1300,30 @@ export default function AskAI({ navigation }) {
 
     setAiLoading(true);
     try {
+      // Photo/file + question travel as ONE message: the file is uploaded and
+      // indexed first (so the answer can use it), then the question is sent.
+      let attachedDocId = null;
+      if (attachment) {
+        const uploaded = await uploadAttachmentCore(attachment.uri, attachment.name, attachment.mimeType);
+        if (!uploaded.ok) {
+          addMessage({ id: String(Date.now() + 1), sender: "ai", text: `Upload failed: ${uploaded.error}`, ts: new Date().toISOString() });
+          setAiLoading(false);
+          return;
+        }
+        attachedDocId = uploaded.data?.document?.id || null;
+      }
       const apiMessages = updatedMessages.map(m => ({
         role: m.sender === "user" ? "user" : "assistant",
-        content: m.text,
+        content: m.attachment
+          ? `${m.text}\n\n[Attached ${m.attachment.type}: ${m.attachment.name} — uploaded and indexed]`
+          : m.text,
       }));
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
-        body: { messages: apiMessages },
+        body: {
+          messages: apiMessages,
+          ...(attachedDocId ? { attachment: { documentId: attachedDocId, name: attachment.name, type: attachment.type } } : {}),
+        },
         // The agent loop can run up to 10 sequential tool-calling iterations
         // against OpenAI plus real tool execution per turn — the default 15s
         // timeout could abort a genuinely-still-working request and show a
@@ -1211,6 +1418,12 @@ export default function AskAI({ navigation }) {
     }
   };
 
+  // Abandons the take without transcribing or sending anything.
+  const cancelRecording = async () => {
+    setRecording(false);
+    try { await audioRecorder.stop(); } catch {}
+  };
+
   const handleMicPress = () => {
     if (recording) {
       stopRecording();
@@ -1218,6 +1431,21 @@ export default function AskAI({ navigation }) {
       Speech.stop();
       setSpeaking(false);
       startRecording();
+    }
+  };
+
+  // The network half of an upload, with no chat bubbles — used when the file
+  // rides along with a typed question in one message.
+  const uploadAttachmentCore = async (uri, name, mimeType) => {
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const data = await apiFetch('/api/documents/upload', {
+        method: "POST",
+        body: { fileBase64: base64, fileName: name, mimeType: mimeType || 'application/octet-stream' },
+      });
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: err?.message || "please try again" };
     }
   };
 
@@ -1265,6 +1493,29 @@ export default function AskAI({ navigation }) {
     }
   };
 
+  // Picking only stages the file in the input bar; the actual upload (and
+  // any question typed with it) happens when Send is pressed.
+  const stageAttachment = (uri, name, mimeType) => {
+    setAttachModal(false);
+    setPendingAttachment({ uri, name, mimeType, isImage: (mimeType || "").startsWith("image/") });
+  };
+
+  const handleSendPress = async () => {
+    if (aiLoading || uploading) return;
+    if (!pendingAttachment) { handleSend(); return; }
+    const att = pendingAttachment;
+    const text = input.trim();
+    setPendingAttachment(null);
+    setInput("");
+    if (text) {
+      // File + question = one message bubble.
+      await handleSend(text, undefined, { type: att.isImage ? "image" : "document", uri: att.uri, name: att.name, mimeType: att.mimeType });
+    } else {
+      // File alone keeps the original upload-and-confirm flow.
+      await uploadFile(att.uri, att.name, att.mimeType);
+    }
+  };
+
   // ── Document picker ───────────────────────────────────────────────────────
   const handleDocUpload = async () => {
     try {
@@ -1275,7 +1526,7 @@ export default function AskAI({ navigation }) {
       });
       if (result.canceled || !result.assets?.[0]) return;
       const file = result.assets[0];
-      await uploadFile(file.uri, file.name, file.mimeType);
+      stageAttachment(file.uri, file.name, file.mimeType);
     } catch {
       addMessage({ id: String(Date.now()), sender: "ai", text: "Document upload failed. Please try again.", ts: new Date().toISOString() });
     }
@@ -1304,7 +1555,7 @@ export default function AskAI({ navigation }) {
       const asset = result.assets[0];
       const name = asset.fileName || `photo_${Date.now()}.jpg`;
       const mimeType = asset.mimeType || "image/jpeg";
-      await uploadFile(asset.uri, name, mimeType);
+      stageAttachment(asset.uri, name, mimeType);
     } catch {
       addMessage({ id: String(Date.now()), sender: "ai", text: "Image upload failed. Please try again.", ts: new Date().toISOString() });
     }
@@ -1315,10 +1566,10 @@ export default function AskAI({ navigation }) {
     const start = meeting.start ? new Date(meeting.start) : null;
     const end   = meeting.end   ? new Date(meeting.end)   : null;
     const dateStr = start
-      ? start.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
+      ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", year: "numeric" })
       : "";
     const timeStr = start
-      ? start.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
+      ? `${start.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true })} IST`
       : "";
     const durationMin = start && end ? Math.round((end - start) / 60000) : null;
     const durationStr = durationMin
@@ -1541,8 +1792,28 @@ export default function AskAI({ navigation }) {
         </ScrollView>
         )}
 
+        {/* Staged attachment preview — uploads on Send, removable until then */}
+        {pendingAttachment && (
+          <View style={[styles.pendingAttachRow, { marginHorizontal: horizontalPad }]}>
+            {pendingAttachment.isImage ? (
+              <Image source={{ uri: pendingAttachment.uri }} style={styles.pendingAttachThumb} resizeMode="cover" />
+            ) : (
+              <View style={styles.pendingAttachFileIcon}>
+                <Feather name="file-text" size={18} color="#FFFFFF" />
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pendingAttachName} numberOfLines={1}>{pendingAttachment.name}</Text>
+              <Text style={styles.pendingAttachHint}>Will upload when you send</Text>
+            </View>
+            <TouchableOpacity onPress={() => setPendingAttachment(null)} hitSlop={8} style={styles.pendingAttachRemove}>
+              <Feather name="x" size={16} color={theme.muted} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Input bar */}
-        <View style={[styles.inputBar, { paddingHorizontal: horizontalPad, paddingBottom: 12 }]}>
+        <View pointerEvents={meetModal ? "none" : "auto"} style={[styles.inputBar, { paddingHorizontal: horizontalPad, paddingBottom: 12 }, meetModal && { opacity: 0 }]}>
           {/* Attachment button — opens picker modal */}
           <TouchableOpacity style={styles.iconButton} onPress={() => setAttachModal(true)} disabled={uploading}>
             <Feather name={uploading ? "loader" : "paperclip"} size={20} color={uploading ? theme.accent : theme.muted} />
@@ -1550,7 +1821,7 @@ export default function AskAI({ navigation }) {
 
           <TextInput
             style={styles.textInput}
-            placeholder="Ask anything or use voice"
+            placeholder={pendingAttachment ? "Add a message (optional)" : "Ask anything or use voice"}
             placeholderTextColor={theme.placeholder}
             value={input}
             onChangeText={setInput}
@@ -1570,10 +1841,10 @@ export default function AskAI({ navigation }) {
 
           <TouchableOpacity
             style={styles.sendButton}
-            onPress={() => handleSend()}
-            disabled={!input.trim() || aiLoading}
+            onPress={handleSendPress}
+            disabled={(!input.trim() && !pendingAttachment) || aiLoading || uploading}
           >
-            {input.trim() && !aiLoading ? (
+            {(input.trim() || pendingAttachment) && !aiLoading && !uploading ? (
               <LinearGradient
                 colors={[theme.accentAlt, theme.accent]}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -1595,7 +1866,7 @@ export default function AskAI({ navigation }) {
           showing/hiding (its 'padding'/'height' resize behavior) dragged
           the tab bar up along with the input bar. Keeping it outside pins
           it to the bottom of the screen regardless of keyboard state. */}
-      <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
+      <View onLayout={(e) => setTabBarH(e.nativeEvent.layout.height)} style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => { Speech.stop(); setSpeaking(false); navigation?.navigate?.("Home"); }}>
           <Ionicons name="home" size={22} color={theme.faint} />
           <Text style={styles.tabLabel}>HOME</Text>
@@ -1646,11 +1917,18 @@ export default function AskAI({ navigation }) {
         </Modal>
       )}
 
+      <VoiceListeningOverlay
+        visible={recording}
+        onStop={stopRecording}
+        onCancel={cancelRecording}
+        theme={theme}
+      />
+
       <MeetingModal
         visible={meetModal}
         onClose={() => setMeetModal(false)}
         onCreated={handleMeetingCreated}
-        bottomInset={insets.bottom}
+        bottomInset={tabBarH}
         theme={theme}
         styles={styles}
       />
@@ -1961,6 +2239,12 @@ const createStyles = (theme) => StyleSheet.create({
   denyBtnText: { color: theme.danger, fontSize: 13, fontWeight: '700' },
 
   // ── Meeting Modal ──────────────────────────────────────────────────────────
+  pendingAttachRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.card, borderRadius: 14, borderWidth: 1, borderColor: theme.border, padding: 8, marginBottom: 6 },
+  pendingAttachThumb: { width: 44, height: 44, borderRadius: 10 },
+  pendingAttachFileIcon: { width: 44, height: 44, borderRadius: 10, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center" },
+  pendingAttachName: { fontSize: 13, fontWeight: "700", color: theme.text },
+  pendingAttachHint: { fontSize: 11, color: theme.faint, marginTop: 2 },
+  pendingAttachRemove: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.soft, alignItems: "center", justifyContent: "center" },
   modalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.overlay },
   modalSheet: { position: "absolute", bottom: 0, left: 0, right: 0 },
   modalContent: {

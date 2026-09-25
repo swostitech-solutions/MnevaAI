@@ -61,6 +61,47 @@ export async function deletePersistedFile(filePath) {
   await fs.unlink(resolved).catch(() => {})
 }
 
+export async function readPersistedFile(filePath) {
+  if (filePath.startsWith('s3://')) {
+    const s3 = await getS3()
+    if (!s3) throw new Error('S3 not configured')
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+    const key = filePath.replace(`s3://${process.env.AWS_S3_BUCKET}/`, '')
+    const result = await s3.send(new GetObjectCommand({ Bucket: process.env.AWS_S3_BUCKET, Key: key }))
+    const chunks = []
+    for await (const chunk of result.Body) chunks.push(chunk)
+    return Buffer.concat(chunks)
+  }
+  const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath)
+  return fs.readFile(resolved)
+}
+
+const IMAGE_MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' }
+const MAX_ATTACHMENT_TEXT_CHARS = 40000
+const MAX_ATTACHMENT_IMAGE_BYTES = 8 * 1024 * 1024
+
+// Loads a previously-uploaded file so it can be handed to the AI together
+// with the user's question: a photo as an image the model can actually see,
+// anything else as its full extracted text (not a few search-hit fragments).
+export async function loadAttachmentForChat(userId, documentId) {
+  const doc = await prisma.document.findFirst({ where: { id: documentId, userId } })
+  if (!doc?.filePath) return null
+  const name = doc.title || 'attachment'
+  const ext = path.extname(doc.filePath).toLowerCase() || path.extname(name).toLowerCase()
+  const buffer = await readPersistedFile(doc.filePath)
+
+  if (IMAGE_MIME_BY_EXT[ext]) {
+    if (buffer.length > MAX_ATTACHMENT_IMAGE_BYTES) return { name, type: 'image', tooLarge: true }
+    return { name, type: 'image', dataUrl: `data:${IMAGE_MIME_BY_EXT[ext]};base64,${buffer.toString('base64')}` }
+  }
+
+  const { parseFile } = await import('../documents/parser.js')
+  const parsed = await parseFile(doc.filePath, undefined, buffer)
+  const full = String(parsed.text || '')
+  const truncated = full.length > MAX_ATTACHMENT_TEXT_CHARS
+  return { name, type: 'document', text: full.slice(0, MAX_ATTACHMENT_TEXT_CHARS), truncated, totalChars: full.length }
+}
+
 export async function getDocuments(req, res) {
   try {
     const docs = await prisma.document.findMany({
@@ -100,12 +141,29 @@ export async function uploadDocument(req, res) {
     })
 
     if (parsed.type === 'image' && parsed.ocr === false) {
-      const detail = parsed.error || 'No readable text found in the image.'
-      return res.status(201).json({
-        document, chunks: 0,
-        preview: parsed.text ? parsed.text.slice(0, 500) : '',
-        fileType: parsed.type, stored: [], note: detail,
+      // No OCR text — the photo is still saved, and the AI looks at it
+      // directly when asked about it. Also describe it in the background so
+      // it can be found later by content.
+      res.status(201).json({
+        document, chunks: 0, preview: '', fileType: parsed.type, stored: [],
+        note: 'Photo saved — ask me about it and I will look at it.',
       })
+      setImmediate(async () => {
+        try {
+          const { describeImage } = await import('../documents/vision.js')
+          const description = await describeImage(req.file.buffer, req.file.mimetype || 'image/jpeg')
+          const imgChunks = chunkText(description, { documentId: document.id, documentTitle: title, fileType: 'image' })
+          for (const chunk of imgChunks) {
+            await memoryService.store({
+              userId: req.user.id, text: chunk.text, type: 'document',
+              metadata: { documentId: document.id, fileName: req.file.originalname, chunkIndex: chunk.chunkIndex, totalChunks: imgChunks.length },
+            })
+          }
+        } catch (err) {
+          logger.warn(`Image description indexing failed for doc ${document.id}: ${err.message}`)
+        }
+      })
+      return
     }
 
     const chunks = chunkText(parsed.text, {

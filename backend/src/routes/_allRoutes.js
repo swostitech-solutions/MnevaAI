@@ -1295,7 +1295,7 @@ const upload = multer({
 export const agentRouter = express.Router();
 agentRouter.post("/chat", async (req, res) => {
   try {
-    const { messages } = req.body;
+    const { messages, attachment } = req.body;
     if (!Array.isArray(messages))
       return res.status(400).json({ error: "messages[] required" });
     const user = (await userStore.getById(req.user.id)) || req.user;
@@ -1381,16 +1381,39 @@ agentRouter.post("/chat", async (req, res) => {
       })(),
     ]);
 
-    const result = await runLangGraphOrchestrator({
-      messages: messages.slice(-20),
-      user,
-      context: {
-        sessionContext,
-        recentMemory,
-        onboardingContext: onboardingProfile || null,
-        liveData,
-      },
-    });
+    const chatContext = {
+      sessionContext,
+      recentMemory,
+      onboardingContext: onboardingProfile || null,
+      liveData,
+    };
+
+    // A file/photo sent WITH a question goes straight to the AI with its real
+    // content attached — not through the orchestrator's document-search
+    // route, which answers "read/summarize this file" by dumping a few raw
+    // search-hit fragments back at the user.
+    let attached = null;
+    if (attachment?.documentId) {
+      try {
+        const { loadAttachmentForChat } = await import("../controllers/document.controller.js");
+        attached = await loadAttachmentForChat(req.user.id, attachment.documentId);
+      } catch (err) {
+        logger.warn(`Could not load attachment ${attachment.documentId}: ${err.message}`);
+      }
+    }
+
+    let result;
+    if (attached) {
+      const { runAutonomyEngine } = await import("../agents/autonomyEngine.js");
+      const engineResult = await runAutonomyEngine({
+        messages: messages.slice(-20),
+        user,
+        context: { ...chatContext, attachment: attached },
+      });
+      result = { ...engineResult, route: "general", domain: "general", ts: new Date().toISOString() };
+    } else {
+      result = await runLangGraphOrchestrator({ messages: messages.slice(-20), user, context: chatContext });
+    }
 
     res.json({
       ...result,

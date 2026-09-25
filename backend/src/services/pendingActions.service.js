@@ -81,14 +81,13 @@ export function decideGate(tool, domainTrust, amount = 0) {
   return { mode: 'pending', domain }
 }
 
+// Kept short and free of internal jargon — this text is relayed to the user
+// almost verbatim, so it must not talk about levels or modes.
 export function blockedMessage(reason, actionLabel) {
-  if (reason === 'observe_mode') {
-    return `I'm set to Observe mode for this, so I won't ${actionLabel} automatically — raise this domain's trust level in Trust & Autonomy if you'd like me to help with this.`
-  }
   if (reason === 'domain_disabled') {
-    return `That category is turned off in your autonomy settings, so I won't ${actionLabel} automatically — enable it in Trust & Autonomy if you'd like me to help with this.`
+    return `I can't ${actionLabel} automatically because this is switched off — you can turn it on in Trust & Autonomy, or do it yourself in the app.`
   }
-  return `I can't ${actionLabel} automatically right now.`
+  return `I can't ${actionLabel} automatically yet — you can do it yourself in the app, or enable it in Trust & Autonomy.`
 }
 
 export async function executeSendEmailSideEffect(userId, input) {

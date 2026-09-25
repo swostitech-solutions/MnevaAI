@@ -508,7 +508,7 @@ export const MNEVA_TOOLS = [
   },
   {
     name: 'send_email',
-    description: 'Send an approved email draft. Requires trust level ≥ 2.',
+    description: 'Send an approved email draft.',
     input_schema: { type: 'object', properties: { email_id: { type: 'string' }, draft: { type: 'string' }, recipient: { type: 'string' } }, required: ['email_id', 'draft', 'recipient'] }
   },
   {
@@ -979,7 +979,7 @@ export async function executeTool(name, input, userId, opts = {}) {
       const timeZone = await getUserTimeZone(userId)
       const scheduledAt = normalizeScheduledTime(input.time, timeZone)
       if (!scheduledAt || scheduledAt.getTime() <= Date.now()) {
-        return { success: false, error: 'Please provide a valid future date and time for this reminder.' }
+        return { success: false, error: 'That date and time is in the past (or could not be understood). Tell the user it is a past date and ask for a future date and time.' }
       }
       const scheduled = scheduledAt.toISOString()
       // The in-app record is the source of truth.  A Redis/BullMQ outage must
@@ -1074,9 +1074,9 @@ export async function executeTool(name, input, userId, opts = {}) {
     case 'schedule_event': {
       try {
         const { createMeetingWithGoogleMeet } = await import('../services/calendar.service.js')
-        const timeZone = await getUserTimeZone(userId)
+        const timeZone = 'Asia/Kolkata' // meetings are always scheduled and shown in IST
         const startDt = normalizeScheduledTime(input.start, timeZone)
-        if (!startDt || startDt.getTime() <= Date.now()) return { success: false, error: 'Please provide a valid future start date and time.' }
+        if (!startDt || startDt.getTime() <= Date.now()) return { success: false, error: 'That date and time is in the past (or could not be understood). Tell the user it is a past date and ask for a future date and time.' }
         const endDt = input.end ? normalizeScheduledTime(input.end, timeZone) : new Date(startDt.getTime() + 60 * 60 * 1000)
         if (!endDt || endDt <= startDt) return { success: false, error: 'Meeting end time must be after its start time.' }
         let meeting
@@ -1088,6 +1088,7 @@ export async function executeTool(name, input, userId, opts = {}) {
             end: endDt.toISOString(),
             description: input.description || '',
             attendees: input.attendees || [],
+            timeZone,
           })
         } catch (err) {
           // A calendar connection is optional for tracking a meeting inside
@@ -1548,7 +1549,7 @@ export async function executeTool(name, input, userId, opts = {}) {
       if (!pet) return { success: false, error: `No pet named "${input.pet_name}" found for this account. Add the pet first with add_pet.` }
       const timeZone = await getUserTimeZone(userId)
       const remindAt = normalizeScheduledTime(input.remind_at, timeZone)
-      if (!remindAt || remindAt.getTime() <= Date.now()) return { success: false, error: 'Please provide a valid future date and time for this reminder.' }
+      if (!remindAt || remindAt.getTime() <= Date.now()) return { success: false, error: 'That date and time is in the past (or could not be understood). Tell the user it is a past date and ask for a future date and time.' }
       const reminder = await prisma.petReminder.create({
         data: { petId: pet.id, userId, type: input.type, title: input.title, remindAt, notes: input.notes || null },
       })
@@ -1827,15 +1828,7 @@ async function buildSystemPrompt(user, context = {}) {
 
   return `You are Mneva, an autonomous AI Chief of Staff for ${user.name || 'the user'}.
 
-IDENTITY: You are not a chatbot. You are an autonomous AI agent that acts on behalf of the user — earning trust domain by domain through the Autonomy Engine.
-
-AUTONOMY LEVELS:
-- L1 Observe: Monitor and surface insights silently
-- L2 Suggest: Surface recommendations and draft actions for approval  
-- L3 Draft & Prepare: Prepare complete actions awaiting one-tap approval
-- L4 Act: Execute approved actions autonomously
-
-CURRENT TRUST LEVEL: L${user.trustLevel || 2} — ${['','Observe','Suggest','Draft & Prepare','Act'][user.trustLevel || 2]}
+IDENTITY: You are not a chatbot. You are an autonomous AI agent that acts on behalf of the user.
 
 CRITICAL RULES:
 1. Financial actions ≥ ₹1,000 ALWAYS require biometric verification — mention this
@@ -1860,6 +1853,8 @@ CRITICAL RULES:
 20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, add_portfolio_holding, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
 21. RESPONSE FORMATTING: The chat renders real markdown — **bold**, "- " bullets, "1. " numbered lists, "### " headers, and pipe tables — so use it the way a polished AI product (ChatGPT/Claude) would, not as plain unbroken prose. Guidelines: bold the 2-3 numbers or terms in a reply that the user's eye should land on first (an amount, a date, a status), never whole sentences. Use a bulleted list for 3+ related items (a list of bills, options, or notes) instead of comma-stuffing them into one sentence. Use short paragraphs (2-3 sentences); a wall of text is exactly what this is meant to avoid. Reach for a "### " header only when a reply genuinely has multiple sections (a daily brief, a full summary) — never for a one-line answer or a single confirmation. Match the weight of the formatting to the weight of the content: a yes/no answer or a single fact is one plain sentence, not a bulleted list of one. Never show the user raw tool-call JSON, field names like "med_name", or an internal error string verbatim — always translate it into a natural sentence first.
 22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
+25. ATTACHMENTS: When a file's text or a photo is included in the user's message, that IS the file — read it and answer from it directly (summarize, analyze, extract, explain, answer questions about it). Never say you cannot see or open attachments when their content is present. Refer to specific details from it. If the file text is marked as truncated, say the answer is based on the first part.
+24. ANSWER QUALITY AND STYLE: Reply like a sharp, efficient assistant. Lead with the answer or the result in the first sentence — no greeting filler, no "Sure!/Certainly!", no restating the question, no listing what you can or cannot do. Keep it as short as the question allows: a simple question gets 1-2 sentences, a task gets the outcome plus only the key details (name, amount, date, time). NEVER mention trust levels, autonomy levels, "Observe mode", L1-L4, or the Autonomy Engine in a reply unless the user explicitly asks about them — they are internal settings, not something to explain in answers. If a tool result says an action was not done or is waiting for approval, say so in one short, plain sentence and give the simple next step (for example "I've prepared this — approve it in the app to send it" or "I can't add that automatically yet — you can add it yourself from the Family screen"), without explaining why in terms of levels or settings. Do not end with generic offers like "Let me know if you need anything else".
 23. REMINDER RECURRENCE: set_reminder's "repeat" parameter defaults to "once" whenever you don't pass it — so whenever the user's own words imply recurrence ("every day", "daily", "each week", "weekly", "every month", "monthly", or the Hindi/Hinglish equivalents "roz", "har din", "har hafte", "har mahine"), you MUST pass the matching value ("daily"/"weekly"/"monthly") yourself. Never leave a recurring request as a one-time reminder just because it wasn't spelled out in English — the reminder the user actually asked for and the one that gets saved must match.
 
 USER PROFILE (registered account details — answer any personal questions from this):
@@ -1867,13 +1862,11 @@ USER PROFILE (registered account details — answer any personal questions from 
 - Email Address: ${user.email || 'Not set'}
 - City / Location: ${user.city || 'Not set'}
 - Plan: ${user.plan || 'Free'}
-- Trust Level: L${user.trustLevel || 1}
 - Member Since: ${user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Unknown'}
 - Email Verified: ${user.emailVerified ? 'Yes' : 'No'}
 
 USER CONTEXT:
 - Currency: ₹ (INR)
-- Trust Score: ${user.stats?.trustScore || 40}%
 - Session context: ${JSON.stringify(sessionContext).slice(0, 1200)}
 
 ${profileSummary ? `${profileSummary}\n\n` : ''}${memorySummary}${liveDataSummary}${familyContext}
@@ -1916,6 +1909,33 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   const recentMemory = Array.isArray(context.recentMemory) ? context.recentMemory : []
   const topMemory = recentMemory.slice(0, 3)
   const agentMsgs = [...messages]
+  // A file/photo attached to the latest question is given to the model
+  // directly: a photo as an actual image, anything else as its full text.
+  const attachment = context.attachment
+  if (attachment) {
+    const lastIdx = agentMsgs.length - 1
+    const last = agentMsgs[lastIdx]
+    const question = typeof last?.content === 'string' ? last.content : ''
+    if (last && last.role === 'user') {
+      if (attachment.type === 'image' && attachment.dataUrl) {
+        agentMsgs[lastIdx] = {
+          ...last,
+          content: [
+            { type: 'text', text: `${question}\n\n(The user attached the photo "${attachment.name}" — it is included below. Look at it and answer from what you see.)` },
+            { type: 'image_url', image_url: { url: attachment.dataUrl } },
+          ],
+        }
+      } else if (attachment.type === 'image') {
+        agentMsgs[lastIdx] = { ...last, content: `${question}\n\n(The user attached the photo "${attachment.name}", but it was too large to read. Tell them to send a smaller version.)` }
+      } else if (attachment.type === 'document') {
+        const note = attachment.truncated ? ` (showing the first ${attachment.text.length} of ${attachment.totalChars} characters)` : ''
+        agentMsgs[lastIdx] = {
+          ...last,
+          content: `${question}\n\n--- Attached file: ${attachment.name}${note} ---\n${attachment.text || '(the file has no readable text)'}\n--- end of attached file ---`,
+        }
+      }
+    }
+  }
   const allToolResults = []
   const executedActionResults = new Map()
   let iterations = 0
