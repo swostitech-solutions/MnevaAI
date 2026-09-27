@@ -13,6 +13,7 @@ import { apiFetch, peekCachedResponse } from '../api/client';
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
+import FamilyReminderToggle from '../components/FamilyReminderToggle';
 
 const FREQUENCIES = ['Once daily', 'Twice daily', 'Thrice daily', 'Every 8 hrs', 'Weekly', 'As needed'];
 const MEAL_TIMES  = ['Before meal', 'After meal', 'With meal', 'Empty stomach'];
@@ -28,6 +29,9 @@ function formatDoseTime(hhmm) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
+
+// Doctor names take letters, spaces and . ' - only ("Dr. A. K. Sharma").
+const DOCTOR_INVALID_CHARS = /[^A-Za-z\u00C0-\uFFFF\s.'\-]/g;
 
 const EMPTY_FORM = { medName: '', dosage: '', frequency: '', mealTime: '', parent: '', startDate: '', duration: '', doctor: '', notes: '', refillDate: '', doseTimes: [] };
 
@@ -99,7 +103,14 @@ export default function ParentMedication({ navigation }) {
   }, [on]);
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
-  const canSave = form.medName.trim() && form.dosage.trim() && form.frequency && form.parent;
+  const [doctorError, setDoctorError] = useState('');
+  const setDoctor = (text) => {
+    const cleaned = text.replace(DOCTOR_INVALID_CHARS, '').replace(/\s{2,}/g, ' ');
+    setDoctorError(cleaned !== text.replace(/\s{2,}/g, ' ') ? 'Only letters are allowed — numbers and symbols are not accepted' : '');
+    setField('doctor', cleaned);
+  };
+  const doctorOk = !form.doctor.trim() || /[A-Za-z\u00C0-\uFFFF]/.test(form.doctor);
+  const canSave = form.medName.trim() && form.dosage.trim() && form.frequency && form.parent && doctorOk;
 
   const [showDoseTimePicker, setShowDoseTimePicker] = useState(false);
   const addDoseTime = (date) => {
@@ -117,6 +128,7 @@ export default function ParentMedication({ navigation }) {
         body: form,
       });
       setForm(EMPTY_FORM);
+      setDoctorError('');
       setModal(false);
     } catch { /* socket will update state */ }
     finally { setSaving(false); }
@@ -165,6 +177,8 @@ export default function ParentMedication({ navigation }) {
           contentContainerStyle={[styles.scrollContent, { paddingHorizontal: pad, paddingBottom: insets.bottom + 32 }]}
           showsVerticalScrollIndicator={false}
         >
+          <FamilyReminderToggle settingKey="medicineReminders" title="Medicine reminders" description="Remind me when it is time for a dose or a refill" icon="activity" color="#E0546E" />
+
           {/* Summary chips */}
           <View style={styles.summaryRow}>
             {[
@@ -349,7 +363,8 @@ export default function ParentMedication({ navigation }) {
               <DateField label="Next Refill Date" value={form.refillDate} onChange={v => setField('refillDate', v.slice(0, 10))} />
 
               <Text style={styles.fieldLabel}>Doctor Name</Text>
-              <TextInput style={styles.input} placeholder="e.g. Dr. Sharma" placeholderTextColor={theme.placeholder} value={form.doctor} onChangeText={v => setField('doctor', v)} />
+              <TextInput style={[styles.input, !!doctorError && { borderColor: '#E0546E' }]} placeholder="e.g. Sharma" placeholderTextColor={theme.placeholder} value={form.doctor} onChangeText={setDoctor} autoCapitalize="words" maxLength={60} />
+              {!!doctorError && <Text style={{ marginTop: 6, fontSize: 12, color: '#E0546E' }}>{doctorError}</Text>}
 
               <Text style={styles.fieldLabel}>Notes</Text>
               <TextInput style={[styles.input, styles.inputMultiline]} placeholder="Special instructions or side effects..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setField('notes', v)} multiline numberOfLines={3} />

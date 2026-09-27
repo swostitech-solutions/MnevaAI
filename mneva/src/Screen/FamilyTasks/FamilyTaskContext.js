@@ -118,7 +118,18 @@ export function FamilyTaskProvider({ children }) {
   // ── Tasks ──
   const createTask = async (payload) => {
     const data = await apiFetch('/api/family/tasks', { method: 'POST', body: payload });
-    setTasks(p => [data.task, ...p]);
+    // The server also emits 'family:task:new' over the socket for this same
+    // task (to both the creator's and assignee's room — the same room when
+    // they're the same user), which the listener above already adds. Without
+    // this same id-dedupe, that socket add plus this direct add put the new
+    // task in the list twice.
+    setTasks(p => [data.task, ...p.filter(t => t.id !== data.task.id)]);
+    return data.task;
+  };
+
+  const editTask = async (id, fields) => {
+    const data = await apiFetch(`/api/family/tasks/${id}`, { method: 'PATCH', body: fields });
+    setTasks(p => p.map(t => t.id === id ? data.task : t));
     return data.task;
   };
 
@@ -146,7 +157,7 @@ export function FamilyTaskProvider({ children }) {
     <FamilyTaskContext.Provider value={{
       connections, tasks, loading, fetchAll,
       sendRequest, acceptConnection, rejectConnection, removeConnection,
-      createTask, updateTaskStatus, toggleChecklistItem, addComment, deleteTask,
+      createTask, editTask, updateTaskStatus, toggleChecklistItem, addComment, deleteTask,
     }}>
       {children}
     </FamilyTaskContext.Provider>

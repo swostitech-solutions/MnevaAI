@@ -18,6 +18,20 @@ const SPECIES_EMOJI = { Dog: '🐶', Cat: '🐱', Bird: '🐦', Rabbit: '🐰', 
 
 const EMPTY = { name: '', species: '', breed: '', sex: '', dob: '', microchip: '', weight: '', height: '', coatType: '', colorMarkings: '' };
 
+// Name/breed: letters, spaces and . ' - only.
+const TEXT_INVALID_CHARS = /[^A-Za-z\u00C0-\uFFFF\s.'\-]/g;
+const sanitizePetText = (t) => t.replace(TEXT_INVALID_CHARS, '').replace(/\s{2,}/g, ' ');
+// Microchip / ID: letters and numbers only.
+const sanitizeMicrochip = (t) => t.replace(/[^A-Za-z0-9]/g, '').slice(0, 20);
+const MICROCHIP_RE = /^[A-Za-z0-9]{5,20}$/;
+// Weight/height: a number the user is typing, optionally followed by a unit
+// word — filtered live to block symbols, checked in full on save.
+const MEASURE_CHARS = /[^0-9a-zA-Z. ]/g;
+const sanitizeMeasureText = (t) => t.replace(MEASURE_CHARS, '');
+const WEIGHT_RE = /^\d{1,4}(\.\d{1,2})?\s?(kg|kgs|g|grams?|lb|lbs|pounds?)?$/i;
+const HEIGHT_RE = /^\d{1,3}(\.\d{1,2})?\s?(cm|cms|centimeters?|in|inch|inches|ft|feet)?$/i;
+
+
 const calcAge = (dobStr) => {
   if (!dobStr) return null;
   const parts = dobStr.split('/');
@@ -35,30 +49,63 @@ export default function PetProfileTab({ horizontalPad, insets }) {
   const [modal, setModal]   = useState(false);
   const [form, setForm]     = useState(EMPTY);
   const [saving, setSaving] = useState(false);
-  const isEdit = !!activePet;
+  const [errors, setErrors] = useState({});
+  // Whether this open of the sheet is adding a NEW pet or editing the active
+  // one — kept as its own flag instead of deriving it from "is there an
+  // active pet", which used to be the same thing right up until "Add
+  // another pet" was tapped while a pet was already active: the sheet still
+  // saved with PATCH to that active pet's id, silently overwriting it with
+  // the new pet's details instead of creating a second pet.
+  const [mode, setMode]     = useState('add');
+  const isEdit = mode === 'edit';
 
-  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setField = (k, v) => {
+    let next = v;
+    if (k === 'name' || k === 'breed') next = sanitizePetText(v);
+    else if (k === 'microchip') next = sanitizeMicrochip(v);
+    else if (k === 'weight' || k === 'height') next = sanitizeMeasureText(v);
+    setForm(f => ({ ...f, [k]: next }));
+    setErrors(e => (e[k] ? { ...e, [k]: undefined } : e));
+  };
   const canSave = form.name.trim() && form.species;
 
-  const openAdd  = () => { setForm(EMPTY); setModal(true); };
+  const openAdd  = () => { setForm(EMPTY); setErrors({}); setMode('add'); setModal(true); };
   const openEdit = () => {
     if (!activePet) return;
     setForm({ name: activePet.name, species: activePet.species, breed: activePet.breed || '', sex: activePet.sex || '', dob: activePet.dob || '', microchip: activePet.microchip || '', weight: activePet.weight || '', height: activePet.height || '', coatType: activePet.coatType || '', colorMarkings: activePet.colorMarkings || '' });
+    setErrors({});
+    setMode('edit');
     setModal(true);
   };
 
+  const validate = () => {
+    const next = {};
+    if (form.name.trim() && !/[A-Za-z\u00C0-\uFFFF]/.test(form.name)) next.name = 'Pet name can only contain letters';
+    if (form.breed.trim() && !/[A-Za-z\u00C0-\uFFFF]/.test(form.breed)) next.breed = 'Breed can only contain letters';
+    if (form.microchip.trim() && !MICROCHIP_RE.test(form.microchip.trim())) next.microchip = 'Use 5-20 letters/numbers only';
+    if (form.weight.trim() && !WEIGHT_RE.test(form.weight.trim())) next.weight = 'Enter a number, e.g. "12 kg"';
+    if (form.height.trim() && !HEIGHT_RE.test(form.height.trim())) next.height = 'Enter a number, e.g. "45 cm"';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
   const save = async () => {
-    if (!canSave || saving) return;
+    if (!canSave || saving || !validate()) return;
     setSaving(true);
     try {
       if (isEdit && activePet) {
         await apiFetch(`/api/pet/${activePet.id}`, { method: 'PATCH', body: form });
       } else {
-        await apiFetch('/api/pet', { method: 'POST', body: form });
+        // A brand-new pet — its own record, so its own details show
+        // separately from whichever pet was active before this.
+        const res = await apiFetch('/api/pet', { method: 'POST', body: form });
+        if (res?.pet) setActivePet(res.pet);
       }
       setModal(false);
       reload();
-    } catch { /* socket updates state */ }
+    } catch (err) {
+      setErrors({ save: err?.message || 'Could not save. Please try again.' });
+    }
     finally { setSaving(false); }
   };
 
@@ -141,7 +188,7 @@ export default function PetProfileTab({ horizontalPad, insets }) {
                 <View style={styles.infoCard}>
                   {[
                     { label: 'Weight', value: activePet.weight, icon: 'bar-chart-2' },
-                    { label: 'Height / Size', value: activePet.height, icon: 'maximize-2' },
+                    { label: 'Height', value: activePet.height, icon: 'maximize-2' },
                     { label: 'Coat Type', value: activePet.coatType, icon: 'wind' },
                     { label: 'Color / Markings', value: activePet.colorMarkings, icon: 'droplet' },
                   ].filter(r => r.value).map((row, i, arr) => (
@@ -182,7 +229,8 @@ export default function PetProfileTab({ horizontalPad, insets }) {
             </View>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.fieldLabel}>Pet Name <Text style={styles.req}>*</Text></Text>
-              <TextInput style={styles.input} placeholder="e.g. Bruno, Whiskers" placeholderTextColor={theme.faint} value={form.name} onChangeText={v => setField('name', v)} />
+              <TextInput style={[styles.input, errors.name && styles.inputError]} placeholder="e.g. Bruno, Whiskers" placeholderTextColor={theme.faint} value={form.name} onChangeText={v => setField('name', v)} autoCapitalize="words" maxLength={40} />
+              {!!errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
 
               <Text style={styles.fieldLabel}>Species <Text style={styles.req}>*</Text></Text>
               <View style={styles.chipRow}>
@@ -194,7 +242,8 @@ export default function PetProfileTab({ horizontalPad, insets }) {
               </View>
 
               <Text style={styles.fieldLabel}>Breed</Text>
-              <TextInput style={styles.input} placeholder="e.g. Labrador, Persian" placeholderTextColor={theme.faint} value={form.breed} onChangeText={v => setField('breed', v)} />
+              <TextInput style={[styles.input, errors.breed && styles.inputError]} placeholder="e.g. Labrador, Persian" placeholderTextColor={theme.faint} value={form.breed} onChangeText={v => setField('breed', v)} autoCapitalize="words" maxLength={40} />
+              {!!errors.breed && <Text style={styles.fieldError}>{errors.breed}</Text>}
 
               <Text style={styles.fieldLabel}>Sex</Text>
               <View style={styles.chipRow}>
@@ -212,19 +261,22 @@ export default function PetProfileTab({ horizontalPad, insets }) {
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>Microchip / ID</Text>
-                  <TextInput style={styles.input} placeholder="Optional" placeholderTextColor={theme.faint} value={form.microchip} onChangeText={v => setField('microchip', v)} />
+                  <TextInput style={[styles.input, errors.microchip && styles.inputError]} placeholder="Optional" placeholderTextColor={theme.faint} value={form.microchip} onChangeText={v => setField('microchip', v)} autoCapitalize="characters" maxLength={20} />
+                  {!!errors.microchip && <Text style={styles.fieldError}>{errors.microchip}</Text>}
                 </View>
               </View>
 
               <View style={styles.rowFields}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>Weight</Text>
-                  <TextInput style={styles.input} placeholder="e.g. 12 kg" placeholderTextColor={theme.faint} value={form.weight} onChangeText={v => setField('weight', v)} />
+                  <TextInput style={[styles.input, errors.weight && styles.inputError]} placeholder="e.g. 12 kg" placeholderTextColor={theme.faint} value={form.weight} onChangeText={v => setField('weight', v)} keyboardType="numbers-and-punctuation" maxLength={10} />
+                  {!!errors.weight && <Text style={styles.fieldError}>{errors.weight}</Text>}
                 </View>
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Height / Size</Text>
-                  <TextInput style={styles.input} placeholder="e.g. Medium" placeholderTextColor={theme.faint} value={form.height} onChangeText={v => setField('height', v)} />
+                  <Text style={styles.fieldLabel}>Height</Text>
+                  <TextInput style={[styles.input, errors.height && styles.inputError]} placeholder="e.g. 45 cm" placeholderTextColor={theme.faint} value={form.height} onChangeText={v => setField('height', v)} keyboardType="numbers-and-punctuation" maxLength={10} />
+                  {!!errors.height && <Text style={styles.fieldError}>{errors.height}</Text>}
                 </View>
               </View>
 
@@ -240,6 +292,7 @@ export default function PetProfileTab({ horizontalPad, insets }) {
               <Text style={styles.fieldLabel}>Color / Markings</Text>
               <TextInput style={styles.input} placeholder="e.g. Golden with white patch" placeholderTextColor={theme.faint} value={form.colorMarkings} onChangeText={v => setField('colorMarkings', v)} />
 
+              {!!errors.save && <Text style={[styles.fieldError, { marginBottom: 12 }]}>{errors.save}</Text>}
               <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={save}>
                 <LinearGradient colors={['#F5A623', '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
                   {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Feather name="check" size={16} color="#FFFFFF" />}
@@ -291,6 +344,8 @@ const createStyles = (theme) => StyleSheet.create({
   fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   req: { color: theme.danger },
   input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
+  inputError: { borderWidth: 1.5, borderColor: theme.danger, marginBottom: 6 },
+  fieldError: { fontSize: 12, color: theme.danger, marginTop: -10, marginBottom: 14 },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   chip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },

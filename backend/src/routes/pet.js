@@ -61,10 +61,31 @@ petRouter.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+
+// Name/breed: letters, spaces and . ' - only — no digits or symbols.
+const isValidPetText = (v) => !v || (/^[^\d!@#$%^&*()_+=\[\]{}<>?/\\|~`":;,]+$/.test(v) && /[A-Za-z\u00C0-\uFFFF]/.test(v))
+// Microchip / ID: letters and digits only (standard chip formats are numeric
+// or alphanumeric), 5-20 characters.
+const isValidMicrochip = (v) => !v || /^[A-Za-z0-9]{5,20}$/.test(v)
+// Weight/height: a number, optionally followed by a unit word.
+const isValidWeight = (v) => !v || /^\d{1,4}(\.\d{1,2})?\s?(kg|kgs|g|grams?|lb|lbs|pounds?)?$/i.test(v)
+const isValidHeight = (v) => !v || /^\d{1,3}(\.\d{1,2})?\s?(cm|cms|centimeters?|in|inch|inches|ft|feet)?$/i.test(v)
+
+function validatePetFields({ name, breed, microchip, weight, height }) {
+  if (name !== undefined && !isValidPetText(String(name || '').trim())) return 'Pet name can only contain letters'
+  if (breed !== undefined && !isValidPetText(String(breed || '').trim())) return 'Breed can only contain letters'
+  if (microchip !== undefined && !isValidMicrochip(String(microchip || '').trim())) return 'Microchip / ID must be 5-20 letters/numbers only'
+  if (weight !== undefined && !isValidWeight(String(weight || '').trim())) return 'Weight must be a number, e.g. "12 kg"'
+  if (height !== undefined && !isValidHeight(String(height || '').trim())) return 'Height must be a number, e.g. "45 cm"'
+  return null
+}
+
 petRouter.post('/', async (req, res) => {
   try {
     const { name, species, breed, sex, dob, microchip, weight, height, coatType, colorMarkings } = req.body
     if (!name?.trim() || !species) return res.status(400).json({ error: 'name and species required' })
+    const invalid = validatePetFields({ name: name?.trim(), breed, microchip, weight, height })
+    if (invalid) return res.status(400).json({ error: invalid })
     const pet = await prisma.pet.create({
       data: { userId: req.user.id, name: name.trim(), species, breed: breed?.trim() || null, sex: sex || null, dob: dob?.trim() || null, microchip: microchip?.trim() || null, weight: weight?.trim() || null, height: height?.trim() || null, coatType: coatType || null, colorMarkings: colorMarkings?.trim() || null },
     })
@@ -88,6 +109,8 @@ petRouter.patch('/:id', async (req, res) => {
     if (!pet || pet.userId !== req.user.id) return res.status(404).json({ error: 'Not found' })
     const { name, species, breed, sex, dob, microchip, weight, height, coatType, colorMarkings,
             vaccines, medications, allergies, vet, feeding, groomings, exercises } = req.body
+    const invalid = validatePetFields({ name: name?.trim(), breed, microchip, weight, height })
+    if (invalid) return res.status(400).json({ error: invalid })
     const updated = await prisma.pet.update({
       where: { id: req.params.id },
       data: {

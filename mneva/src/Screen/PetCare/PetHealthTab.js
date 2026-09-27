@@ -157,9 +157,28 @@ export default function PetHealthTab({ horizontalPad, insets }) {
         <Text style={styles.fieldLabel}>Vaccine Name <Text style={styles.req}>*</Text></Text>
         <TextInput style={styles.input} placeholder="e.g. Rabies, Parvovirus" placeholderTextColor={theme.placeholder} value={vForm.name} onChangeText={v => setVForm(f => ({ ...f, name: v }))} />
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><DateField label="Date Given" value={vForm.date} onChange={v => setVForm(f => ({ ...f, date: v.slice(0, 10) }))} /></View>
+          <View style={{ flex: 1 }}>
+            <DateField
+              label="Date Given"
+              value={vForm.date}
+              onChange={v => setVForm(f => {
+                const date = v.slice(0, 10);
+                // Next Due can't stay before the new Date Given — clear it
+                // rather than silently leave an impossible date behind.
+                const next = f.next && f.next < date ? '' : f.next;
+                return { ...f, date, next };
+              })}
+            />
+          </View>
           <View style={{ width: 12 }} />
-          <View style={{ flex: 1 }}><DateField label="Next Due" value={vForm.next} onChange={v => setVForm(f => ({ ...f, next: v.slice(0, 10) }))} /></View>
+          <View style={{ flex: 1 }}>
+            <DateField
+              label="Next Due"
+              value={vForm.next}
+              minimumDate={vForm.date ? new Date(vForm.date) : undefined}
+              onChange={v => setVForm(f => ({ ...f, next: v.slice(0, 10) }))}
+            />
+          </View>
         </View>
         <Text style={styles.fieldLabel}>Status</Text>
         <View style={styles.chipRow}>

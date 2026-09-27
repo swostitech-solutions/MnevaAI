@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
-import { GATED_DOMAINS, getDomainTrust, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction, recordDomainAction } from '../services/pendingActions.service.js'
+import { GATED_DOMAINS, domainForCall, getDomainTrust, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction, recordDomainAction } from '../services/pendingActions.service.js'
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from '../services/activityCalc.js'
 
 function validTimeZone(value) {
@@ -167,6 +167,20 @@ export function requestedSchedulingTool(messages = []) {
     return 'schedule_event'
   }
   return null
+}
+
+// Edit / delete / "show me the details of" a saved record: the model must
+// first look the record up (list_records) to get its id. Left to itself it
+// tends to answer "I'll update that" in prose without calling anything, so
+// the first step is required.
+export function requestedRecordTool(messages = []) {
+  const userMessages = messages.filter(message => message?.role === 'user')
+  const last = userMessages[userMessages.length - 1]
+  const text = (typeof last?.content === 'string' ? last.content : '').toLowerCase()
+  if (!text) return null
+  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*)\b/.test(text)
+  const noun = /\b(medications?|medicines?|dawa|dawai|dosage|doses?|pets?|tasks?|reminders?|subscriptions?|loans?|emis?|fd|fds|fixed deposits?|bills?|holdings?|portfolio|child|children|kids?|activity|activities|warranty|warranties|gifts?|celebrations?)\b/.test(text)
+  return verb && noun ? 'list_records' : null
 }
 
 // Keep the confirmation after a scheduling action grounded in the tool
@@ -810,6 +824,48 @@ If a required field for the chosen domain+type is missing from the conversation,
       required: ['domain', 'type', 'fields'],
     },
   },
+  {
+    name: 'list_records',
+    description: 'List the user\'s saved records for one module, WITH their ids. ALWAYS call this first before update_record or delete_record (you need the id), and also whenever the user asks for the details of a saved item. Modules: parent_medication, family_task, pet, pet_reminder (needs pet_id — get it from module "pet"), family_item (needs family_domain: children/home/celebration/calendar), subscription, loan, emi, fixed_deposit, bill, portfolio_holding.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding'] },
+        pet_id: { type: 'string', description: 'Only for module pet_reminder.' },
+        family_domain: { type: 'string', enum: ['children', 'home', 'celebration', 'calendar'], description: 'Only for module family_item.' },
+      },
+      required: ['module'],
+    },
+  },
+  {
+    name: 'update_record',
+    description: 'EDIT / UPDATE / CHANGE an existing saved record (the user says edit, update, change, rename, reschedule, mark as done, etc.). Get the id from list_records first. Pass ONLY the fields being changed, using the exact field names shown in list_records output (e.g. for a parent medication: medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, doseTimes, active). family_task: pass "status" (ACCEPTED, IN_PROGRESS, COMPLETED, CANCELLED, REJECTED) to change status, and/or title/description/priority/category/dueDate/recurrence to edit the task itself (editing is creator-only; dueDate cannot be in the past). family_item: pass the data fields to change (and optionally done / remind_at). Works for the same modules as list_records.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding'] },
+        id: { type: 'string', description: 'Record id from list_records.' },
+        fields: { type: 'object', description: 'Only the fields to change, as key/value pairs.' },
+        pet_id: { type: 'string', description: 'Only for module pet_reminder.' },
+        family_domain: { type: 'string', enum: ['children', 'home', 'celebration', 'calendar'], description: 'Only for module family_item.' },
+      },
+      required: ['module', 'id', 'fields'],
+    },
+  },
+  {
+    name: 'delete_record',
+    description: 'DELETE / REMOVE a saved record permanently (the user says delete, remove, cancel it, get rid of it). Get the id from list_records first. If more than one record could match, ask the user which one before deleting.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding'] },
+        id: { type: 'string', description: 'Record id from list_records.' },
+        pet_id: { type: 'string', description: 'Only for module pet_reminder.' },
+        family_domain: { type: 'string', enum: ['children', 'home', 'celebration', 'calendar'], description: 'Only for module family_item.' },
+      },
+      required: ['module', 'id'],
+    },
+  },
 ]
 
 // Human-readable label for a blocked gated action's message, and a short
@@ -829,6 +885,8 @@ const ACTION_LABELS = {
   add_pet: 'add this pet',
   add_pet_reminder: 'set this pet reminder',
   add_family_item: 'add this item',
+  update_record: 'make this change',
+  delete_record: 'delete this',
 }
 function describeAction(name) {
   return ACTION_LABELS[name] || 'do this automatically'
@@ -850,8 +908,14 @@ function buildActionSummary(name, input) {
     case 'add_pet': return `Add pet: ${input.name || 'Untitled'}`
     case 'add_pet_reminder': return `Reminder for ${input.pet_name || 'pet'}: ${input.title || 'Untitled'}`
     case 'add_family_item': return `Add ${input.type || 'item'} to ${input.domain || 'Family'}`
+    case 'update_record': return `Update ${recordLabel(input.module)}${input.fields ? `: ${Object.entries(input.fields).map(([k, v]) => `${k} → ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ')}` : ''}`
+    case 'delete_record': return `Delete ${recordLabel(input.module)}`
     default: return 'Pending action'
   }
+}
+
+function recordLabel(module) {
+  return String(module || 'record').replace(/_/g, ' ')
 }
 
 // ── Tool Executor ────────────────────────────────────────────────────────────
@@ -863,17 +927,23 @@ function buildActionSummary(name, input) {
 // approval, so a just-approved action doesn't get deferred to pending all
 // over again.
 export async function executeTool(name, input, userId, opts = {}) {
-  const domain = GATED_DOMAINS[name]
+  const domain = domainForCall(name, input)
   if (domain && !opts.skipGate) {
     const domainTrust = await getDomainTrust(userId, domain)
     const amount = name === 'initiate_payment' ? Number(input.amount) || 0 : 0
-    const gate = decideGate(name, domainTrust, amount)
+    const gate = decideGate(name, domainTrust, amount, domain)
     if (gate.mode === 'blocked') {
       return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, describeAction(name)) }
     }
     if (gate.mode === 'pending') {
       await recordDomainAction(userId, domain, 'observed')
-      const pending = await createPendingAction(userId, name, domain, input, buildActionSummary(name, input))
+      let summary = buildActionSummary(name, input)
+      if (name === 'update_record' || name === 'delete_record') {
+        const { describeRecord } = await import('../services/recordOps.js')
+        const title = await describeRecord(userId, input)
+        if (title) summary = summary.replace(/^(Update|Delete) ([^:]+)/, `$1 $2 "${title}"`)
+      }
+      const pending = await createPendingAction(userId, name, domain, input, summary)
       return { success: true, status: 'pending_approval', pendingActionId: pending.id, requiresBiometric: name === 'initiate_payment' && amount >= 1000, message: "I've prepared this — approve it in the app to send it." }
     }
     // gate.mode === 'execute' — falls through to the real work below.
@@ -1555,6 +1625,18 @@ export async function executeTool(name, input, userId, opts = {}) {
       })
       return { success: true, reminderId: reminder.id, pet: pet.name, title: reminder.title, remindAt: reminder.remindAt }
     }
+    case 'list_records': {
+      const { listRecords } = await import('../services/recordOps.js')
+      return await listRecords(userId, input)
+    }
+    case 'update_record': {
+      const { updateRecord } = await import('../services/recordOps.js')
+      return await updateRecord(userId, input)
+    }
+    case 'delete_record': {
+      const { deleteRecord } = await import('../services/recordOps.js')
+      return await deleteRecord(userId, input)
+    }
     case 'add_family_item': {
       const { domain, type, fields = {}, remind_at } = input
       const requiredForType = FAMILY_ITEM_REQUIRED_FIELDS[domain]?.[type]
@@ -1853,6 +1935,7 @@ CRITICAL RULES:
 20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, add_portfolio_holding, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
 21. RESPONSE FORMATTING: The chat renders real markdown — **bold**, "- " bullets, "1. " numbered lists, "### " headers, and pipe tables — so use it the way a polished AI product (ChatGPT/Claude) would, not as plain unbroken prose. Guidelines: bold the 2-3 numbers or terms in a reply that the user's eye should land on first (an amount, a date, a status), never whole sentences. Use a bulleted list for 3+ related items (a list of bills, options, or notes) instead of comma-stuffing them into one sentence. Use short paragraphs (2-3 sentences); a wall of text is exactly what this is meant to avoid. Reach for a "### " header only when a reply genuinely has multiple sections (a daily brief, a full summary) — never for a one-line answer or a single confirmation. Match the weight of the formatting to the weight of the content: a yes/no answer or a single fact is one plain sentence, not a bulleted list of one. Never show the user raw tool-call JSON, field names like "med_name", or an internal error string verbatim — always translate it into a natural sentence first.
 22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
+26. EDIT / DELETE / DETAILS: You CAN edit, update and delete saved records in Family (parent medications, family tasks, pets, pet reminders, family items), and Finance (subscriptions, loans, EMIs, fixed deposits, bills, portfolio holdings). Health logs are edited by calling log_health_data again (it overwrites today's values). To change or remove something: (1) call list_records for that module to find the record and its id, (2) call update_record (only the changed fields) or delete_record with that id, (3) confirm what you changed in one line. Do this in the same turn — never tell the user to do it themselves and never claim it was changed without calling the tool. If several records match the name, ask which one. For details of a saved item, call list_records and answer from it. Only say something cannot be edited if the tool returns an error saying so. Never show record ids and never mention the ledger in the reply. When the request is clear (record + new value), do it immediately — do not ask the user to confirm the name, the field or the value first; only ask when several records genuinely match.
 25. ATTACHMENTS: When a file's text or a photo is included in the user's message, that IS the file — read it and answer from it directly (summarize, analyze, extract, explain, answer questions about it). Never say you cannot see or open attachments when their content is present. Refer to specific details from it. If the file text is marked as truncated, say the answer is based on the first part.
 24. ANSWER QUALITY AND STYLE: Reply like a sharp, efficient assistant. Lead with the answer or the result in the first sentence — no greeting filler, no "Sure!/Certainly!", no restating the question, no listing what you can or cannot do. Keep it as short as the question allows: a simple question gets 1-2 sentences, a task gets the outcome plus only the key details (name, amount, date, time). NEVER mention trust levels, autonomy levels, "Observe mode", L1-L4, or the Autonomy Engine in a reply unless the user explicitly asks about them — they are internal settings, not something to explain in answers. If a tool result says an action was not done or is waiting for approval, say so in one short, plain sentence and give the simple next step (for example "I've prepared this — approve it in the app to send it" or "I can't add that automatically yet — you can add it yourself from the Family screen"), without explaining why in terms of levels or settings. Do not end with generic offers like "Let me know if you need anything else".
 23. REMINDER RECURRENCE: set_reminder's "repeat" parameter defaults to "once" whenever you don't pass it — so whenever the user's own words imply recurrence ("every day", "daily", "each week", "weekly", "every month", "monthly", or the Hindi/Hinglish equivalents "roz", "har din", "har hafte", "har mahine"), you MUST pass the matching value ("daily"/"weekly"/"monthly") yourself. Never leave a recurring request as a one-time reminder just because it wasn't spelled out in English — the reminder the user actually asked for and the one that gets saved must match.
@@ -1940,6 +2023,10 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   const executedActionResults = new Map()
   let iterations = 0
   const requestedActionTool = requestedSchedulingTool(messages)
+  const requestedLookupTool = requestedActionTool ? null : requestedRecordTool(messages)
+  const latestUserText = String([...messages].reverse().find(m => m?.role === 'user')?.content || '').toLowerCase()
+  const wantsChange = !!requestedLookupTool && !/\bdetails?\b/.test(latestUserText)
+  let nudgedToAct = false
 
   if (topMemory.length) {
     const memoryContext = buildMemoryContext(topMemory)
@@ -1957,7 +2044,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         system: await buildSystemPrompt(user, context),
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
-        toolChoice: allToolResults.length === 0 ? requestedActionTool : null,
+        toolChoice: allToolResults.length === 0 ? (requestedActionTool || requestedLookupTool) : null,
       }
       resp = await callOpenAI(_callArgs)
     } catch (error) {
@@ -1976,6 +2063,15 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     const textBlocks = Array.isArray(resp?.content) ? resp.content.filter(b => b.type === 'text') : []
 
     if (resp?.stop_reason === 'end_turn' || toolBlocks.length === 0) {
+      // Looked the record up but then only described what it would do —
+      // push once for the actual update/delete call.
+      if (wantsChange && !nudgedToAct && allToolResults.some(r => r.tool === 'list_records')
+        && !allToolResults.some(r => r.tool === 'update_record' || r.tool === 'delete_record')) {
+        nudgedToAct = true
+        agentMsgs.push({ role: 'assistant', content: textBlocks.map(b => b.text).join('\n') || 'Looking that up' })
+        agentMsgs.push({ role: 'user', content: 'Now do it: call update_record or delete_record with the id from list_records. If several records could match, ask me which one instead.' })
+        continue
+      }
       const failedAction = allToolResults.find(item =>
         ['set_reminder', 'schedule_event'].includes(item.tool) && item.result?.success === false
       )

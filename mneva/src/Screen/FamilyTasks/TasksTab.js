@@ -100,6 +100,7 @@ export default function TasksTab({ horizontalPad, insets }) {
 // ─── Task Card ────────────────────────────────────────────────────────────────
 function TaskCard({ task, myId, theme, styles }) {
   const { updateTaskStatus } = useFamilyTask();
+  const [detailOpen, setDetailOpen] = useState(false);
   const s = TASK_STATUSES[task.status] || TASK_STATUSES.DRAFT;
   const pc = PRIORITY_COLOR[task.priority] || theme.faint;
   const pb = PRIORITY_BG[task.priority]   || theme.surfaceAlt;
@@ -116,7 +117,7 @@ function TaskCard({ task, myId, theme, styles }) {
   const creatorName  = task.createdBy?.name;
 
   return (
-    <View style={[styles.card, { borderLeftColor: pc }]}>
+    <TouchableOpacity activeOpacity={0.85} onPress={() => setDetailOpen(true)} style={[styles.card, { borderLeftColor: pc }]}>
       {/* Top row */}
       <View style={styles.cardTop}>
         <View style={{ flex: 1 }}>
@@ -212,7 +213,248 @@ function TaskCard({ task, myId, theme, styles }) {
           </TouchableOpacity>
         </View>
       )}
+      <View style={styles.tapHint}>
+        <Feather name="chevron-right" size={12} color={theme.faint} />
+        <Text style={styles.tapHintText}>Tap for full details</Text>
+      </View>
+
+      <TaskDetailModal visible={detailOpen} onClose={() => setDetailOpen(false)} task={task} myId={myId} theme={theme} styles={styles} />
+    </TouchableOpacity>
+  );
+}
+
+// ─── Task Detail Modal ─────────────────────────────────────────────────────────
+function TaskDetailModal({ visible, onClose, task, myId, theme, styles }) {
+  const { updateTaskStatus, toggleChecklistItem, addComment, editTask, deleteTask } = useFamilyTask();
+  const [editOpen, setEditOpen] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const s = TASK_STATUSES[task.status] || TASK_STATUSES.DRAFT;
+  const pc = PRIORITY_COLOR[task.priority] || theme.faint;
+  const isCreator = myId && task.createdBy?.id === myId;
+  const isAssignee = myId && task.assignedTo?.id === myId;
+  const checklist = task.checklist || [];
+  const comments = task.comments || [];
+
+  const doStatus = (status) => updateTaskStatus(task.id, status).catch(e => Alert.alert('Error', e?.message || 'Failed'));
+  const toggleItem = (itemId) => toggleChecklistItem(task.id, itemId).catch(e => Alert.alert('Error', e?.message || 'Failed'));
+  const sendComment = async () => {
+    if (!commentText.trim() || busy) return;
+    setBusy(true);
+    try { await addComment(task.id, commentText.trim()); setCommentText(''); }
+    catch (e) { Alert.alert('Error', e?.message || 'Failed'); }
+    finally { setBusy(false); }
+  };
+  const onDelete = () => {
+    Alert.alert('Delete task?', `"${task.title}" will be permanently deleted.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try { await deleteTask(task.id); onClose(); }
+        catch (e) { Alert.alert('Error', e?.message || 'Failed'); }
+      } },
+    ]);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
+        <View style={styles.detailSheet}>
+          <View style={styles.sheetHandle} />
+          <ScrollView showsVerticalScrollIndicator={false} style={{ paddingHorizontal: 20 }} contentContainerStyle={{ paddingBottom: 24 }}>
+            <View style={styles.detailHeaderRow}>
+              <Text style={styles.detailTitle}>{task.title}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: s.bg }]}>
+                <Text style={[styles.statusBadgeText, { color: s.color }]}>{s.label}</Text>
+              </View>
+            </View>
+            {!!task.description && <Text style={styles.detailDesc}>{task.description}</Text>}
+
+            <View style={styles.detailInfoCard}>
+              <DetailRow icon="user" label="Assigned to" value={task.assignedTo?.name || 'Unassigned'} styles={styles} theme={theme} />
+              <DetailRow icon="user-check" label="Created by" value={task.createdBy?.name} styles={styles} theme={theme} />
+              <DetailRow icon="flag" label="Priority" value={task.priority} valueColor={pc} styles={styles} theme={theme} />
+              {!!task.category && <DetailRow icon="tag" label="Category" value={task.category} styles={styles} theme={theme} />}
+              {!!task.dueDate && <DetailRow icon="calendar" label="Due date" value={task.dueDate} styles={styles} theme={theme} />}
+              {task.recurrence && task.recurrence !== 'None' && <DetailRow icon="repeat" label="Repeats" value={task.recurrence} styles={styles} theme={theme} last />}
+            </View>
+
+            {checklist.length > 0 && (
+              <>
+                <Text style={styles.detailSectionLabel}>CHECKLIST · {checklist.filter(i => i.done).length}/{checklist.length}</Text>
+                <View style={styles.detailInfoCard}>
+                  {checklist.map((item, i) => (
+                    <TouchableOpacity key={item.id} style={[styles.checklistRow, i < checklist.length - 1 && styles.infoRowDivider]} onPress={() => toggleItem(item.id)}>
+                      <Feather name={item.done ? 'check-square' : 'square'} size={18} color={item.done ? theme.accent : theme.faint} />
+                      <Text style={[styles.checklistText, item.done && styles.checklistTextDone]}>{item.text}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {/* Status actions */}
+            {isAssignee && task.status === 'PENDING_ACCEPTANCE' && (
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionAccept]} onPress={() => doStatus('ACCEPTED')}>
+                  <Feather name="check" size={13} color={theme.accent} /><Text style={[styles.actionBtnText, { color: theme.accent }]}>Accept</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={() => doStatus('REJECTED')}>
+                  <Feather name="x" size={13} color={theme.danger} /><Text style={[styles.actionBtnText, { color: theme.danger }]}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {(isAssignee || isCreator) && task.status === 'ACCEPTED' && (
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionProgress]} onPress={() => doStatus('IN_PROGRESS')}>
+                  <Feather name="play" size={13} color={theme.accentAlt} /><Text style={[styles.actionBtnText, { color: theme.accentAlt }]}>Start</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {(isAssignee || isCreator) && task.status === 'IN_PROGRESS' && (
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionAccept]} onPress={() => doStatus('COMPLETED')}>
+                  <Feather name="check-circle" size={13} color={theme.accent} /><Text style={[styles.actionBtnText, { color: theme.accent }]}>Complete</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={() => doStatus('CANCELLED')}>
+                  <Feather name="slash" size={13} color={theme.muted} /><Text style={[styles.actionBtnText, { color: theme.muted }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <Text style={styles.detailSectionLabel}>COMMENTS{comments.length ? ` · ${comments.length}` : ''}</Text>
+            {comments.map(c => (
+              <View key={c.id} style={styles.commentRow}>
+                <View style={styles.commentAvatar}><Text style={styles.commentAvatarText}>{(c.by || '?').charAt(0).toUpperCase()}</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.commentBy}>{c.by}</Text>
+                  <Text style={styles.commentText}>{c.text}</Text>
+                </View>
+              </View>
+            ))}
+            <View style={styles.commentInputRow}>
+              <TextInput style={styles.commentInput} placeholder="Add a comment…" placeholderTextColor={theme.placeholder} value={commentText} onChangeText={setCommentText} onSubmitEditing={sendComment} returnKeyType="send" />
+              <TouchableOpacity style={styles.commentSendBtn} onPress={sendComment} disabled={busy}>
+                <Feather name="send" size={15} color={theme.accent} />
+              </TouchableOpacity>
+            </View>
+
+            {isCreator && (
+              <View style={[styles.actionRow, { marginTop: 20 }]}>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionEdit]} onPress={() => setEditOpen(true)}>
+                  <Feather name="edit-2" size={13} color={theme.accentAlt} /><Text style={[styles.actionBtnText, { color: theme.accentAlt }]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={onDelete}>
+                  <Feather name="trash-2" size={13} color={theme.danger} /><Text style={[styles.actionBtnText, { color: theme.danger }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+      <EditTaskModal visible={editOpen} onClose={() => setEditOpen(false)} task={task} editTask={editTask} theme={theme} styles={styles} />
+    </Modal>
+  );
+}
+
+function DetailRow({ icon, label, value, valueColor, last, styles, theme }) {
+  if (!value) return null;
+  return (
+    <View style={[styles.infoRow, !last && styles.infoRowDivider]}>
+      <Feather name={icon} size={13} color={theme.muted} style={{ width: 20 }} />
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={[styles.infoValue, valueColor && { color: valueColor }]}>{value}</Text>
     </View>
+  );
+}
+
+// ─── Edit Task Modal ────────────────────────────────────────────────────────────
+function EditTaskModal({ visible, onClose, task, editTask, theme, styles }) {
+  const [title, setTitle]       = useState(task.title);
+  const [description, setDesc]  = useState(task.description || '');
+  const [priority, setPriority] = useState(task.priority);
+  const [category, setCategory] = useState(task.category || '');
+  const [dueDate, setDueDate]   = useState(task.dueDate || '');
+  const [recurrence, setRecurrence] = useState(task.recurrence || 'None');
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
+
+  useEffect(() => {
+    if (!visible) return;
+    setTitle(task.title); setDesc(task.description || ''); setPriority(task.priority);
+    setCategory(task.category || ''); setDueDate(task.dueDate || ''); setRecurrence(task.recurrence || 'None');
+    setError('');
+  }, [visible, task]);
+
+  const save = async () => {
+    if (!title.trim() || saving) return;
+    setSaving(true);
+    try {
+      await editTask(task.id, { title: title.trim(), description, priority, category, dueDate, recurrence });
+      onClose();
+    } catch (e) { setError(e?.message || 'Could not save changes'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <LinearGradient colors={['#0F5132', '#1F9A5A']} style={styles.sheetHero}>
+            <View style={{ flex: 1 }}><Text style={styles.sheetHeroTitle}>Edit Task</Text></View>
+            <TouchableOpacity onPress={onClose} style={styles.sheetCloseBtn}><Feather name="x" size={16} color="#FFFFFF" /></TouchableOpacity>
+          </LinearGradient>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ paddingHorizontal: 20 }}>
+            <Text style={styles.label}>Task Title <Text style={styles.req}>*</Text></Text>
+            <TextInput style={styles.input} placeholderTextColor={theme.placeholder} value={title} onChangeText={setTitle} />
+            <Text style={styles.label}>Description</Text>
+            <TextInput style={[styles.input, styles.inputMulti]} placeholderTextColor={theme.placeholder} value={description} onChangeText={setDesc} multiline />
+            <Text style={styles.label}>Priority</Text>
+            <View style={styles.chipRow}>
+              {PRIORITIES.map(p => (
+                <TouchableOpacity key={p} style={[styles.chip, priority === p && { backgroundColor: PRIORITY_BG[p], borderColor: PRIORITY_COLOR[p] }]} onPress={() => setPriority(p)}>
+                  <Feather name="flag" size={11} color={priority === p ? PRIORITY_COLOR[p] : theme.faint} />
+                  <Text style={[styles.chipText, priority === p && { color: PRIORITY_COLOR[p] }]}>{p}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.chipRow}>
+              {CATEGORIES.map(c => (
+                <TouchableOpacity key={c} style={[styles.chip, category === c && styles.chipActive]} onPress={() => setCategory(category === c ? '' : c)}>
+                  <Text style={[styles.chipText, category === c && styles.chipTextActive]}>{c}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.twoCol}>
+              <View style={{ flex: 1 }}>
+                <DateField label="Due Date" value={dueDate} minimumDate={new Date()} onChange={v => setDueDate(v.slice(0, 10))} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Repeat</Text>
+                <View style={styles.chipCol}>
+                  {RECURRENCES.map(r => (
+                    <TouchableOpacity key={r} style={[styles.chip, recurrence === r && styles.chipActive]} onPress={() => setRecurrence(r)}>
+                      <Text style={[styles.chipText, recurrence === r && styles.chipTextActive]}>{r}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+            {!!error && <Text style={{ color: theme.danger, fontSize: 12, marginTop: 8 }}>{error}</Text>}
+            <TouchableOpacity style={[styles.submitBtn, (!title.trim() || saving) && styles.submitBtnDisabled]} disabled={!title.trim() || saving} onPress={save}>
+              <LinearGradient colors={['#0F5132', '#1F9A5A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.submitGrad}>
+                <Feather name="check" size={16} color="#FFFFFF" />
+                <Text style={styles.submitText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -358,7 +600,7 @@ function CreateTaskModal({ visible, onClose, insets, connections, theme, styles 
             {/* Due date + Recurrence side by side */}
             <View style={styles.twoCol}>
               <View style={{ flex: 1 }}>
-                <DateField label="Due Date" value={dueDate} onChange={v => setDueDate(v.slice(0, 10))} />
+                <DateField label="Due Date" value={dueDate} minimumDate={new Date()} onChange={v => setDueDate(v.slice(0, 10))} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Repeat</Text>
@@ -510,5 +752,32 @@ const createStyles = (theme) => StyleSheet.create({
   actionAccept: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderColor: theme.accent },
   actionReject: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderColor: theme.danger },
   actionProgress: { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', borderColor: theme.accentAlt },
+  actionEdit: { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', borderColor: theme.accentAlt },
   actionBtnText: { fontSize: 12, fontWeight: '700' },
+
+  tapHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2, marginTop: 10 },
+  tapHintText: { fontSize: 10, fontWeight: '600', color: theme.faint },
+
+  // Detail modal
+  detailSheet: { backgroundColor: theme.isDark ? theme.bg : '#F2F4F7', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '90%', paddingTop: 10 },
+  detailHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 8, marginBottom: 8 },
+  detailTitle: { flex: 1, fontSize: 19, fontWeight: '800', color: theme.text },
+  detailDesc: { fontSize: 13, color: theme.muted, lineHeight: 19, marginBottom: 16 },
+  detailInfoCard: { backgroundColor: theme.card, borderRadius: 16, paddingHorizontal: 14, marginBottom: 18 },
+  detailSectionLabel: { fontSize: 11, fontWeight: '700', color: theme.faint, letterSpacing: 0.5, marginBottom: 10, marginTop: 4 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 8 },
+  infoRowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
+  infoLabel: { flex: 1, fontSize: 13, color: theme.muted, fontWeight: '600' },
+  infoValue: { fontSize: 13, fontWeight: '700', color: theme.text, maxWidth: '55%', textAlign: 'right' },
+  checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
+  checklistText: { flex: 1, fontSize: 13, color: theme.text, fontWeight: '600' },
+  checklistTextDone: { color: theme.faint, textDecorationLine: 'line-through' },
+  commentRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  commentAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: theme.accentAlt, alignItems: 'center', justifyContent: 'center' },
+  commentAvatarText: { fontSize: 11, fontWeight: '800', color: '#FFFFFF' },
+  commentBy: { fontSize: 12, fontWeight: '700', color: theme.text },
+  commentText: { fontSize: 13, color: theme.muted, marginTop: 1 },
+  commentInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  commentInput: { flex: 1, backgroundColor: theme.card, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 13, color: theme.text },
+  commentSendBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', alignItems: 'center', justifyContent: 'center' },
 });

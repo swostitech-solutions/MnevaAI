@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
+import FamilyReminderToggle from '../components/FamilyReminderToggle';
 import DateField from './finance/DateField';
 
 const ACTIVITY_TYPES = ['School', 'Sports', 'Music', 'Dance', 'Art', 'Tuition', 'Other'];
@@ -100,6 +101,8 @@ export default function ChildrenActivities({ navigation }) {
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
           {saving && <SavingBar theme={theme} styles={styles} />}
+
+          <FamilyReminderToggle settingKey="schoolReminders" title="School reminders" description="Remind me about school events, homework and deadlines" icon="book-open" color="#9B72FF" />
 
           {items.length > 0 && (
             <View style={styles.memoryBadge}>

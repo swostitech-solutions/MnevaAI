@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Switch, RefreshControl, useWindowDimensions,
-  ActivityIndicator, Animated,
+  ActivityIndicator, Animated, Platform,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
@@ -58,20 +59,20 @@ const SECTIONS = [
   {
     key: 'about', icon: 'user', title: 'About You', color: '#615FF8', bg: '#EEEDFE',
     fields: [
-      { name: 'nickname',    label: 'What should Mneva call you?',     type: 'text',   placeholder: 'e.g. Nivi' },
-      { name: 'dateOfBirth', label: 'Date of birth',                   type: 'text',   placeholder: 'YYYY-MM-DD' },
-      { name: 'city',        label: 'City',                            type: 'text',   placeholder: 'Bengaluru' },
-      { name: 'country',     label: 'Country',                         type: 'text',   placeholder: 'India' },
-      { name: 'language',    label: 'Preferred language',              type: 'text',   placeholder: 'English' },
+      { name: 'nickname',    label: 'What should Mneva call you?',     type: 'text',   validate: 'alpha', placeholder: 'e.g. Nivi' },
+      { name: 'dateOfBirth', label: 'Date of birth',                   type: 'date',   placeholder: 'YYYY-MM-DD' },
+      { name: 'city',        label: 'City',                            type: 'text',   validate: 'alpha', placeholder: 'Bengaluru' },
+      { name: 'country',     label: 'Country',                         type: 'text',   validate: 'alpha', placeholder: 'India' },
+      { name: 'language',    label: 'Preferred language',              type: 'text',   validate: 'alpha', allow: ',', placeholder: 'English' },
       { name: 'gender',      label: 'Gender',                          type: 'chips',  single: true, options: ['Male', 'Female', 'Non-binary', 'Prefer not to say'] },
     ],
   },
   {
     key: 'work', icon: 'briefcase', title: 'Work & Career', color: '#4FA6E8', bg: '#EAF3FD',
     fields: [
-      { name: 'occupation',        label: 'Profession',              type: 'text',     placeholder: 'Product Manager' },
+      { name: 'occupation',        label: 'Profession',              type: 'text',     validate: 'alpha', allow: '&/,', placeholder: 'Product Manager' },
       { name: 'company',           label: 'Company',                 type: 'text',     placeholder: 'Acme Labs' },
-      { name: 'industry',          label: 'Industry',                type: 'text',     placeholder: 'Fintech' },
+      { name: 'industry',          label: 'Industry',                type: 'text',     validate: 'alpha', allow: '&/,', placeholder: 'Fintech' },
       { name: 'professionalLevel', label: 'I am a…',                 type: 'chips',    single: true, options: ['Student', 'Professional', 'Business Owner', 'Freelancer'] },
       { name: 'skills',            label: 'Primary skills',          type: 'textarea', placeholder: 'Product strategy, AI, operations' },
       { name: 'careerGoals',       label: 'Career goals',            type: 'textarea', placeholder: 'Grow into a strategy role' },
@@ -94,9 +95,9 @@ const SECTIONS = [
   {
     key: 'lifestyle', icon: 'calendar', title: 'Daily Routine', color: '#F5A623', bg: '#FEF3C7',
     fields: [
-      { name: 'wakeTime',          label: 'Wake up time',          type: 'text',  placeholder: '06:30' },
-      { name: 'sleepTime',         label: 'Sleep time',            type: 'text',  placeholder: '23:00' },
-      { name: 'workingHours',      label: 'Working hours',         type: 'text',  placeholder: '09:00 - 18:00' },
+      { name: 'wakeTime',          label: 'Wake up time',          type: 'time',  placeholder: '06:30 AM' },
+      { name: 'sleepTime',         label: 'Sleep time',            type: 'time',  placeholder: '11:00 PM' },
+      { name: 'workingHours',      label: 'Working hours',         type: 'timerange' },
       { name: 'workMode',          label: 'Work mode',             type: 'chips', single: true, options: ['Remote', 'In-Office', 'Hybrid'] },
       { name: 'productiveTime',    label: 'Most productive time',  type: 'chips', single: true, options: ['Morning', 'Afternoon', 'Evening', 'Night'] },
       { name: 'exerciseFrequency', label: 'Exercise days/week',    type: 'chips', single: true, options: ['0', '1-2', '3-4', '5+'] },
@@ -105,8 +106,8 @@ const SECTIONS = [
   {
     key: 'health', icon: 'activity', title: 'Health Profile', color: '#E0546E', bg: '#FCEAED',
     fields: [
-      { name: 'height',            label: 'Height',            type: 'text',  placeholder: '172 cm' },
-      { name: 'weight',            label: 'Weight',            type: 'text',  placeholder: '68 kg' },
+      { name: 'height',            label: 'Height',            type: 'measure', unit: 'cm', min: 50, max: 275, placeholder: '172' },
+      { name: 'weight',            label: 'Weight',            type: 'measure', unit: 'kg', min: 10, max: 500, placeholder: '68' },
       { name: 'bloodGroup',        label: 'Blood group',       type: 'chips', single: true, options: ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'] },
       { name: 'diet',              label: 'Dietary preference', type: 'chips', single: true, options: ['Vegetarian', 'Vegan', 'Non-Vegetarian', 'Eggetarian'] },
       { name: 'exerciseLevel',     label: 'Exercise level',    type: 'chips', single: true, options: ['Beginner', 'Intermediate', 'Advanced'] },
@@ -125,16 +126,6 @@ const SECTIONS = [
     ],
   },
   {
-    key: 'family', icon: 'users', title: 'Family', color: '#9B72FF', bg: '#F3EFFE',
-    fields: [
-      { name: 'familyReminders',      label: 'Help manage family tasks?',  type: 'toggle' },
-      { name: 'familyMembers',        label: 'Family members',             type: 'chips',  options: ['Parents', 'Spouse / Partner', 'Children', 'Siblings', 'Pets'] },
-      { name: 'schoolReminders',      label: 'School reminders?',          type: 'toggle' },
-      { name: 'medicineReminders',    label: 'Medicine reminders?',        type: 'toggle' },
-      { name: 'vaccinationReminders', label: 'Vaccination reminders?',     type: 'toggle' },
-    ],
-  },
-  {
     key: 'aiprefs', icon: 'cpu', title: 'AI Preferences', color: '#615FF8', bg: '#EEEDFE',
     fields: [
       { name: 'aiPersonality',        label: 'How should Mneva respond?',          type: 'chips', single: true, options: ['Professional', 'Friendly', 'Coach', 'Mentor', 'Casual'] },
@@ -144,6 +135,208 @@ const SECTIONS = [
     ],
   },
 ];
+
+// Family's four reminder switches now live inside the Space screens they
+// control (Family Tasks, Children & Activity, Medication, Pet Care), so the
+// profile has one section fewer. A 'family' entry saved earlier is ignored.
+const SECTION_KEYS = SECTIONS.map(sec => sec.key);
+
+// ── Validation helpers ───────────────────────────────────────────────────────
+const ALPHA_STRIP_CHARS = '0123456789!@#$%^&*()_+=[]{}<>?/\\|~`":;,';
+const HAS_LETTER = /[A-Za-zÀ-￿]/;
+
+// Removes digits and symbols as the user types, so a name/language/profession
+// field can only ever hold letters, spaces and . ' - (plus per-field extras).
+function sanitizeAlpha(text, allow = '') {
+  let out = '';
+  for (const ch of String(text || '')) {
+    if (ALPHA_STRIP_CHARS.includes(ch) && !allow.includes(ch)) continue;
+    out += ch;
+  }
+  return out.replace(/\s{2,}/g, ' ');
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const toIsoDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+// Typing "19950827" becomes "1995-08-27" as they go.
+function formatDobInput(text) {
+  const digits = String(text || '').replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+}
+
+function parseIsoDate(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || '').trim());
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(y, mo - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
+  return date;
+}
+
+// Reads whatever date format an older save may hold (ISO timestamp,
+// DD/MM/YYYY, "27 Aug 1995") so the calendar opens on the date already in
+// the field instead of a default one.
+function parseFlexibleDate(str) {
+  const v = String(str || '').trim();
+  if (!v) return null;
+  const strict = parseIsoDate(v.slice(0, 10));
+  if (strict && /^\d{4}-\d{2}-\d{2}(?:$|T)/.test(v)) return strict;
+  const dmy = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(v);
+  if (dmy) return parseIsoDate(`${dmy[3]}-${pad2(dmy[2])}-${pad2(dmy[1])}`);
+  const t = Date.parse(v);
+  if (!Number.isNaN(t)) { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  return null;
+}
+
+function validateDob(value) {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  const date = parseIsoDate(v);
+  if (!date) return 'Enter a valid date as YYYY-MM-DD, or pick it from the calendar';
+  const now = new Date();
+  if (date > now) return 'Date of birth cannot be in the future';
+  if (date.getFullYear() < 1900 || now.getFullYear() - date.getFullYear() > 120) return 'Enter a realistic date of birth';
+  return null;
+}
+
+// Accepts "6:30 AM", "06:30pm", or a legacy 24h "18:00"; returns "06:30 PM".
+function normalizeTime12(text) {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  let m = /^(\d{1,2})(?::?(\d{2}))?\s*([AaPp])\.?[Mm]?\.?$/.exec(t);
+  if (m) {
+    const h = Number(m[1]); const min = Number(m[2] || 0);
+    if (h < 1 || h > 12 || min > 59) return null;
+    return `${pad2(h)}:${pad2(min)} ${m[3].toUpperCase()}M`;
+  }
+  m = /^(\d{1,2}):(\d{2})$/.exec(t);
+  if (m) {
+    const h = Number(m[1]); const min = Number(m[2]);
+    if (h > 23 || min > 59) return null;
+    return `${pad2(h % 12 === 0 ? 12 : h % 12)}:${pad2(min)} ${h >= 12 ? 'PM' : 'AM'}`;
+  }
+  return null;
+}
+
+const time12ToMinutes = (t) => {
+  const m = /^(\d{2}):(\d{2}) (AM|PM)$/.exec(t || '');
+  if (!m) return null;
+  return (Number(m[1]) % 12) * 60 + Number(m[2]) + (m[3] === 'PM' ? 720 : 0);
+};
+
+const dateToTime12 = (d) => normalizeTime12(`${d.getHours()}:${pad2(d.getMinutes())}`);
+
+function time12ToDate(t) {
+  const mins = time12ToMinutes(normalizeTime12(t) || '');
+  const d = new Date();
+  d.setHours(mins == null ? 9 : Math.floor(mins / 60), mins == null ? 0 : mins % 60, 0, 0);
+  return d;
+}
+
+const splitRange = (v) => String(v || '').split(/\s*(?:-|–|—|\bto\b)\s*/i).map((x) => x.trim());
+
+function parseRange(v) {
+  const parts = splitRange(v);
+  return { from: parts[0] ? (normalizeTime12(parts[0]) ?? parts[0]) : '', to: parts[1] ? (normalizeTime12(parts[1]) ?? parts[1]) : '' };
+}
+
+const formatRange = (from, to) => (from || to ? `${from || ''} - ${to || ''}` : '');
+
+function sanitizeMeasure(text) {
+  const cleaned = String(text || '').replace(/[^0-9.]/g, '');
+  const [intPart, ...rest] = cleaned.split('.');
+  const dec = rest.join('').slice(0, 1);
+  const whole = intPart.slice(0, 3);
+  return rest.length ? `${whole}.${dec}` : whole;
+}
+
+const COUNTRY_ALIASES = {
+  usa: 'United States', us: 'United States', america: 'United States', 'united states of america': 'United States',
+  uk: 'United Kingdom', britain: 'United Kingdom', 'great britain': 'United Kingdom', england: 'United Kingdom',
+  uae: 'United Arab Emirates', holland: 'Netherlands',
+};
+const COUNTRY_ISO = { 'United States': 'us', 'United Kingdom': 'gb', 'United Arab Emirates': 'ae', Netherlands: 'nl' };
+
+function canonicalCountry(text) {
+  const q = String(text || '').trim().toLowerCase();
+  if (!q) return '';
+  if (COUNTRY_ALIASES[q]) return COUNTRY_ALIASES[q];
+  return COUNTRY_LIST.find((c) => c.toLowerCase() === q) || null;
+}
+
+function placeInCountry(place, canonical) {
+  const name = String(place?.country || '').toLowerCase();
+  const code = String(place?.country_code || '').toLowerCase();
+  const target = canonical.toLowerCase();
+  return name === target || (COUNTRY_ISO[canonical] && COUNTRY_ISO[canonical] === code) || name.includes(target) || target.includes(name);
+}
+
+async function searchCities(name, count = 10) {
+  const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${count}&language=en&format=json`);
+  const data = await res.json();
+  return data?.results || [];
+}
+
+// City + Country are checked against each other on save. Returns
+// { errors, country } — country is filled in from the city when left blank.
+// A network failure never blocks saving; only a definite mismatch does.
+async function verifyLocation(city, countryText) {
+  const errors = {};
+  let country = String(countryText || '').trim();
+  let canonical = '';
+  if (country) {
+    canonical = canonicalCountry(country);
+    if (!canonical) errors.country = 'Pick a valid country from the suggestions';
+    else country = canonical;
+  }
+  const cityName = String(city || '').trim();
+  if (cityName && !errors.country) {
+    try {
+      const results = await searchCities(cityName);
+      if (!results.length) {
+        errors.city = `We couldn't find a city called "${cityName}"`;
+      } else if (canonical) {
+        if (!results.some((r) => placeInCountry(r, canonical))) errors.city = `"${cityName}" isn't a city in ${canonical}`;
+      } else {
+        country = results[0].country || '';
+      }
+    } catch {}
+  }
+  return { errors, country };
+}
+
+function validateFieldValue(f, value) {
+  const v = typeof value === 'string' ? value.trim() : value;
+  if (f.validate === 'alpha') {
+    if (!v) return null;
+    if (!HAS_LETTER.test(v)) return `${f.label.replace(/\?$/, '')}: use letters only`;
+    if (v.length > 60) return 'Too long — keep it under 60 characters';
+    return null;
+  }
+  if (f.type === 'date') return validateDob(v);
+  if (f.type === 'time') {
+    if (!v) return null;
+    return normalizeTime12(v) ? null : 'Use a time like 06:30 AM';
+  }
+  if (f.type === 'timerange') {
+    if (!v) return null;
+    const { from, to } = parseRange(v);
+    const a = normalizeTime12(from); const b = normalizeTime12(to);
+    if (!a || !b) return 'Set both a start and an end time (e.g. 09:00 AM - 06:00 PM)';
+    if (a === b) return 'Start and end time cannot be the same';
+    return null;
+  }
+  if (f.type === 'measure') {
+    if (!v) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < f.min || n > f.max) return `Enter a ${f.label.toLowerCase()} between ${f.min} and ${f.max} ${f.unit}`;
+    return null;
+  }
+  return null;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function buildDefaults(profile = {}) {
@@ -155,6 +348,10 @@ function buildDefaults(profile = {}) {
       else if (f.type === 'chips' && f.single) out[f.name] = (v && !Array.isArray(v)) ? v : (Array.isArray(v) ? (v[0] ?? '') : '');
       else if (f.type === 'chips') out[f.name] = Array.isArray(v) ? v : (v ? String(v).split(',').map(s => s.trim()).filter(Boolean) : []);
       else if (f.name === 'skills') out[f.name] = Array.isArray(v) ? v.join(', ') : (v ?? '');
+      else if (f.type === 'measure') { const n = parseFloat(String(v ?? '').replace(/[^0-9.]/g, '')); out[f.name] = Number.isFinite(n) ? String(n) : ''; }
+      else if (f.type === 'date') { const d = parseFlexibleDate(v); out[f.name] = d ? toIsoDate(d) : String(v ?? ''); }
+      else if (f.type === 'time') out[f.name] = v ? (normalizeTime12(v) ?? String(v)) : '';
+      else if (f.type === 'timerange') { const r = parseRange(v); out[f.name] = formatRange(r.from, r.to); }
       else out[f.name] = v ?? '';
     })
   );
@@ -175,6 +372,10 @@ function buildPayload(sec, formData) {
         : Array.isArray(v) ? v : [];
     }
     else if (f.type === 'textarea') out[f.name] = v ?? '';
+    else if (f.type === 'measure') out[f.name] = v ? `${v} ${f.unit}` : '';
+    else if (f.type === 'time') out[f.name] = v ? (normalizeTime12(v) ?? v) : '';
+    else if (f.type === 'timerange') { const r = parseRange(v); out[f.name] = v ? formatRange(normalizeTime12(r.from) ?? r.from, normalizeTime12(r.to) ?? r.to) : ''; }
+    else if (f.validate === 'alpha' || f.type === 'date') out[f.name] = typeof v === 'string' ? v.trim() : (v ?? '');
     else out[f.name] = v ?? '';
   });
   return out;
@@ -228,7 +429,7 @@ function ChipsField({ options, value, single, onChange, styles, theme }) {
 // debounced so it isn't refetching on every keystroke.
 const CITY_SUGGEST_DEBOUNCE_MS = 350;
 
-function LocationSuggestField({ field, value, onChangeText, onCitySelected, styles, theme }) {
+function LocationSuggestField({ field, value, onChangeText, onCitySelected, error, countryValue, styles, theme }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef(null);
@@ -249,10 +450,12 @@ function LocationSuggestField({ field, value, onChangeText, onCitySelected, styl
     if (q.length < 2) return setSuggestions([]);
     const myRequestId = ++requestIdRef.current;
     try {
-      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`);
-      const data = await res.json();
+      let found = await searchCities(q, 10);
       if (myRequestId !== requestIdRef.current) return; // a newer keystroke already superseded this
-      const results = (data?.results || []).map((r) => ({
+      // With a country already chosen, only cities of that country are offered.
+      const canonical = canonicalCountry(countryValue);
+      if (canonical) found = found.filter((r) => placeInCountry(r, canonical));
+      const results = found.slice(0, 6).map((r) => ({
         id: String(r.id),
         label: r.admin1 && r.admin1 !== r.name ? `${r.name}, ${r.admin1}, ${r.country}` : `${r.name}, ${r.country}`,
         city: r.name,
@@ -292,7 +495,7 @@ function LocationSuggestField({ field, value, onChangeText, onCitySelected, styl
   return (
     <View>
       <TextInput
-        style={styles.textInput}
+        style={[styles.textInput, error && styles.inputError]}
         value={value || ''}
         onChangeText={handleChangeText}
         onFocus={() => setShowSuggestions(true)}
@@ -322,7 +525,126 @@ function LocationSuggestField({ field, value, onChangeText, onCitySelected, styl
   );
 }
 
-function SectionCard({ sec, formData, onChange, onSave, saving, saved, styles, theme }) {
+function DateField({ value, onChange, placeholder, error, styles, theme }) {
+  const [showIos, setShowIos] = useState(false);
+  const current = parseFlexibleDate(value) || new Date(1995, 0, 1);
+  const open = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: current, mode: 'date', maximumDate: new Date(), minimumDate: new Date(1900, 0, 1),
+        onChange: (e, d) => { if (e.type === 'set' && d) onChange(toIsoDate(d)); },
+      });
+    } else setShowIos((v) => !v);
+  };
+  return (
+    <View>
+      <View style={[styles.inputRow, error && styles.inputError]}>
+        <TextInput
+          style={styles.inputRowText}
+          value={value || ''}
+          onChangeText={(t) => onChange(formatDobInput(t))}
+          placeholder={placeholder}
+          placeholderTextColor={theme.placeholder}
+          keyboardType="number-pad"
+          maxLength={10}
+        />
+        <TouchableOpacity onPress={open} style={styles.inputIconBtn} hitSlop={8}>
+          <Feather name="calendar" size={18} color={theme.accent} />
+        </TouchableOpacity>
+      </View>
+      {showIos && Platform.OS === 'ios' && (
+        <View>
+          <DateTimePicker
+            value={current} mode="date" display="spinner" maximumDate={new Date()} minimumDate={new Date(1900, 0, 1)}
+            themeVariant={theme.isDark ? 'dark' : 'light'}
+            onChange={(e, d) => { if (d) onChange(toIsoDate(d)); }}
+          />
+          <TouchableOpacity onPress={() => setShowIos(false)} style={styles.pickerDone}>
+            <Text style={styles.pickerDoneText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// 12-hour AM/PM time: pick from the clock or type it ("6:30 pm" is tidied
+// to "06:30 PM" once they leave the field).
+function TimeField({ value, onChange, placeholder, error, styles, theme, compact }) {
+  const [showIos, setShowIos] = useState(false);
+  const open = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: time12ToDate(value), mode: 'time', is24Hour: false,
+        onChange: (e, d) => { if (e.type === 'set' && d) onChange(dateToTime12(d)); },
+      });
+    } else setShowIos((v) => !v);
+  };
+  const tidy = () => { const n = normalizeTime12(value); if (n && n !== value) onChange(n); };
+  return (
+    <View style={compact ? { flex: 1 } : undefined}>
+      <View style={[styles.inputRow, error && styles.inputError]}>
+        <TextInput
+          style={styles.inputRowText}
+          value={value || ''}
+          onChangeText={(t) => onChange(t.replace(/[^0-9:AaPpMm\s.]/g, '').slice(0, 8).toUpperCase())}
+          onEndEditing={tidy}
+          placeholder={placeholder}
+          placeholderTextColor={theme.placeholder}
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+        <TouchableOpacity onPress={open} style={styles.inputIconBtn} hitSlop={8}>
+          <Feather name="clock" size={18} color={theme.accent} />
+        </TouchableOpacity>
+      </View>
+      {showIos && Platform.OS === 'ios' && (
+        <View>
+          <DateTimePicker
+            value={time12ToDate(value)} mode="time" display="spinner" is24Hour={false}
+            themeVariant={theme.isDark ? 'dark' : 'light'}
+            onChange={(e, d) => { if (d) onChange(dateToTime12(d)); }}
+          />
+          <TouchableOpacity onPress={() => setShowIos(false)} style={styles.pickerDone}>
+            <Text style={styles.pickerDoneText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function TimeRangeField({ value, onChange, error, styles, theme }) {
+  const { from, to } = parseRange(value);
+  return (
+    <View style={styles.rangeRow}>
+      <TimeField compact value={from} placeholder="09:00 AM" error={error} styles={styles} theme={theme}
+        onChange={(v) => onChange(formatRange(v, to))} />
+      <Text style={styles.rangeDash}>to</Text>
+      <TimeField compact value={to} placeholder="06:00 PM" error={error} styles={styles} theme={theme}
+        onChange={(v) => onChange(formatRange(from, v))} />
+    </View>
+  );
+}
+
+function MeasureField({ field, value, onChange, error, styles, theme }) {
+  return (
+    <View style={[styles.inputRow, error && styles.inputError]}>
+      <TextInput
+        style={styles.inputRowText}
+        value={value || ''}
+        onChangeText={(t) => onChange(sanitizeMeasure(t))}
+        placeholder={field.placeholder}
+        placeholderTextColor={theme.placeholder}
+        keyboardType="decimal-pad"
+        maxLength={5}
+      />
+      <Text style={styles.unitText}>{field.unit}</Text>
+    </View>
+  );
+}
+
+function SectionCard({ sec, formData, onChange, onSave, saving, saved, errors = {}, styles, theme }) {
   const [open, setOpen] = useState(false);
   const fillPct = getSectionFill(sec, formData);
   const tintBg = theme.isDark ? hexToRgba(sec.color, 0.16) : sec.bg;
@@ -359,6 +681,8 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved, styles, t
               {f.type === 'text' && (f.name === 'city' || f.name === 'country') && (
                 <LocationSuggestField
                   field={f}
+                  error={errors[f.name]}
+                  countryValue={formData.country}
                   value={formData[f.name]}
                   onChangeText={v => onChange(f.name, v)}
                   onCitySelected={(country) => { if (!formData.country) onChange('country', country); }}
@@ -367,9 +691,26 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved, styles, t
                 />
               )}
 
+              {f.type === 'date' && (
+                <DateField value={formData[f.name]} onChange={v => onChange(f.name, v)} placeholder={f.placeholder}
+                  error={errors[f.name]} styles={styles} theme={theme} />
+              )}
+              {f.type === 'time' && (
+                <TimeField value={formData[f.name]} onChange={v => onChange(f.name, v)} placeholder={f.placeholder}
+                  error={errors[f.name]} styles={styles} theme={theme} />
+              )}
+              {f.type === 'timerange' && (
+                <TimeRangeField value={formData[f.name]} onChange={v => onChange(f.name, v)}
+                  error={errors[f.name]} styles={styles} theme={theme} />
+              )}
+              {f.type === 'measure' && (
+                <MeasureField field={f} value={formData[f.name]} onChange={v => onChange(f.name, v)}
+                  error={errors[f.name]} styles={styles} theme={theme} />
+              )}
+
               {f.type === 'text' && f.name !== 'city' && f.name !== 'country' && (
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, errors[f.name] && styles.inputError]}
                   value={formData[f.name] || ''}
                   onChangeText={v => onChange(f.name, v)}
                   placeholder={f.placeholder}
@@ -388,6 +729,8 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved, styles, t
                   numberOfLines={3}
                 />
               )}
+
+              {!!errors[f.name] && <Text style={styles.fieldError}>{errors[f.name]}</Text>}
 
               {f.type === 'chips' && (
                 <ChipsField
@@ -452,6 +795,7 @@ export default function AIProfile({ navigation }) {
   const [completionPct, setCompletionPct] = useState(0);
   const [completedSections, setCompletedSections] = useState([]);
   const [toast, setToast] = useState(null); // { title, subtitle, isError }
+  const [errors, setErrors] = useState({});
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef(null);
   const hasRealDataRef = useRef(false);
@@ -462,7 +806,7 @@ export default function AIProfile({ navigation }) {
   const applyProfileData = (profile = {}) => {
     setFormData(buildDefaults(profile));
     setCompletionPct(profile.completionPct || 0);
-    const sections = Array.isArray(profile.completedSections) ? profile.completedSections : [];
+    const sections = (Array.isArray(profile.completedSections) ? profile.completedSections : []).filter(k => SECTION_KEYS.includes(k));
     setCompletedSections(sections);
     const done = {};
     sections.forEach(k => { done[k] = true; });
@@ -509,17 +853,61 @@ export default function AIProfile({ navigation }) {
     }, 3000);
   };
 
-  const onChange = (name, value) => setFormData(prev => ({ ...prev, [name]: value }));
+  const fieldByName = useRef({}).current;
+  if (!fieldByName.__filled) { SECTIONS.forEach(sec => sec.fields.forEach(f => { fieldByName[f.name] = f; })); fieldByName.__filled = true; }
+
+  const onChange = (name, value) => {
+    const f = fieldByName[name];
+    let next = value;
+    let hint = null;
+    if (f?.validate === 'alpha' && typeof value === 'string') {
+      next = sanitizeAlpha(value, f.allow || '');
+      if (next !== value.replace(/\s{2,}/g, ' ')) hint = 'Only letters are allowed here — numbers and symbols are not accepted';
+    }
+    setFormData(prev => ({ ...prev, [name]: next }));
+    setErrors(prev => {
+      if (!prev[name] && !hint) return prev;
+      const copy = { ...prev };
+      if (hint) copy[name] = hint; else delete copy[name];
+      // Changing city/country invalidates the other one's mismatch message.
+      if (name === 'city' || name === 'country') { delete copy.city; delete copy.country; if (hint) copy[name] = hint; }
+      return copy;
+    });
+  };
 
   const onSave = async (sec) => {
     setSaving(sec.key);
     try {
+      const found = {};
+      sec.fields.forEach(f => {
+        const msg = validateFieldValue(f, formData[f.name]);
+        if (msg) found[f.name] = msg;
+      });
+      let data = formData;
+      if (sec.key === 'about') {
+        const loc = await verifyLocation(formData.city, formData.country);
+        if (!found.city && loc.errors.city) found.city = loc.errors.city;
+        if (!found.country && loc.errors.country) found.country = loc.errors.country;
+        if (!found.country && !found.city && loc.country && loc.country !== formData.country) {
+          data = { ...formData, country: loc.country };
+          setFormData(data);
+        }
+      }
+      setErrors(prev => {
+        const copy = { ...prev };
+        sec.fields.forEach(f => { delete copy[f.name]; });
+        return { ...copy, ...found };
+      });
+      if (Object.keys(found).length) {
+        showToast('Please check your details', Object.values(found)[0], true);
+        return;
+      }
       const res = await apiFetch('/api/onboarding/section', {
         method: 'POST',
-        body: { section: sec.key, data: buildPayload(sec, formData) },
+        body: { section: sec.key, data: buildPayload(sec, data) },
       });
       setCompletionPct(res.completionPct || 0);
-      const newSections = Array.isArray(res.completedSections) ? res.completedSections : completedSections;
+      const newSections = Array.isArray(res.completedSections) ? res.completedSections.filter(k => SECTION_KEYS.includes(k)) : completedSections;
       setCompletedSections(newSections);
       setSaved(prev => ({ ...prev, [sec.key]: true }));
       showToast(`${sec.title} saved ✓`, 'Your profile has been updated successfully', false);
@@ -530,7 +918,7 @@ export default function AIProfile({ navigation }) {
     }
   };
 
-  const savedCount = Object.keys(saved).length;
+  const savedCount = Object.keys(saved).filter(k => SECTION_KEYS.includes(k)).length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -588,6 +976,7 @@ export default function AIProfile({ navigation }) {
               onSave={onSave}
               saving={saving === sec.key}
               saved={!!saved[sec.key]}
+              errors={errors}
               styles={styles}
               theme={theme}
             />
@@ -677,6 +1066,16 @@ const createStyles = (theme) => StyleSheet.create({
 
   textInput: { backgroundColor: theme.surfaceAlt, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: theme.text, borderWidth: 1, borderColor: theme.borderStrong },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
+  inputError: { borderColor: '#E0546E' },
+  fieldError: { marginTop: 6, fontSize: 12, color: '#E0546E' },
+  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surfaceAlt, borderRadius: 12, borderWidth: 1, borderColor: theme.borderStrong, paddingLeft: 14 },
+  inputRowText: { flex: 1, paddingVertical: 12, fontSize: 14, color: theme.text },
+  inputIconBtn: { paddingHorizontal: 12, paddingVertical: 10 },
+  unitText: { paddingHorizontal: 14, fontSize: 13, fontWeight: '700', color: theme.muted },
+  rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rangeDash: { fontSize: 12, fontWeight: '600', color: theme.muted },
+  pickerDone: { alignSelf: 'flex-end', paddingHorizontal: 14, paddingVertical: 8 },
+  pickerDoneText: { color: theme.accent, fontWeight: '700', fontSize: 14 },
 
   suggestBox: { marginTop: 6, backgroundColor: theme.card, borderRadius: 12, borderWidth: 1, borderColor: theme.border, overflow: 'hidden' },
   suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border },

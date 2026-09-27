@@ -3,6 +3,8 @@ import { prisma } from '../config/prisma.js'
 
 export const onboardingRouter = express.Router()
 
+// 'family' stays accepted so older app builds don't error, but it no longer
+// counts as a profile section (its switches moved into the Space screens).
 const SECTIONS = ['about','work','interests','goals','lifestyle','health','finance','family','aiprefs','connections']
 
 // All individual fields that count toward completion
@@ -53,6 +55,26 @@ function pickSectionFields(section, data) {
   }
 }
 
+// The four family reminder switches live inside the Space screens they
+// control (Family Tasks / Children & Activity / Medication / Pet Care), not in
+// a profile section — each one flips a single column.
+const FAMILY_TOGGLE_KEYS = ['familyReminders', 'schoolReminders', 'medicineReminders', 'vaccinationReminders']
+
+// PATCH /api/onboarding/family-toggle — { key, value }
+onboardingRouter.patch('/family-toggle', async (req, res) => {
+  try {
+    const { key, value } = req.body || {}
+    if (!FAMILY_TOGGLE_KEYS.includes(key)) return res.status(400).json({ error: 'invalid key' })
+    if (typeof value !== 'boolean') return res.status(400).json({ error: 'value must be true or false' })
+    const profile = await prisma.userProfile.upsert({
+      where: { userId: req.user.id },
+      update: { [key]: value },
+      create: { userId: req.user.id, [key]: value },
+    })
+    res.json({ key, value: profile[key] })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // GET /api/onboarding/profile — only returns THIS user's profile
 onboardingRouter.get('/profile', async (req, res) => {
   try {
@@ -65,6 +87,7 @@ onboardingRouter.get('/profile', async (req, res) => {
     if (profile && profile.completionPct !== completionPct) {
       prisma.userProfile.update({ where: { userId: req.user.id }, data: { completionPct } }).catch(() => {})
     }
+    if (profile && Array.isArray(profile.completedSections)) profile.completedSections = profile.completedSections.filter(k => k !== 'family')
     res.json({ profile: profile ? { ...profile, completionPct } : null, onboardingDone: user?.onboardingDone || false })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -94,7 +117,7 @@ onboardingRouter.post('/section', async (req, res) => {
     // fields another section had just finished writing — leaving the score
     // stuck a few points short of 100% even once every field was filled.
     const completedSections = Array.isArray(profile.completedSections) ? [...profile.completedSections] : []
-    if (!completedSections.includes(section)) completedSections.push(section)
+    if (section !== 'family' && !completedSections.includes(section)) completedSections.push(section)
     const completionPct = calcCompletionPct(profile)
 
     profile = await prisma.userProfile.update({

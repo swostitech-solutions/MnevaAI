@@ -15,6 +15,7 @@ import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { PetContext } from './PetCare/PetContext';
 import { useTheme } from '../context/ThemeContext';
+import FamilyReminderToggle from '../components/FamilyReminderToggle';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: 'user' },
@@ -201,6 +202,9 @@ export default function PetCare({ navigation }) {
 
         {/* Tab content */}
         <View style={{ flex: 1 }}>
+          <View style={{ paddingHorizontal: pad }}>
+            <FamilyReminderToggle settingKey="vaccinationReminders" title="Vaccination reminders" description="Remind me when a pet vaccination is due" icon="shield" color="#D97706" />
+          </View>
           {activeTab === 'profile' && <PetProfileTab horizontalPad={pad} insets={insets} />}
           {activeTab === 'health'  && <PetHealthTab  horizontalPad={pad} insets={insets} />}
           {activeTab === 'routine' && <PetRoutineTab horizontalPad={pad} insets={insets} />}

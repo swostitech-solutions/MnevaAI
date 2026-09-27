@@ -24,6 +24,14 @@ export const GATED_DOMAINS = {
   add_family_item: 'family',
 }
 
+// Trust domain for one concrete tool call. update_record/delete_record work
+// across modules, so their domain comes from which module they touch.
+import { domainForModule } from './recordOps.js'
+export function domainForCall(tool, input = {}) {
+  if (tool === 'update_record' || tool === 'delete_record') return domainForModule(input?.module)
+  return GATED_DOMAINS[tool] || null
+}
+
 export const DOMAINS = ['finance', 'communications', 'health', 'family']
 export const DOMAIN_LABEL = { finance: 'Finance', communications: 'Communication', health: 'Health Core', family: 'Family' }
 
@@ -68,8 +76,8 @@ export async function getAllDomainTrust(userId) {
 // immediately. `amount` only matters for initiate_payment — a large payment
 // always needs a real approval tap no matter the level, same as Bills' own
 // biometric gate.
-export function decideGate(tool, domainTrust, amount = 0) {
-  const domain = GATED_DOMAINS[tool]
+export function decideGate(tool, domainTrust, amount = 0, domainOverride = null) {
+  const domain = domainOverride || GATED_DOMAINS[tool]
   if (!domain) return { mode: 'execute', domain: null }
   if (domainTrust.enabled === false) return { mode: 'blocked', domain, reason: 'domain_disabled' }
   if (domainTrust.level <= 1) return { mode: 'blocked', domain, reason: 'observe_mode' }

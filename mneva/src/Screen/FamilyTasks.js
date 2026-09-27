@@ -7,6 +7,7 @@ import { FamilyTaskProvider, useFamilyTask } from './FamilyTasks/FamilyTaskConte
 import ConnectionsTab from './FamilyTasks/ConnectionsTab';
 import TasksTab from './FamilyTasks/TasksTab';
 import { useTheme } from '../context/ThemeContext';
+import FamilyReminderToggle from '../components/FamilyReminderToggle';
 
 const TABS = [
   { id: 'tasks',       label: 'Tasks',       icon: 'check-square' },
@@ -79,6 +80,9 @@ function FamilyTasksInner({ navigation }) {
 
       {/* Content */}
       <View style={{ flex: 1, backgroundColor: theme.bg }}>
+        <View style={{ paddingHorizontal: horizontalPad }}>
+          <FamilyReminderToggle settingKey="familyReminders" title="Help manage family tasks" description="Let Mneva track and remind you about family tasks" icon="check-square" color="#1F9A5A" />
+        </View>
         {activeTab === 'tasks'       && <TasksTab       horizontalPad={horizontalPad} insets={insets} />}
         {activeTab === 'connections' && <ConnectionsTab horizontalPad={horizontalPad} insets={insets} />}
       </View>

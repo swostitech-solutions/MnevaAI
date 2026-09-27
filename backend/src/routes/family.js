@@ -47,6 +47,16 @@ const fmtTask = (t) => ({
 
 const emit = (io, userId, event, data) => { if (io) io.to(`u:${userId}`).emit(event, data) }
 
+// A due date already in the past is never something to newly set (creating
+// or re-dating a task to "yesterday" is always a mistake, not intent).
+// dueDate is a plain "YYYY-MM-DD" (Asia/Kolkata) with no time-of-day, so
+// today itself is always allowed.
+function isPastDueDate(dueDate) {
+  if (!dueDate) return false
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+  return String(dueDate).slice(0, 10) < todayKey
+}
+
 // ── Connections ───────────────────────────────────────────────────────────────
 
 familyRouter.get('/connections', async (req, res) => {
@@ -133,6 +143,7 @@ familyRouter.post('/tasks', async (req, res) => {
     const myId = req.user.id
     const { connectionId, assigneeId, title, description, priority, category, dueDate, recurrence, checklist } = req.body
     if (!connectionId || !assigneeId || !title) return res.status(400).json({ error: 'connectionId, assigneeId and title required' })
+    if (isPastDueDate(dueDate)) return res.status(400).json({ error: 'Due date cannot be in the past — please pick today or a future date.' })
 
     const conn = await prisma.familyConnection.findUnique({ where: { id: connectionId } })
     if (!conn || (conn.requesterId !== myId && conn.receiverId !== myId)) return res.status(403).json({ error: 'Not authorized' })
@@ -167,6 +178,47 @@ familyRouter.post('/tasks', async (req, res) => {
       status: 'completed',
     }).catch(() => {})
     res.status(201).json({ task: formatted })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// ── Edit core task fields (title/description/priority/category/dueDate/
+// recurrence) — separate from the /status route above, which the ASSIGNEE
+// also uses (Accept/Reject/Start/Complete). Editing the task's own content
+// is creator-only, same as delete.
+familyRouter.patch('/tasks/:id', async (req, res) => {
+  try {
+    const myId = req.user.id
+    const { title, description, priority, category, dueDate, recurrence } = req.body
+    const task = await prisma.familyTask.findUnique({ where: { id: req.params.id } })
+    if (!task) return res.status(404).json({ error: 'Task not found' })
+    if (task.creatorId !== myId) return res.status(403).json({ error: 'Only the creator can edit this task' })
+    if (title !== undefined && !title.trim()) return res.status(400).json({ error: 'title cannot be empty' })
+    if (dueDate !== undefined && isPastDueDate(dueDate)) return res.status(400).json({ error: 'Due date cannot be in the past — please pick today or a future date.' })
+
+    const updated = await prisma.familyTask.update({
+      where: { id: req.params.id },
+      data: {
+        ...(title       !== undefined && { title: title.trim() }),
+        ...(description !== undefined && { description: description?.trim() || null }),
+        ...(priority     !== undefined && { priority }),
+        ...(category     !== undefined && { category: category || null }),
+        ...(dueDate       !== undefined && { dueDate: dueDate || null }),
+        ...(recurrence   !== undefined && { recurrence: recurrence || 'None' }),
+      },
+      include: taskInclude,
+    })
+    const formatted = fmtTask(updated)
+    const io = req.app.get('io')
+    emit(io, task.creatorId,  'family:task:updated', formatted)
+    emit(io, task.assigneeId, 'family:task:updated', formatted)
+    ledger.add({
+      userId: myId,
+      tool: 'family_task_edited',
+      input: { title: formatted.title, changedFields: Object.keys(req.body || {}) },
+      result: { taskId: updated.id },
+      status: 'completed',
+    }).catch(() => {})
+    res.json({ task: formatted })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
@@ -295,6 +347,9 @@ async function syncMedMemory(userId, prismaClient) {
   })
 }
 
+// Doctor names: letters, spaces and . ' - only — no digits.
+const isValidDoctorName = (v) => !v || (/^[^\d!@#$%^&*()_+=\[\]{}<>?/\\|~`":;,]+$/.test(v) && /[A-Za-z\u00C0-\uFFFF]/.test(v))
+
 familyRouter.get('/parent-medications', async (req, res) => {
   try {
     const meds = await prisma.parentMedication.findMany({
@@ -308,6 +363,7 @@ familyRouter.get('/parent-medications', async (req, res) => {
 familyRouter.post('/parent-medications', async (req, res) => {
   try {
     const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, doseTimes } = req.body
+    if (!isValidDoctorName(doctor?.trim())) return res.status(400).json({ error: 'Doctor name can only contain letters' })
     if (!medName?.trim() || !dosage?.trim() || !frequency || !parent) {
       return res.status(400).json({ error: 'medName, dosage, frequency and parent are required' })
     }
@@ -342,6 +398,7 @@ familyRouter.patch('/parent-medications/:id', async (req, res) => {
     if (!med) return res.status(404).json({ error: 'Not found' })
     if (med.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, doseTimes, active } = req.body
+    if (doctor !== undefined && !isValidDoctorName(String(doctor || '').trim())) return res.status(400).json({ error: 'Doctor name can only contain letters' })
     const updated = await prisma.parentMedication.update({
       where: { id: req.params.id },
       data: {
