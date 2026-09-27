@@ -825,6 +825,17 @@ If a required field for the chosen domain+type is missing from the conversation,
     },
   },
   {
+    name: 'web_search',
+    description: 'Search the live internet for current information — news, prices, scores, facts, or anything that may have changed after your training or that you are not confident about. Use this instead of guessing whenever the user asks about something current, real-time, or outside your own knowledge. Not for the user\'s own saved data (use personal_search for that).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'A focused web search query, e.g. "RBI repo rate September 2026".' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'list_records',
     description: 'List the user\'s saved records for one module, WITH their ids. ALWAYS call this first before update_record or delete_record (you need the id), and also whenever the user asks for the details of a saved item. Modules: parent_medication, family_task, pet, pet_reminder (needs pet_id — get it from module "pet"), family_item (needs family_domain: children/home/celebration/calendar), subscription, loan, emi, fixed_deposit, bill, portfolio_holding.',
     input_schema: {
@@ -1625,6 +1636,19 @@ export async function executeTool(name, input, userId, opts = {}) {
       })
       return { success: true, reminderId: reminder.id, pet: pet.name, title: reminder.title, remindAt: reminder.remindAt }
     }
+    case 'web_search': {
+      if (!String(input.query || '').trim()) return { success: false, error: 'query is required' }
+      try {
+        const { tavilySearch } = await import('../services/webSearch.js')
+        const result = await tavilySearch(input.query)
+        if (!result.answer && !result.results.length) return { success: true, query: input.query, answer: null, results: [], note: 'No results found.' }
+        return { success: true, query: input.query, ...result }
+      } catch (err) {
+        // Never let a down/misconfigured search API break the whole reply —
+        // the model still has its own knowledge to fall back on.
+        return { success: false, error: err.message }
+      }
+    }
     case 'list_records': {
       const { listRecords } = await import('../services/recordOps.js')
       return await listRecords(userId, input)
@@ -1935,6 +1959,7 @@ CRITICAL RULES:
 20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, add_portfolio_holding, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
 21. RESPONSE FORMATTING: The chat renders real markdown — **bold**, "- " bullets, "1. " numbered lists, "### " headers, and pipe tables — so use it the way a polished AI product (ChatGPT/Claude) would, not as plain unbroken prose. Guidelines: bold the 2-3 numbers or terms in a reply that the user's eye should land on first (an amount, a date, a status), never whole sentences. Use a bulleted list for 3+ related items (a list of bills, options, or notes) instead of comma-stuffing them into one sentence. Use short paragraphs (2-3 sentences); a wall of text is exactly what this is meant to avoid. Reach for a "### " header only when a reply genuinely has multiple sections (a daily brief, a full summary) — never for a one-line answer or a single confirmation. Match the weight of the formatting to the weight of the content: a yes/no answer or a single fact is one plain sentence, not a bulleted list of one. Never show the user raw tool-call JSON, field names like "med_name", or an internal error string verbatim — always translate it into a natural sentence first.
 22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
+27. WEB SEARCH: You have a web_search tool for current/live information (news, prices, scores, facts you're unsure of or that may be newer than your training). Use it rather than guessing or saying you don't have access to the internet. If it errors or returns nothing useful, say so plainly and answer from your own knowledge instead — don't retry it repeatedly.
 26. EDIT / DELETE / DETAILS: You CAN edit, update and delete saved records in Family (parent medications, family tasks, pets, pet reminders, family items), and Finance (subscriptions, loans, EMIs, fixed deposits, bills, portfolio holdings). Health logs are edited by calling log_health_data again (it overwrites today's values). To change or remove something: (1) call list_records for that module to find the record and its id, (2) call update_record (only the changed fields) or delete_record with that id, (3) confirm what you changed in one line. Do this in the same turn — never tell the user to do it themselves and never claim it was changed without calling the tool. If several records match the name, ask which one. For details of a saved item, call list_records and answer from it. Only say something cannot be edited if the tool returns an error saying so. Never show record ids and never mention the ledger in the reply. When the request is clear (record + new value), do it immediately — do not ask the user to confirm the name, the field or the value first; only ask when several records genuinely match.
 25. ATTACHMENTS: When a file's text or a photo is included in the user's message, that IS the file — read it and answer from it directly (summarize, analyze, extract, explain, answer questions about it). Never say you cannot see or open attachments when their content is present. Refer to specific details from it. If the file text is marked as truncated, say the answer is based on the first part.
 24. ANSWER QUALITY AND STYLE: Reply like a sharp, efficient assistant. Lead with the answer or the result in the first sentence — no greeting filler, no "Sure!/Certainly!", no restating the question, no listing what you can or cannot do. Keep it as short as the question allows: a simple question gets 1-2 sentences, a task gets the outcome plus only the key details (name, amount, date, time). NEVER mention trust levels, autonomy levels, "Observe mode", L1-L4, or the Autonomy Engine in a reply unless the user explicitly asks about them — they are internal settings, not something to explain in answers. If a tool result says an action was not done or is waiting for approval, say so in one short, plain sentence and give the simple next step (for example "I've prepared this — approve it in the app to send it" or "I can't add that automatically yet — you can add it yourself from the Family screen"), without explaining why in terms of levels or settings. Do not end with generic offers like "Let me know if you need anything else".
