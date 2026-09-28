@@ -11,13 +11,13 @@ Last checked against the code: 28 September 2026.
 | Field | Value |
 |---|---|
 | App name | Mneva AI (must match the Play Store listing and the name users see on the consent screen) |
-| User support email | support@swostitech.com |
+| User support email | Google only offers your own Google account's email (or a Google Group you manage) here. Pick the account email; the public support email in the policy stays noreply@swostitechnologies.com |
 | App logo | 120×120 PNG of the Mneva icon (`mneva/assets/icon.png`, resized) |
 | App home page | `https://<your-domain>/`. The backend serves the homepage at `/` (`backend/src/public/index.html`); see §4 for the domain |
 | Privacy policy | `https://<your-domain>/privacy-policy` (currently `https://mneva-backend-v2.onrender.com/privacy-policy`) |
 | Terms of service | `https://<your-domain>/terms` (currently `https://mneva-backend-v2.onrender.com/terms`) |
-| Authorized domains | Your own domain (e.g. `swostitech.com`) plus the domain that hosts the OAuth redirect URIs |
-| Developer contact | support@swostitech.com |
+| Authorized domains | Your own domain (`swostitechapp.com`) plus the domain that hosts the OAuth redirect URIs |
+| Developer contact | noreply@swostitechnologies.com |
 
 ---
 
@@ -67,7 +67,7 @@ Removed on 28 September 2026 because the code never used them: `gmail.modify`, `
 
 ## 4. Domain and homepage
 
-- Google requires every authorized domain to be **verified in Google Search Console** by the project owner. `mneva-backend-v2.onrender.com` is a Render subdomain, which may not be verifiable as your own domain. The safest option is to host the homepage and privacy policy on a domain you own (for example `mneva.swostitech.com`) and point the OAuth redirect URIs at a subdomain of it (a custom domain on the Render service).
+- Google requires every authorized domain to be **verified in Google Search Console** by the project owner. `mneva-backend-v2.onrender.com` is a Render subdomain, which may not be verifiable as your own domain. The safest option is to host the homepage and privacy policy on a domain you own (for example `mneva.swostitechapp.com`) and point the OAuth redirect URIs at a subdomain of it (a custom domain on the Render service).
 - The homepage must be public (no login), describe what Mneva does, and link to the privacy policy.
 - After moving to a custom domain, update `GOOGLE_*_REDIRECT_URI` / `PUBLIC_URL` on Render, the redirect URIs on the OAuth client, and `PRIVACY_POLICY_URL` in `mneva/src/api/client.js`.
 

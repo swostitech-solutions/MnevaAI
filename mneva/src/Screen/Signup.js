@@ -273,7 +273,7 @@ You may delete your account at any time from Settings → Account. All data will
 6. GOVERNING LAW
 These terms are governed by the laws of India. Disputes shall be resolved in the courts of Bengaluru, Karnataka.
 
-For questions: support@swostitech.com`}</Text>
+For questions: noreply@swostitechnologies.com`}</Text>
               ) : (
                 <>
                 <Text style={styles.modalText}>{`Last updated: 28 September 2026
@@ -301,7 +301,7 @@ HTTPS in transit. Tokens and AI memory are encrypted at rest. Vault files are en
 Access, correct and erase your data, and withdraw consent any time. Delete your account from Settings → Account, or email us.
 
 6. CONTACT
-Swostitech Solutions · support@swostitech.com`}</Text>
+Swostitech Solutions · noreply@swostitechnologies.com`}</Text>
                 <Text style={styles.termsLink} onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>Read the full Privacy Policy</Text>
                 </>
               )}
