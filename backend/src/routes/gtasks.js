@@ -2,6 +2,7 @@ import express from 'express'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
+import { createOAuthState, verifyOAuthState } from '../services/oauthState.js'
 
 const router = express.Router()
 
@@ -27,12 +28,8 @@ export async function gtasksCallbackHandler(req, res) {
     if (error) return res.redirect(`${frontendUrl}/settings?tasks=error&msg=${encodeURIComponent(error)}`)
     if (!code) return res.redirect(`${frontendUrl}/settings?tasks=error&msg=missing_code`)
 
-    let decoded
-    try {
-      let s = state.replace(/-/g, '+').replace(/_/g, '/')
-      while (s.length % 4) s += '='
-      decoded = JSON.parse(Buffer.from(s, 'base64').toString('utf8'))
-    } catch { return res.redirect(`${frontendUrl}/settings?tasks=error&msg=invalid_state`) }
+    const decoded = verifyOAuthState(state)
+    if (!decoded) return res.redirect(`${frontendUrl}/settings?tasks=error&msg=invalid_state`)
 
     const { google } = await import('googleapis')
     const oauth2Client = new google.auth.OAuth2(
@@ -84,8 +81,7 @@ router.get('/connect', async (req, res) => {
       redirectUri,
     )
     const platform = req.query.platform || 'web'
-    const rawState = JSON.stringify({ userId: req.user.id, ts: Date.now(), platform })
-    const state = Buffer.from(rawState).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const state = createOAuthState({ userId: req.user.id, platform })
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',

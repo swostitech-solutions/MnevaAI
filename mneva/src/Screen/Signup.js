@@ -11,11 +11,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Modal,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../api/client';
+import { apiFetch, PRIVACY_POLICY_URL } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 
 export default function Signup({ navigation }) {
@@ -250,15 +251,15 @@ export default function Signup({ navigation }) {
             </View>
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               {termsModal === 'terms' ? (
-                <Text style={styles.modalText}>{`Last updated: July 2025
+                <Text style={styles.modalText}>{`Last updated: 28 September 2026
 
-Welcome to Mneva AI. By creating an account, you agree to these Terms of Service.
+Welcome to Mneva AI. By creating an account, you agree to these Terms of Service (also at mneva-backend-v2.onrender.com/terms).
 
 1. USE OF SERVICE
 Mneva AI is a personal AI assistant platform. You must be 18+ to use this service. You are responsible for all activity under your account.
 
 2. AI ACTIONS & TRUST LEVELS
-Mneva operates at trust levels L1–L4. Higher trust levels allow autonomous actions on your behalf. You can review and revoke any action from the Twin Diary.
+Mneva operates at trust levels L1–L4 in each area. At L1–L3 it only observes, suggests or prepares actions for you to approve. L4 (Inner Circle) lets it act without asking — it only turns on after you allow it, and you can turn it off any time in Settings → Trust. You can review every action in the Twin Diary.
 
 3. PAYMENTS & FINANCIAL ACTIONS
 All payment actions ≥ ₹1,000 require biometric confirmation. Mneva is not a licensed financial advisor.
@@ -274,32 +275,35 @@ These terms are governed by the laws of India. Disputes shall be resolved in the
 
 For questions: support@swostitech.com`}</Text>
               ) : (
-                <Text style={styles.modalText}>{`Last updated: July 2025
+                <>
+                <Text style={styles.modalText}>{`Last updated: 28 September 2026
 
-Swostitech Solutions operates Mneva AI. This policy explains how we collect, use, and protect your data.
+Swostitech Solutions operates Mneva AI. This is a summary — the full policy explains everything in detail.
 
 1. DATA WE COLLECT
-• Account info: name, email, password (hashed)
-• Usage data: messages, actions, preferences
-• Connected integrations: Gmail, Google Fit, Calendar (only with your explicit consent)
+• Account info: name, email, phone (optional), password (hashed)
+• What you give Mneva: messages, voice recordings, photos, documents, Vault files (end-to-end encrypted)
+• What you enter: tasks, family, health, medication, finance, pet and home records
+• Google accounts you connect: Gmail, Calendar, Contacts, Drive, Tasks, Google Fit
+• Optional, Android only: text of notifications from other apps, if you turn on notification analysis
+• Push token, server logs and crash reports
 
-2. HOW WE USE YOUR DATA
-• To provide and improve the Mneva AI service
-• To personalise your AI experience
-We never sell your data to third parties.
+2. HOW WE USE IT
+To run Mneva's features, take actions you allow, remember context, and keep the service secure. We never sell your data, use it for ads, or train our own AI models on it.
 
-3. DATA STORAGE
-Data is transmitted over encrypted (HTTPS) connections. Connected-account tokens and AI memory content are encrypted at rest. Secure Vault files are encrypted on your device before we ever see them, with a key we never receive. Conversation history is stored in PostgreSQL.
+3. WHO WE SHARE IT WITH
+Only the providers that run Mneva, including OpenAI and Groq (AI and transcription), Voyage AI and Qdrant (AI memory), Tavily (web search), Render and AWS (hosting and storage), Expo (push), Resend (email) and Sentry (crash reports). Some are outside India.
 
-4. YOUR RIGHTS (DPDP Act 2023)
-• Right to access your data
-• Right to correct inaccurate data
-• Right to erase your data
-Exercise these rights from Settings → Account.
+4. SECURITY
+HTTPS in transit. Tokens and AI memory are encrypted at rest. Vault files are encrypted on your device with a key we never receive.
 
-5. CONTACT
-Swostitech Solutions · Bengaluru, India
-support@swostitech.com`}</Text>
+5. YOUR RIGHTS (DPDP Act 2023)
+Access, correct and erase your data, and withdraw consent any time. Delete your account from Settings → Account, or email us.
+
+6. CONTACT
+Swostitech Solutions · support@swostitech.com`}</Text>
+                <Text style={styles.termsLink} onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>Read the full Privacy Policy</Text>
+                </>
               )}
             </ScrollView>
             <TouchableOpacity style={styles.modalBtn} onPress={() => { setTermsModal(null); setAgreed(true); }}>

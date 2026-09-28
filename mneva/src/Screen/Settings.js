@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Switch, ActivityIndicator, useWindowDimensions, Alert, TextInput, Modal,
+  Switch, ActivityIndicator, useWindowDimensions, Alert, TextInput, Modal, Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { apiFetch, peekCachedResponse } from '../api/client';
+import { apiFetch, peekCachedResponse, PRIVACY_POLICY_URL } from '../api/client';
 import { useSocket } from '../services/socket';
 import { clearAuth, saveTokens } from '../storage/auth';
 import { isAppLockEnabled, setAppLockEnabled } from '../storage/appLock';
@@ -18,6 +18,7 @@ import {
   notificationCaptureAvailable,
 } from '../services/notificationCapture';
 import { useTheme } from '../context/ThemeContext';
+import NotificationAccessDisclosure from '../components/NotificationAccessDisclosure';
 
 const TABS = ['Trust', 'Privacy', 'Notifications', 'Account'];
 
@@ -71,6 +72,16 @@ const L1_MIN_ACTIONS = 15;
 const L2_MIN_DAYS = 30;
 const L2_ACCEPT_RATE_TO_L3 = 80;
 const L3_ACCEPT_RATE_TO_L4 = 90;
+
+// What Inner Circle lets Mneva do on its own in each domain — shown before
+// the user allows it, so the consent is specific (mirrors GATED_DOMAINS in
+// backend/src/services/pendingActions.service.js).
+const INNER_CIRCLE_ACTIONS = {
+  finance: 'mark bills as paid and add subscriptions, loans, EMIs, deposits and investments. Payments of ₹1,000 or more will still need your approval',
+  communications: 'send emails from your Gmail and create calendar events',
+  health: 'log health data for you',
+  family: 'add family tasks, medications, pets, pet reminders and family items',
+};
 const L3_REJECT_RATE_DEMOTE = 20;
 
 // A masked password field with an eye button to reveal what was actually
@@ -272,10 +283,15 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
           <Text style={[styles.dangerLabel, { color: theme.text }]}>Secure Vault</Text>
           <Feather name="chevron-right" size={16} color={theme.disabled} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.dangerRow} onPress={() => setPwModal(true)} activeOpacity={0.7}>
+        <TouchableOpacity style={[styles.dangerRow, styles.divider]} onPress={() => setPwModal(true)} activeOpacity={0.7}>
           <Feather name="key" size={16} color={theme.accent} />
           <Text style={[styles.dangerLabel, { color: theme.text }]}>Change Password</Text>
           <Feather name="chevron-right" size={16} color={theme.disabled} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.dangerRow} onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} activeOpacity={0.7}>
+          <Feather name="file-text" size={16} color={theme.accent} />
+          <Text style={[styles.dangerLabel, { color: theme.text }]}>Privacy Policy</Text>
+          <Feather name="external-link" size={16} color={theme.disabled} />
         </TouchableOpacity>
       </View>
 
@@ -406,6 +422,7 @@ export default function Settings({ navigation, route }) {
   const [user, setUser] = useState(null);
   const [phoneCaptureEnabled, setPhoneCaptureEnabled] = useState(false);
   const [phoneCaptureBusy, setPhoneCaptureBusy] = useState(false);
+  const [phoneCaptureDisclosure, setPhoneCaptureDisclosure] = useState(false);
   // Device-local (not synced to the account, unlike PRIVACY_TOGGLES above) —
   // whether biometrics unlock the app itself, checked once on mount.
   const [appLockOn, setAppLockOn] = useState(true);
@@ -492,14 +509,15 @@ export default function Settings({ navigation, route }) {
   useEffect(() => on('domainTrust:levelChanged', ({ domain, level }) => {
     setDomainTrust(prev => ({
       ...prev,
-      [domain]: { ...prev[domain], level, actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, acceptRate: null, daysAtLevel: 0, pendingL2Confirm: false },
+      [domain]: { ...prev[domain], level, actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, acceptRate: null, daysAtLevel: 0, pendingL2Confirm: false, pendingL4Confirm: false },
     }));
   }), [on]);
 
-  // Finance-only: fires once L1's 14-day/15-action bar is met, so the
-  // "ready for Suggest mode" banner appears without waiting for a reload.
-  useEffect(() => on('domainTrust:pendingConfirm', ({ domain }) => {
-    setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], pendingL2Confirm: true } }));
+  // Fires when a promotion is waiting on the user: finance's L1->L2, or any
+  // domain's L3->L4 (level: 4), so the banner appears without a reload.
+  useEffect(() => on('domainTrust:pendingConfirm', ({ domain, level }) => {
+    const flag = level === 4 ? 'pendingL4Confirm' : 'pendingL2Confirm';
+    setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], [flag]: true } }));
   }), [on]);
 
   // Android's settings page is outside the app, so confirm the final consent
@@ -542,6 +560,57 @@ export default function Settings({ navigation, route }) {
       }
     } catch {}
     finally { setConfirmingLevel(false); }
+  };
+
+  // Inner Circle (L4) lets Mneva act without asking, so it only turns on
+  // when the user taps Allow — see pendingL4Confirm on the backend.
+  const resetDomainStats = { actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, acceptRate: null, daysAtLevel: 0 };
+
+  const allowInnerCircle = async (domain) => {
+    setConfirmingLevel(true);
+    try {
+      const res = await apiFetch('/api/trust/confirm-level', { method: 'POST', body: { domain, level: 4 } });
+      if (res?.success) {
+        setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], ...resetDomainStats, level: 4, pendingL4Confirm: false } }));
+      }
+    } catch (err) {
+      Alert.alert('Could not turn on Inner Circle', err?.message || 'Please try again.');
+    } finally { setConfirmingLevel(false); }
+  };
+
+  const declineInnerCircle = async (domain) => {
+    setConfirmingLevel(true);
+    try {
+      const res = await apiFetch('/api/trust/decline-level', { method: 'POST', body: { domain } });
+      if (res?.success) {
+        setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], ...resetDomainStats, pendingL4Confirm: false } }));
+      }
+    } catch {}
+    finally { setConfirmingLevel(false); }
+  };
+
+  const turnOffInnerCircle = (domain) => {
+    Alert.alert(
+      'Turn off Inner Circle?',
+      'Mneva will go back to Draft & Prep and ask before every action in this area.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Turn off', style: 'destructive',
+          onPress: async () => {
+            setConfirmingLevel(true);
+            try {
+              const res = await apiFetch('/api/trust/leave-inner-circle', { method: 'POST', body: { domain } });
+              if (res?.success) {
+                setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], ...resetDomainStats, level: 3, pendingL4Confirm: false } }));
+              }
+            } catch (err) {
+              Alert.alert('Could not turn off Inner Circle', err?.message || 'Please try again.');
+            } finally { setConfirmingLevel(false); }
+          },
+        },
+      ]
+    );
   };
 
   const togglePrivacy = (key, val) => {
@@ -587,10 +656,16 @@ export default function Settings({ navigation, route }) {
       Alert.alert('Android build required', 'Install the Mneva Android development or production build. Expo Go cannot use Android notification access.');
       return;
     }
+    // Nothing is configured or requested until the user has seen the
+    // disclosure and tapped "Agree & continue" (Play User Data policy).
+    setPhoneCaptureDisclosure(true);
+  };
+
+  const acceptPhoneCaptureDisclosure = async () => {
+    setPhoneCaptureDisclosure(false);
     setPhoneCaptureBusy(true);
     try {
       await enableNotificationCapture();
-      Alert.alert('Allow notification access', 'In Android Settings, enable Mneva. Mneva will analyse only useful alerts for your briefing and priorities. You can turn this off at any time.');
     } catch (error) {
       Alert.alert('Could not enable', error.message || 'Please try again.');
     } finally {
@@ -684,6 +759,28 @@ export default function Settings({ navigation, route }) {
                 </View>
               )}
 
+              {/* Every domain: L3->L4 bar is met, but acting without asking
+                  needs an explicit, informed yes. */}
+              {level === 3 && dt.pendingL4Confirm && (
+                <View style={[styles.confirmBanner, { alignItems: 'flex-start' }]}>
+                  <Feather name="shield" size={16} color={theme.accent} style={{ marginTop: 2 }} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.confirmBannerTitle}>Allow Inner Circle?</Text>
+                    <Text style={styles.confirmBannerDesc}>
+                      You've approved most of Mneva's suggestions here. If you allow it, Mneva will {INNER_CIRCLE_ACTIONS[selectedDomain]} without asking you first. Every action is still recorded in Twin Diary, and you can turn this off here at any time.
+                    </Text>
+                    <View style={{ flexDirection: 'row', marginTop: 10 }}>
+                      <TouchableOpacity style={[styles.confirmBannerBtn, { marginLeft: 0 }]} onPress={() => allowInnerCircle(selectedDomain)} disabled={confirmingLevel}>
+                        {confirmingLevel ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.confirmBannerBtnText}>Allow</Text>}
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.confirmBannerSecondaryBtn} onPress={() => declineInnerCircle(selectedDomain)} disabled={confirmingLevel}>
+                        <Text style={styles.confirmBannerSecondaryText}>Not now</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              )}
+
               {/* Progress to next level — the exact thresholds this domain
                   needs to cross next, not a cosmetic score disconnected from
                   what actually triggers a change. */}
@@ -697,7 +794,10 @@ export default function Settings({ navigation, route }) {
                 {level >= 4 ? (
                   <View style={styles.streakMaxRow}>
                     <Feather name="award" size={15} color={theme.accent} />
-                    <Text style={styles.streakMaxText}>Inner Circle reached — full autonomy unlocked</Text>
+                    <Text style={styles.streakMaxText}>Inner Circle on — Mneva acts here without asking</Text>
+                    <TouchableOpacity onPress={() => turnOffInnerCircle(selectedDomain)} disabled={confirmingLevel} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={[styles.streakMaxText, { color: theme.danger, flex: 0 }]}>Turn off</Text>
+                    </TouchableOpacity>
                   </View>
                 ) : level === 1 ? (
                   <>
@@ -929,6 +1029,12 @@ export default function Settings({ navigation, route }) {
           </TouchableOpacity>
         ))}
       </View>
+
+      <NotificationAccessDisclosure
+        visible={phoneCaptureDisclosure}
+        onAccept={acceptPhoneCaptureDisclosure}
+        onDecline={() => setPhoneCaptureDisclosure(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -956,6 +1062,8 @@ const createStyles = (theme) => StyleSheet.create({
   confirmBannerTitle: { fontSize: 13.5, fontWeight: '800', color: theme.text },
   confirmBannerDesc: { fontSize: 11.5, color: theme.muted, marginTop: 2, lineHeight: 15 },
   confirmBannerBtn: { backgroundColor: theme.accent, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9, marginLeft: 10 },
+  confirmBannerSecondaryBtn: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9, marginLeft: 8, borderWidth: 1, borderColor: theme.borderStrong },
+  confirmBannerSecondaryText: { fontSize: 13, fontWeight: '700', color: theme.textSecondary },
   confirmBannerBtnText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' },
   scoreRow:        { flexDirection: 'row', alignItems: 'baseline', marginBottom: 10 },
   scoreNum:        { fontSize: 32, fontWeight: '800', color: theme.accent, marginRight: 10 },

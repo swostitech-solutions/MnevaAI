@@ -17,6 +17,10 @@ const LOCAL_BACKEND = __DEV__ && !FORCE_PRODUCTION_BACKEND
 
 export const BASE_URL = LOCAL_BACKEND;
 
+// Always the production page, even in dev — it's the same public URL listed
+// in the Play Console, so the in-app link should show exactly that.
+export const PRIVACY_POLICY_URL = `${PRODUCTION_BACKEND}/privacy-policy`;
+
 // Listeners notified when session expires (401) so screens can redirect to login
 const _sessionExpiredListeners = new Set();
 const CACHE_PREFIX = 'mneva_api_cache:';

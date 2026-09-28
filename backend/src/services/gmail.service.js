@@ -1,6 +1,7 @@
 import { google } from 'googleapis'
 import { prisma } from '../config/prisma.js'
 import { applyModelCompat } from './openaiCompat.js'
+import { createOAuthState, verifyOAuthState } from './oauthState.js'
 
 // listEmails does 1 list call + one messages.get per message + 1 label
 // count — for a 40-email inbox that's ~42 live round-trips to Gmail's API,
@@ -25,7 +26,6 @@ const _urgentEmailsCache = new Map()
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/calendar.events',
   'openid',
   'email',
@@ -46,8 +46,7 @@ function createOAuthClient(redirectUri) {
 
 export function createGmailAuthUrl(userId, redirectUri, platform = 'web') {
   const oauth2Client = createOAuthClient(redirectUri)
-  const rawState = JSON.stringify({ userId, ts: Date.now(), platform })
-  const state = Buffer.from(rawState).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  const state = createOAuthState({ userId, platform })
   const opts = {
     access_type: 'offline',
     prompt: 'consent',
@@ -59,21 +58,7 @@ export function createGmailAuthUrl(userId, redirectUri, platform = 'web') {
 }
 
 export function decodeGmailState(state) {
-  if (!state) return null
-  try {
-    // convert URL-safe base64 back to standard base64
-    let s = state.replace(/-/g, '+').replace(/_/g, '/')
-    // pad with '=' to make length a multiple of 4
-    while (s.length % 4) s += '='
-    return JSON.parse(Buffer.from(s, 'base64').toString('utf8'))
-  } catch {
-    // fallback: maybe state was passed as plain JSON string
-    try {
-      return JSON.parse(state)
-    } catch {
-      return null
-    }
-  }
+  return verifyOAuthState(state)
 }
 
 export async function exchangeCodeForTokens(code, redirectUri) {

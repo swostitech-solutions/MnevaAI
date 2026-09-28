@@ -13,7 +13,7 @@ export class UserModel {
 
 export function toPublicUser(user) {
   if (!user) return null;
-  const { passwordHash, verifyToken, verifyTokenExp, ...pub } = user;
+  const { passwordHash, verifyToken, verifyTokenExp, resetToken, resetTokenExp, currentSessionId, ...pub } = user;
   return { ...pub, onboardingDone: pub.onboardingDone || false };
 }
 

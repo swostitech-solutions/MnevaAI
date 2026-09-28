@@ -1,3 +1,4 @@
+import { createOAuthState } from "./oauthState.js";
 // import { google } from 'googleapis'
 // import { prisma } from '../config/prisma.js'
 // import { logger } from '../config/logger.js'
@@ -384,13 +385,7 @@ function getOAuthClient(redirectUri) {
 
 export function createFitAuthUrl(userId, redirectUri, platform = "web") {
   const oauth2 = getOAuthClient(redirectUri);
-  const state = Buffer.from(
-    JSON.stringify({ userId, ts: Date.now(), platform }),
-  )
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const state = createOAuthState({ userId, platform });
   return oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",

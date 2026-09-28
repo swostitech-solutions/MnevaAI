@@ -475,7 +475,14 @@ export async function getSocket() {
   _manuallyClosed = false;
   _connecting = true;
   _socket = io(BASE_URL, {
-    auth: { token },
+    // Read the token on every (re)connect instead of freezing the one from
+    // first connect: access tokens rotate via /api/auth/refresh, and a stale
+    // token here would make every reconnect after expiry fail auth forever.
+    auth: (cb) => {
+      getStoredAuth()
+        .then(({ token: latest }) => cb({ token: latest || token }))
+        .catch(() => cb({ token }));
+    },
     transports: ["websocket", "polling"],
     upgrade: true,
     reconnection: true,

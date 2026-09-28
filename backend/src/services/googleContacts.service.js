@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { prisma } from '../config/prisma.js';
 import { logger } from '../config/logger.js';
+import { createOAuthState } from './oauthState.js';
 
 const CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -11,8 +12,7 @@ function makeOAuth2(redirectUri) {
 
 export function createContactsAuthUrl(userId, redirectUri, platform = 'web') {
   const oauth2 = makeOAuth2(redirectUri);
-  const state  = Buffer.from(JSON.stringify({ userId, platform })).toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  const state  = createOAuthState({ userId, platform });
   return oauth2.generateAuthUrl({
     access_type:  'offline',
     prompt:       'consent',

@@ -22,6 +22,7 @@
     },
     "android": {
       "userInterfaceStyle": "light",
+      "allowBackup": false,
       "package": "com.swostitech.mneva",
       "intentFilters": [
         {

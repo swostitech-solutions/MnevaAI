@@ -501,6 +501,11 @@ model DomainTrust {
   // promotion waits on the user's explicit confirmation — every other
   // domain auto-promotes silently. Always false for non-finance domains.
   pendingL2Confirm Boolean @default(false)
+  // Every domain: L3->L4 conditions are met but Inner Circle (acting without
+  // asking) waits on the user's explicit "Allow". Google's OAuth review and
+  // Play's user-data policy both require consent before an app sends email
+  // or takes other actions on the user's behalf unprompted.
+  pendingL4Confirm Boolean @default(false)
   updatedAt      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -3,6 +3,7 @@ import { createFitAuthUrl, exchangeFitCode, saveFitTokens, clearFitTokens, getHe
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
+import { verifyOAuthState } from '../services/oauthState.js'
 
 const router = express.Router()
 
@@ -18,12 +19,8 @@ export async function googleFitCallbackHandler(req, res) {
     if (error) return res.redirect(`${frontendUrl}/health?fit=error&msg=${encodeURIComponent(error)}`)
     if (!code) return res.redirect(`${frontendUrl}/health?fit=error&msg=missing_code`)
 
-    let decoded = null
-    try {
-      let s = state.replace(/-/g, '+').replace(/_/g, '/')
-      while (s.length % 4) s += '='
-      decoded = JSON.parse(Buffer.from(s, 'base64').toString('utf8'))
-    } catch { return res.redirect(`${frontendUrl}/health?fit=error&msg=invalid_state`) }
+    const decoded = verifyOAuthState(state)
+    if (!decoded) return res.redirect(`${frontendUrl}/health?fit=error&msg=invalid_state`)
 
     const tokens = await exchangeFitCode(code, REDIRECT_URI())
     const user = await userStore.getById(decoded.userId)

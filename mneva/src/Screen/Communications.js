@@ -433,9 +433,11 @@ export default function Communications({ navigation }) {
             ? <Text style={styles.headerSub}><Text style={styles.headerUnread}>{unreadCount} unread</Text> · Gmail</Text>
             : <Text style={styles.headerSub}>All caught up · Gmail</Text>}
         </View>
-        <TouchableOpacity style={styles.composeBtn}>
+        {/* Plain icon, not a button — it never had an onPress, so tapping it
+            just dimmed like a selection with nothing actually happening. */}
+        <View style={styles.composeBtn}>
           <Feather name="edit" size={17} color={theme.accent} />
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Inbox tabs */}

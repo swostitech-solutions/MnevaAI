@@ -2,19 +2,21 @@ import express from 'express'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
+import { createOAuthState, verifyOAuthState } from '../services/oauthState.js'
 
 const router = express.Router()
 
-// drive.readonly allows listing all files the user owns
-// documents/spreadsheets/presentations readonly for content access
+// The only Drive call is files.list for name/type/modified time/link (see
+// GET /files), so request just metadata access. Google's OAuth review asks
+// for the narrowest scope that covers each feature; the old drive.readonly +
+// documents/spreadsheets/presentations.readonly scopes allowed reading file
+// contents that nothing here ever reads. Tokens granted before this change
+// still carry the wider scopes and keep working.
 const DRIVE_SCOPES = [
   'openid',
   'email',
   'profile',
-  'https://www.googleapis.com/auth/drive.readonly',
-  'https://www.googleapis.com/auth/documents.readonly',
-  'https://www.googleapis.com/auth/spreadsheets.readonly',
-  'https://www.googleapis.com/auth/presentations.readonly',
+  'https://www.googleapis.com/auth/drive.metadata.readonly',
 ]
 
 const getRedirectUri = () =>
@@ -32,12 +34,8 @@ export async function gdriveCallbackHandler(req, res) {
     if (error) return res.redirect(`${frontendUrl}/settings?drive=error&msg=${encodeURIComponent(error)}`)
     if (!code) return res.redirect(`${frontendUrl}/settings?drive=error&msg=missing_code`)
 
-    let decoded
-    try {
-      let s = state.replace(/-/g, '+').replace(/_/g, '/')
-      while (s.length % 4) s += '='
-      decoded = JSON.parse(Buffer.from(s, 'base64').toString('utf8'))
-    } catch { return res.redirect(`${frontendUrl}/settings?drive=error&msg=invalid_state`) }
+    const decoded = verifyOAuthState(state)
+    if (!decoded) return res.redirect(`${frontendUrl}/settings?drive=error&msg=invalid_state`)
 
     const { google } = await import('googleapis')
     const oauth2Client = new google.auth.OAuth2(
@@ -96,8 +94,7 @@ router.get('/connect', async (req, res) => {
     )
     const platform = req.query.platform || 'web'
     const from = req.query.from || null
-    const rawState = JSON.stringify({ userId: req.user.id, ts: Date.now(), platform, ...(from ? { from } : {}) })
-    const state = Buffer.from(rawState).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const state = createOAuthState({ userId: req.user.id, platform, ...(from ? { from } : {}) })
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',

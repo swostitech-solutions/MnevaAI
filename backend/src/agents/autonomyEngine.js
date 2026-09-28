@@ -2178,7 +2178,19 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         'create_subscription', 'create_loan', 'create_emi', 'create_fixed_deposit', 'add_portfolio_holding',
         'add_parent_medication', 'add_pet', 'add_pet_reminder',
       ]
-      if (actionTools.includes(tb.name) && !(identity && allToolResults.some(entry => actionIdentity(entry.tool, entry.input) === identity))) {
+      // BUG FIX: a gated tool landing on `pending_approval` used to ALSO get
+      // logged here, eagerly, the moment the AI proposed it — and then
+      // resolvePendingAction() (pendingActions.service.js) wrote a SECOND,
+      // separate ledger row once the user actually approved/denied it. Since
+      // neither row ever referenced the other, both stayed in Twin Diary
+      // forever: the exact same action (e.g. "Add pet: Bruno") showed up
+      // twice — once frozen at "pending_approval", once at its real final
+      // outcome. resolvePendingAction is the only place that should log a
+      // pending-gated action, exactly once, when it's actually resolved —
+      // matching how create_family_task/add_family_item/log_health_data
+      // already correctly behave.
+      const isPending = result?.status === 'pending_approval'
+      if (actionTools.includes(tb.name) && !isPending && !(identity && allToolResults.some(entry => actionIdentity(entry.tool, entry.input) === identity))) {
         const ledgerEntry = await ledger.add({
           userId: user.id,
           tool: tb.name,

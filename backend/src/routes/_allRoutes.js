@@ -1284,7 +1284,7 @@ import { createDeviceToken, hashToken } from "./deviceNotifications.js";
 import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
-import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2 } from "../services/pendingActions.service.js";
+import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle } from "../services/pendingActions.service.js";
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
 
 const upload = multer({
@@ -3410,6 +3410,7 @@ trustRouter.get("/settings", async (req, res) => {
       acceptRate: total > 0 ? Math.round((row.acceptedAtLevel / total) * 100) : null,
       enabled: row.enabled,
       pendingL2Confirm: row.pendingL2Confirm,
+      pendingL4Confirm: row.pendingL4Confirm,
     }];
   }));
   res.json({ domains, plan: user?.plan || "Free", preferences: user?.preferences || {} });
@@ -3445,12 +3446,36 @@ trustRouter.patch("/settings", async (req, res) => {
   res.json({ success: true, preferences: prefs });
 });
 
-// Finance-only: confirms the L1->L2 promotion the PDF says finance must ask
-// for explicitly (every other domain auto-promotes silently).
+// Confirms a promotion that waits on the user: finance's L1->L2 (per the
+// PDF), and L3->L4 Inner Circle in every domain (acting without asking needs
+// explicit consent). `level` defaults to 2 so older app builds that only
+// send { domain: "finance" } keep working.
 trustRouter.post("/confirm-level", async (req, res) => {
   const { domain } = req.body;
-  if (domain !== "finance") return res.status(400).json({ error: "Only finance requires manual confirmation" });
-  const outcome = await confirmFinanceL2(req.user.id);
+  const level = Number(req.body.level) || 2;
+  if (!DOMAINS.includes(domain)) return res.status(400).json({ error: `domain must be one of: ${DOMAINS.join(", ")}` });
+  let outcome;
+  if (level === 4) outcome = await confirmInnerCircle(req.user.id, domain);
+  else if (level === 2 && domain === "finance") outcome = await confirmFinanceL2(req.user.id);
+  else return res.status(400).json({ error: "Nothing to confirm for this domain/level" });
+  if (outcome.error) return res.status(400).json(outcome);
+  res.json(outcome);
+});
+
+// "Not now" on the Inner Circle offer.
+trustRouter.post("/decline-level", async (req, res) => {
+  const { domain } = req.body;
+  if (!DOMAINS.includes(domain)) return res.status(400).json({ error: `domain must be one of: ${DOMAINS.join(", ")}` });
+  const outcome = await declineInnerCircle(req.user.id, domain);
+  if (outcome.error) return res.status(400).json(outcome);
+  res.json(outcome);
+});
+
+// Turns Inner Circle off: back to L3, where every action waits for a tap.
+trustRouter.post("/leave-inner-circle", async (req, res) => {
+  const { domain } = req.body;
+  if (!DOMAINS.includes(domain)) return res.status(400).json({ error: `domain must be one of: ${DOMAINS.join(", ")}` });
+  const outcome = await leaveInnerCircle(req.user.id, domain);
   if (outcome.error) return res.status(400).json(outcome);
   res.json(outcome);
 });

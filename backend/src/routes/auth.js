@@ -62,8 +62,57 @@ async function issueRefreshToken(userId) {
 }
 
 function generateOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000))
+  return String(crypto.randomInt(100000, 1000000))
 }
+
+// When the email provider fails, dev builds get the OTP back in the response
+// (and the log) so sign-up still works without Resend configured. In
+// production that same fallback handed the code to whoever made the request —
+// e.g. anyone calling /forgot-password for someone else's email while Resend
+// was over quota could reset that account's password.
+const EXPOSE_DEV_OTP = process.env.NODE_ENV !== 'production'
+
+// OTPs are stored as a keyed hash (like refresh tokens), so a database leak
+// doesn't hand out live verification/reset codes. Keyed with JWT_SECRET
+// because 6-digit codes are trivial to brute-force from a plain hash.
+const hashOtp = otp => crypto.createHmac('sha256', SECRET).update(`otp:${otp}`).digest('hex')
+function otpMatches(stored, otp) {
+  const a = Buffer.from(String(stored))
+  const b = Buffer.from(hashOtp(String(otp)))
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+// Brute-force guards. A 6-digit code has 1M values and nothing limited
+// guesses per code, so /reset-password in particular was an account-takeover
+// path. After MAX_CODE_ATTEMPTS wrong guesses the code is thrown away and a
+// new one must be requested; login gets a per-email cap. In-memory, so each
+// server instance counts separately — still bounds guessing to a handful of
+// tries per code.
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000
+const MAX_CODE_ATTEMPTS = 5
+const MAX_LOGIN_FAILURES = 10
+const _failedAttempts = new Map()
+
+function recordFailure(key) {
+  const now = Date.now()
+  const entry = _failedAttempts.get(key)
+  const next = entry && now - entry.first < ATTEMPT_WINDOW_MS
+    ? { count: entry.count + 1, first: entry.first }
+    : { count: 1, first: now }
+  _failedAttempts.set(key, next)
+  if (_failedAttempts.size > 50000) {
+    for (const [k, v] of _failedAttempts) if (now - v.first >= ATTEMPT_WINDOW_MS) _failedAttempts.delete(k)
+  }
+  return next.count
+}
+
+function failureCount(key) {
+  const entry = _failedAttempts.get(key)
+  if (!entry || Date.now() - entry.first >= ATTEMPT_WINDOW_MS) return 0
+  return entry.count
+}
+
+const clearFailures = key => _failedAttempts.delete(key)
 
 // ── Login ──────────────────────────────────────────────────────────────────────
 router.post('/login',
@@ -73,17 +122,26 @@ router.post('/login',
       const errs = validationResult(req)
       if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid email or password format' })
       const { email, password } = req.body
+      const loginKey = `login:${email.toLowerCase().trim()}`
+      if (failureCount(loginKey) >= MAX_LOGIN_FAILURES) {
+        return res.status(429).json({ error: 'too_many_attempts', message: 'Too many failed sign-in attempts. Please wait 15 minutes or reset your password.' })
+      }
       const user = await prisma.user.findUnique({
         where: { email: email?.toLowerCase()?.trim() },
         select: { id: true, email: true, name: true, passwordHash: true, emailVerified: true, trustLevel: true, onboardingDone: true },
       })
       if (!user) {
         await bcrypt.compare(password, '$2a$10$dummyhashfortimingattackprevention000000000000000000000')
+        recordFailure(loginKey)
         return res.status(401).json({ error: 'Invalid credentials' })
       }
       if (!user.emailVerified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in.' })
       const ok = await bcrypt.compare(password, user.passwordHash)
-      if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
+      if (!ok) {
+        recordFailure(loginKey)
+        return res.status(401).json({ error: 'Invalid credentials' })
+      }
+      clearFailures(loginKey)
       const sessionId = await startNewSession(user.id)
       res.json({ token: sign(user, sessionId), refreshToken: await issueRefreshToken(user.id), user: toPublicUser(user) })
     } catch (err) {
@@ -124,13 +182,18 @@ router.post('/register',
       const user = await userStore.create({ email, name, phone, passwordHash: hash })
       await prisma.user.update({
         where: { id: user.id },
-        data: { emailVerified: false, verifyToken: otp, verifyTokenExp: exp },
+        data: { emailVerified: false, verifyToken: hashOtp(otp), verifyTokenExp: exp },
       })
 
+      clearFailures(`verify:${email}`)
       try {
         await sendOtpEmail(email, name, otp)
         res.status(201).json({ pendingVerification: true, email })
-      } catch {
+      } catch (err) {
+        if (!EXPOSE_DEV_OTP) {
+          logger.error(`Verification email failed for new signup: ${err?.message}`)
+          return res.status(503).json({ error: 'email_failed', message: "We couldn't send your verification email. Please try again in a moment." })
+        }
         console.warn(`[DEV] OTP for ${email}: ${otp}`)
         res.status(201).json({ pendingVerification: true, email, devOtp: otp })
       }
@@ -154,7 +217,15 @@ router.post('/verify-email',
       const user = await prisma.user.findUnique({ where: { email } })
       if (!user) return res.status(404).json({ error: 'User not found' })
       if (user.emailVerified) return res.status(400).json({ error: 'Email already verified' })
-      if (!user.verifyToken || user.verifyToken !== otp) return res.status(400).json({ error: 'Invalid verification code' })
+      if (!user.verifyToken || !otpMatches(user.verifyToken, otp)) {
+        if (user.verifyToken && recordFailure(`verify:${email}`) >= MAX_CODE_ATTEMPTS) {
+          await prisma.user.update({ where: { email }, data: { verifyToken: null, verifyTokenExp: null } })
+          clearFailures(`verify:${email}`)
+          return res.status(429).json({ error: 'Too many wrong codes. Please request a new code.' })
+        }
+        return res.status(400).json({ error: 'Invalid verification code' })
+      }
+      clearFailures(`verify:${email}`)
       if (user.verifyTokenExp && new Date() > user.verifyTokenExp) return res.status(400).json({ error: 'Code expired. Request a new one.' })
 
       const verified = await prisma.user.update({
@@ -186,12 +257,17 @@ router.post('/resend-otp',
 
       const otp = generateOtp()
       const exp = new Date(Date.now() + 10 * 60 * 1000)
-      await prisma.user.update({ where: { email }, data: { verifyToken: otp, verifyTokenExp: exp } })
+      await prisma.user.update({ where: { email }, data: { verifyToken: hashOtp(otp), verifyTokenExp: exp } })
+      clearFailures(`verify:${email}`)
 
       try {
         await sendOtpEmail(email, user.name, otp)
         res.json({ sent: true })
-      } catch {
+      } catch (err) {
+        if (!EXPOSE_DEV_OTP) {
+          logger.error(`Verification email resend failed: ${err?.message}`)
+          return res.status(503).json({ error: 'email_failed', message: "We couldn't send the code. Please try again in a moment." })
+        }
         console.warn(`[DEV] Resent OTP for ${email}: ${otp}`)
         res.json({ sent: true, devOtp: otp })
       }
@@ -222,12 +298,19 @@ router.post('/forgot-password',
 
       const otp = generateOtp()
       const exp = new Date(Date.now() + 10 * 60 * 1000)
-      await prisma.user.update({ where: { id: user.id }, data: { resetToken: otp, resetTokenExp: exp } })
+      await prisma.user.update({ where: { id: user.id }, data: { resetToken: hashOtp(otp), resetTokenExp: exp } })
+      clearFailures(`reset:${email}`)
 
       try {
         await sendPasswordResetEmail(email, user.name, otp)
         res.json({ sent: true })
-      } catch {
+      } catch (err) {
+        if (!EXPOSE_DEV_OTP) {
+          // Same { sent: true } as the unknown-email case above, so a send
+          // failure doesn't reveal which emails are registered.
+          logger.error(`Password reset email failed: ${err?.message}`)
+          return res.json({ sent: true })
+        }
         console.warn(`[DEV] Password reset OTP for ${email}: ${otp}`)
         res.json({ sent: true, devOtp: otp })
       }
@@ -261,9 +344,14 @@ router.post('/reset-password',
       if (!newPassword || newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' })
 
       const user = await prisma.user.findUnique({ where: { email } })
-      if (!user || !user.resetToken || user.resetToken !== otp) {
+      if (!user || !user.resetToken || !otpMatches(user.resetToken, otp)) {
+        if (user?.resetToken && recordFailure(`reset:${email}`) >= MAX_CODE_ATTEMPTS) {
+          await prisma.user.update({ where: { id: user.id }, data: { resetToken: null, resetTokenExp: null } })
+          clearFailures(`reset:${email}`)
+        }
         return res.status(400).json({ error: 'Invalid or expired code' })
       }
+      clearFailures(`reset:${email}`)
       if (user.resetTokenExp && new Date() > user.resetTokenExp) {
         return res.status(400).json({ error: 'Code expired. Request a new one.' })
       }

@@ -6,6 +6,7 @@ import { ledger } from '../services/ledgerService.js'
 import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
 import { stopCalendarPoller } from '../services/calendarPoller.js'
+import { verifyOAuthState } from '../services/oauthState.js'
 
 const router = express.Router()
 
@@ -19,17 +20,7 @@ export async function calendarCallbackHandler(req, res) {
   try {
     const { code, state } = req.query
     if (!code) return res.status(400).send('Missing code')
-    // accept URL-safe base64 state or plain JSON
-    let decoded = null
-    if (state) {
-      try {
-        let s = state.replace(/-/g, '+').replace(/_/g, '/')
-        while (s.length % 4) s += '='
-        decoded = JSON.parse(Buffer.from(s, 'base64').toString('utf8'))
-      } catch {
-        try { decoded = JSON.parse(state) } catch { decoded = null }
-      }
-    }
+    const decoded = verifyOAuthState(state)
     if (!decoded || !decoded.userId) {
       logger.warn('Calendar callback received invalid state', { state })
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174'

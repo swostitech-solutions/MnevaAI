@@ -45,15 +45,16 @@ function isRelevant(title = '', body = '') {
 // ── Unified notification ingest endpoint ─────────────────────────────────────
 // Accepts from Android forwarders (Macrodroid, Tasker, Automate, custom apps)
 // Body: { userEmail OR userId, appName, title, body, packageName? }
-// Header: x-notify-secret (optional but recommended)
+// Header: x-notify-secret (required)
 router.post('/push', async (req, res) => {
   try {
-    // Secret check
+    // Fail closed, same as the SMS/notification webhooks in _allRoutes.js: an
+    // unset secret used to skip the check, letting anyone who knew (or
+    // guessed) a user's email or phone push notifications into their account.
     const secret = process.env.NOTIFY_WEBHOOK_SECRET?.trim()
-    if (secret) {
-      const incoming = req.headers['x-notify-secret'] || req.body.secret
-      if (incoming !== secret) return res.status(401).json({ error: 'Invalid secret' })
-    }
+    if (!secret) return res.status(503).json({ error: 'Notify webhook not configured' })
+    const incoming = req.headers['x-notify-secret'] || req.body.secret
+    if (incoming !== secret) return res.status(401).json({ error: 'Invalid secret' })
 
     const { userId, userEmail, userPhone, appName = '', title = '', body = '', packageName = '', icon } = req.body
     if (!title && !body) return res.status(400).json({ error: 'title or body required' })
@@ -129,7 +130,7 @@ router.get('/setup', authMiddleware, async (req, res) => {
     res.json({
       userId: user.id,
       webhookUrl: `${base}/api/notify/push`,
-      secret: process.env.NOTIFY_WEBHOOK_SECRET ? '(set in .env)' : '(not set — open)',
+      secret: process.env.NOTIFY_WEBHOOK_SECRET ? '(set in .env)' : '(not set — webhook disabled)',
       instructions: {
         android: 'Use Macrodroid or Tasker to POST notification data to webhookUrl',
         body: { userId: user.id, appName: '{app_name}', title: '{title}', body: '{text}', packageName: '{package}' },

@@ -1,6 +1,7 @@
 import { google } from 'googleapis'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
+import { createOAuthState } from './oauthState.js'
 
 const CALENDAR_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
@@ -17,8 +18,7 @@ function getOAuthClient(redirectUri) {
 
 export function createCalendarAuthUrl(userId, redirectUri, platform = 'web') {
   const oauth2 = getOAuthClient(redirectUri)
-  const rawState = JSON.stringify({ userId, ts: Date.now(), platform })
-  const state = Buffer.from(rawState).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  const state = createOAuthState({ userId, platform })
   const opts = { access_type: 'offline', prompt: 'consent', scope: CALENDAR_SCOPES, state }
   if (redirectUri) opts.redirect_uri = redirectUri
   const url = oauth2.generateAuthUrl(opts)

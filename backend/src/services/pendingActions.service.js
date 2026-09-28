@@ -130,10 +130,10 @@ export async function listPendingActions(userId) {
   return prisma.pendingAction.findMany({ where: { userId, status: 'pending' }, orderBy: { createdAt: 'desc' } })
 }
 
-async function notifyLevelChange(userId, domain, from, to) {
+async function notifyLevelChange(userId, domain, from, to, reason = null) {
   const ledgerEntry = await ledger.add({
     userId, tool: 'trust_level_changed',
-    input: { domain, from, to, reason: to > from ? 'progression' : 'demotion' },
+    input: { domain, from, to, reason: reason || (to > from ? 'progression' : 'demotion') },
     result: { domain, level: to }, status: 'completed',
   })
   await prisma.notification.create({
@@ -142,7 +142,9 @@ async function notifyLevelChange(userId, domain, from, to) {
       title: to > from ? '⬆️ Trust level increased' : '⬇️ Trust level decreased',
       message: to > from
         ? `Mneva's ${DOMAIN_LABEL[domain]} trust level is now L${to}.`
-        : `Mneva's ${DOMAIN_LABEL[domain]} trust level was lowered to L${to} after too many declined actions.`,
+        : reason === 'user_turned_off'
+          ? `You turned off Inner Circle for ${DOMAIN_LABEL[domain]}. Mneva will ask before acting again.`
+          : `Mneva's ${DOMAIN_LABEL[domain]} trust level was lowered to L${to} after too many declined actions.`,
     },
   })
   emitToUser(userId, 'domainTrust:levelChanged', { domain, level: to, previousLevel: from })
@@ -154,12 +156,12 @@ async function notifyLevelChange(userId, domain, from, to) {
 // the PDF's "last 15 actions and then comes to L3 with better
 // understanding" for a demotion, and preventing an old streak years back
 // from carrying into a level it didn't actually earn there.
-async function transitionDomain(userId, row, newLevel) {
+async function transitionDomain(userId, row, newLevel, reason = null) {
   await prisma.domainTrust.update({
     where: { id: row.id },
-    data: { level: newLevel, levelEnteredAt: new Date(), actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, pendingL2Confirm: false },
+    data: { level: newLevel, levelEnteredAt: new Date(), actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, pendingL2Confirm: false, pendingL4Confirm: false },
   })
-  await notifyLevelChange(userId, row.domain, row.level, newLevel)
+  await notifyLevelChange(userId, row.domain, row.level, newLevel, reason)
 }
 
 async function evaluateDomainTransition(userId, row) {
@@ -199,8 +201,14 @@ async function evaluateDomainTransition(userId, row) {
       await transitionDomain(userId, row, 2)
       return
     }
-    if (total >= L3_MIN_ACTIONS_FOR_L4 && acceptedAtLevel / total >= L3_ACCEPT_RATE_TO_L4) {
-      await transitionDomain(userId, row, 4)
+    // L4 means acting without asking (e.g. sending email), so it is never
+    // entered automatically: meeting the bar only offers it to the user.
+    if (total >= L3_MIN_ACTIONS_FOR_L4 && acceptedAtLevel / total >= L3_ACCEPT_RATE_TO_L4 && !row.pendingL4Confirm) {
+      await prisma.domainTrust.update({ where: { id: row.id }, data: { pendingL4Confirm: true } })
+      await prisma.notification.create({
+        data: { userId, title: '🤝 Inner Circle available', message: `Mneva can now handle ${DOMAIN_LABEL[domain]} actions without asking each time. Open Trust & Autonomy to allow it — nothing changes until you do.` },
+      })
+      emitToUser(userId, 'domainTrust:pendingConfirm', { domain, level: 4 })
     }
   }
 }
@@ -224,6 +232,33 @@ export async function confirmFinanceL2(userId) {
   if (!row.pendingL2Confirm) return { error: 'not_pending' }
   await transitionDomain(userId, row, 2)
   return { success: true }
+}
+
+// Inner Circle (L4) consent. confirm: user tapped "Allow" on the offer.
+// decline: "Not now" — stays at L3 and the counters restart, so it's offered
+// again only after another full run of approvals. leave: user turns L4 off.
+export async function confirmInnerCircle(userId, domain) {
+  const row = await getDomainTrust(userId, domain)
+  if (row.level !== 3 || !row.pendingL4Confirm) return { error: 'not_pending' }
+  await transitionDomain(userId, row, 4, 'user_allowed')
+  return { success: true, level: 4 }
+}
+
+export async function declineInnerCircle(userId, domain) {
+  const row = await getDomainTrust(userId, domain)
+  if (!row.pendingL4Confirm) return { error: 'not_pending' }
+  await prisma.domainTrust.update({
+    where: { id: row.id },
+    data: { pendingL4Confirm: false, levelEnteredAt: new Date(), actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0 },
+  })
+  return { success: true, level: row.level }
+}
+
+export async function leaveInnerCircle(userId, domain) {
+  const row = await getDomainTrust(userId, domain)
+  if (row.level < 4) return { error: 'not_inner_circle' }
+  await transitionDomain(userId, row, 3, 'user_turned_off')
+  return { success: true, level: 3 }
 }
 
 // A few tools log under a different name in the Twin Diary ledger than

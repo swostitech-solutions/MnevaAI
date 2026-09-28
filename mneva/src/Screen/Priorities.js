@@ -365,10 +365,18 @@ export default function Priorities({ navigation }) {
     const refresh = () => loadData(true);
     const offTask    = on('task:created',   refresh);
     const offMeeting = on('meeting:created', refresh);
+    // BUG FIX: a family task's own creation event (family:task:new) was
+    // never listened for here — the Family module emits it, but only
+    // FamilyTasks.js was listening. So a new family task (Space → Family
+    // Tasks, or created by the AI) never showed up here in real time while
+    // this screen was already open; only after the 30s poll, or navigating
+    // away and back. Handles create_family_task's AI path too, since that
+    // one doesn't emit ledger:updated (see LEDGER_TOOL_ALIAS).
+    const offFamilyTask = on('family:task:new', refresh);
     // ledger:updated fires after every AI tool call — use it as a reliable
     // fallback trigger so reminders show even if task:created was missed
     const offLedger  = on('ledger:updated', () => setTimeout(() => loadData(true), 800));
-    return () => { offTask?.(); offMeeting?.(); offLedger?.(); };
+    return () => { offTask?.(); offMeeting?.(); offFamilyTask?.(); offLedger?.(); };
   }, [on, loadData]);
 
   // Polling fallback — re-sync every 30s in case socket events were missed

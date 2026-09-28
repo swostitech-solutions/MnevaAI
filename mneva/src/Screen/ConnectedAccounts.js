@@ -350,7 +350,16 @@ export default function ConnectedAccounts({ navigation }) {
   // Linked items (Calendar under Gmail; Docs/Sheets/Slides under Drive) share one
   // OAuth grant with their chain's primary, so they're excluded from the summary
   // counts to avoid the same connection being counted 2-4x over.
-  const summaryItems = INTEGRATIONS.filter(i => i.chainRole !== 'linked');
+  //
+  // BUG FIX: "coming soon" integrations (Zerodha, Razorpay, Ola/Uber,
+  // Swiggy/Zomato, ABHA, CIBIL — 6 of them) have no real connection behind
+  // them at all (connectEndpoint is null; tapping "Connect" on their own row
+  // does nothing, and they show a "Soon" badge instead of a button) — but
+  // they were still counted into Total/Available up here, so "Available"
+  // always looked 6 higher than what a user could actually go connect right
+  // now. Excluded here too, so the top numbers match what the rows below
+  // actually let you do.
+  const summaryItems = INTEGRATIONS.filter(i => i.chainRole !== 'linked' && i.connectMethod !== 'coming_soon');
   const connectedCount = summaryItems.filter(i => statuses[i.id]?.connected).length;
 
   const chainGroups = [];
