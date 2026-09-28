@@ -798,10 +798,19 @@ export async function getHealthData(user) {
   // Fall back to manually synced data (iOS Shortcut / Apple Health / manual input)
   if (synced) {
     const stepGoal = 10000;
-    const steps = synced.steps || 0;
-    const hr = synced.heartRate || null;
-    const sl = synced.sleep || null;
-    const cal = synced.calories || null;
+    // BUG FIX: these used to return `synced.*` unconditionally, no matter how
+    // old `synced.date` was — `syncedToday` was computed above but never
+    // actually used. So logging steps/heart rate/sleep/calories once and
+    // then opening Health on a LATER day with nothing logged yet still
+    // showed that old day's numbers on the Day tab instead of 0/empty.
+    // Steps/heart rate/sleep/calories are "today's reading" concepts and
+    // must reset when the sync isn't from today; weight/height are a slower
+    // -changing biometric (nobody weighs in daily) so those intentionally
+    // keep showing the last known value either way.
+    const steps = syncedToday ? synced.steps || 0 : 0;
+    const hr = syncedToday ? synced.heartRate || null : null;
+    const sl = syncedToday ? synced.sleep || null : null;
+    const cal = syncedToday ? synced.calories || null : null;
     const wt = synced.weight || (await fallbackWeightFromProfile(user.id));
     const ht = synced.height || null;
     return {

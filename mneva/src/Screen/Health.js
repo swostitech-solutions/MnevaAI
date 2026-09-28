@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, useWindowDimensions, Modal, TextInput,
   TouchableWithoutFeedback, KeyboardAvoidingView, Platform,
-  ActivityIndicator,
+  ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -124,7 +124,15 @@ function computeCaloriesBurnedPreview(met, weightKg, durationMin) {
   return Math.round(met * weightKg * (durationMin / 60));
 }
 
-function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme, styles }) {
+// Every CATEGORY_FIELDS key mapped to which category tab it lives under —
+// used only when opening this sheet to EDIT a past entry, so the sheet can
+// land on whichever tab actually has data instead of always "Activity".
+const FIELD_TO_CATEGORY = Object.fromEntries(
+  Object.entries(CATEGORY_FIELDS).flatMap(([cat, fields]) => fields.map(f => [f.key, cat]))
+);
+
+function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme, styles, editDate, editEntry }) {
+  const isEditing = !!editDate;
   const [activeTab, setActiveTab] = useState('activity');
   const [form, setForm] = useState({});
   // Which fields the user has directly typed into (even to clear them) —
@@ -141,8 +149,29 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (visible) { setTouched({}); setLastStepsDistanceEdit(null); }
-  }, [visible]);
+    if (!visible) return;
+    if (isEditing && editEntry) {
+      // Pre-fill from the existing entry, converting numbers to strings for
+      // the TextInputs, and mark every pre-filled field "touched" so the
+      // live auto-calc effect below doesn't immediately recompute over a
+      // real saved value the moment the sheet opens.
+      const prefilled = {};
+      const touchedFields = {};
+      Object.keys(FIELD_TO_CATEGORY).forEach(key => {
+        if (editEntry[key] != null) { prefilled[key] = String(editEntry[key]); touchedFields[key] = true; }
+      });
+      setForm(prefilled);
+      setTouched(touchedFields);
+      setLastStepsDistanceEdit(null);
+      const firstCategoryWithData = LOG_CATEGORIES.find(c => CATEGORY_FIELDS[c.key].some(f => prefilled[f.key] != null));
+      setActiveTab(firstCategoryWithData?.key || 'activity');
+    } else {
+      setForm({});
+      setTouched({});
+      setLastStepsDistanceEdit(null);
+      setActiveTab('activity');
+    }
+  }, [visible, isEditing, editDate]);
 
   const set = (key, val) => {
     setForm(f => ({ ...f, [key]: val }));
@@ -204,18 +233,25 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   }, [form.steps, form.distance, form.activeMinutes, form.workoutDuration, form.workoutType, touched, lastStepsDistanceEdit, metrics]);
 
   const handleSave = async () => {
-    const payload = { source: 'manual' };
+    const payload = isEditing ? {} : { source: 'manual' };
     Object.entries(form).forEach(([k, v]) => {
       const trimmed = String(v || '').trim();
       if (!trimmed) return;
       const isText = ['workoutType', 'sleepBedtime', 'sleepWakeup', 'cyclePhase', 'periodFlow', 'symptoms'].includes(k);
       payload[k] = isText ? trimmed : Number(trimmed);
     });
-    if (Object.keys(payload).length <= 1) { setError('Enter at least one value.'); return; }
+    if (Object.keys(payload).length === 0 || (!isEditing && Object.keys(payload).length <= 1)) {
+      setError('Enter at least one value.');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
-      await apiFetch('/api/health-data/sync', { method: 'POST', body: payload });
+      if (isEditing) {
+        await apiFetch(`/api/health-data/log/${editDate}`, { method: 'PUT', body: payload });
+      } else {
+        await apiFetch('/api/health-data/sync', { method: 'POST', body: payload });
+      }
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -245,8 +281,8 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
           {/* Header */}
           <View style={styles.sheetHeader}>
             <View>
-              <Text style={styles.sheetTitle}>Log Health Data</Text>
-              <Text style={styles.sheetSubtitle}>Manual entry — leave blank to skip</Text>
+              <Text style={styles.sheetTitle}>{isEditing ? 'Edit Health Data' : 'Log Health Data'}</Text>
+              <Text style={styles.sheetSubtitle}>{isEditing ? fmtSelectedDateLabel(editDate, new Date().toISOString().slice(0, 10)) : 'Manual entry — leave blank to skip'}</Text>
             </View>
             <TouchableOpacity onPress={onClose}>
               <Feather name="x" size={20} color={theme.muted} />
@@ -338,6 +374,29 @@ function endOfWeek(weekStartStr) {
   const d = new Date(`${weekStartStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 6);
   return d.toISOString().slice(0, 10);
+}
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// The Week tab's 7-day bar chart used to come ONLY from `metrics.weeklySteps`
+// — which the backend only ever fills in for a Google-Fit-connected user
+// (every other case hardcodes it to []). So a manual-logging user could add
+// real entries for two days this week and the Week tab would still say "No
+// step data yet this week" forever, because it never looked at `healthLog`
+// (which DOES have those days) at all. This rebuilds the same {date, day,
+// steps} shape straight from healthLog for whichever days of the current
+// week actually have an entry.
+function buildWeekBarsFromLog(healthLog) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const weekStart = startOfWeek(todayStr);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(`${weekStart}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + i);
+    const date = d.toISOString().slice(0, 10);
+    days.push({ date, day: WEEKDAY_SHORT[d.getUTCDay()], steps: healthLog?.[date]?.steps || 0 });
+  }
+  return days;
 }
 
 function fmtWeekLabel(weekStartStr, weekEndStr) {
@@ -607,7 +666,7 @@ function DayDetailRow({ icon, label, value, unit, pct, color, theme, styles, las
 // breakdown" — used both by the Day tab (today, live-metrics-aware) and by
 // tapping a bar/day cell in the Week/Month tabs (a specific past date, read
 // straight from that date's healthLog entry).
-function DayDetailCard({ dateLabel, steps, stepGoal, activeMinutes, workoutCalories, distance, theme, styles }) {
+function DayDetailCard({ dateLabel, steps, stepGoal, activeMinutes, workoutCalories, distance, onEdit, onDelete, theme, styles }) {
   const stepPct = Math.min(100, Math.round((steps / stepGoal) * 100));
 
   const activeGoal = 90; // a commonly-used daily active-minutes target
@@ -627,9 +686,24 @@ function DayDetailCard({ dateLabel, steps, stepGoal, activeMinutes, workoutCalor
               <Text style={styles.dayHeroGoal}> / {stepGoal.toLocaleString('en-IN')}</Text>
             </View>
           </View>
-          <View style={styles.dayHeroBadge}>
-            <Feather name="activity" size={20} color="#1F9A5A" />
-          </View>
+          {(onEdit || onDelete) ? (
+            <View style={styles.dayHeroActions}>
+              {onEdit && (
+                <TouchableOpacity style={styles.dayHeroActionBtn} onPress={onEdit}>
+                  <Feather name="edit-2" size={15} color="#1F9A5A" />
+                </TouchableOpacity>
+              )}
+              {onDelete && (
+                <TouchableOpacity style={[styles.dayHeroActionBtn, styles.dayHeroActionBtnDanger]} onPress={onDelete}>
+                  <Feather name="trash-2" size={15} color={theme.danger} />
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View style={styles.dayHeroBadge}>
+              <Feather name="activity" size={20} color="#1F9A5A" />
+            </View>
+          )}
         </View>
         <View style={styles.dayHeroBarTrack}>
           <LinearGradient
@@ -652,7 +726,7 @@ function DayDetailCard({ dateLabel, steps, stepGoal, activeMinutes, workoutCalor
 
 // Day tab — always today, live-metrics-aware (steps prefers the live `metrics`
 // reading; the rest come from today's raw log since `metrics` doesn't carry them).
-function DayActivityView({ metrics, todayLog, theme, styles }) {
+function DayActivityView({ metrics, todayLog, todayStr, onEdit, onDelete, theme, styles }) {
   const steps = metrics?.steps?.value ?? todayLog?.steps ?? 0;
   const stepGoal = metrics?.steps?.goal || 10000;
   return (
@@ -663,6 +737,8 @@ function DayActivityView({ metrics, todayLog, theme, styles }) {
       activeMinutes={todayLog?.activeMinutes ?? null}
       workoutCalories={todayLog?.workoutCalories ?? null}
       distance={todayLog?.distance ?? null}
+      onEdit={todayLog ? () => onEdit(todayStr, todayLog) : undefined}
+      onDelete={todayLog ? () => onDelete(todayStr) : undefined}
       theme={theme}
       styles={styles}
     />
@@ -680,9 +756,20 @@ function fmtSelectedDateLabel(dateStr, todayStr) {
 // Week tab — the existing 7-day bar chart (unchanged), plus a totals row
 // summarizing the current Sunday–Saturday week (already computed by
 // groupLogByWeek for the Weekly Tracking section below, reused here).
-function WeekActivityView({ metrics, currentWeek, healthLog, selectedDate, onSelectDate, theme, styles }) {
-  const weekSteps = metrics?.weeklySteps || [];
-  if (!weekSteps.length) return <Text style={styles.emptyStateText}>No step data yet this week.</Text>;
+function WeekActivityView({ metrics, currentWeek, healthLog, selectedDate, onSelectDate, onEditDay, onDeleteDay, theme, styles }) {
+  const rawWeekSteps = metrics?.weeklySteps || [];
+  // Google Fit gives real per-day steps; everyone else falls back to
+  // whatever they've manually logged this week (see buildWeekBarsFromLog).
+  const usingLoggedFallback = rawWeekSteps.length === 0;
+  const weekSteps = usingLoggedFallback ? buildWeekBarsFromLog(healthLog) : rawWeekSteps;
+  // Fit always returns a full 7-day array even when every day is 0 — keep
+  // that as-is. For the fallback, only call it "no data" when nothing was
+  // actually logged this week at all (checked against every field, not just
+  // steps, since a day could have e.g. only calories/active-minutes logged).
+  const hasWeekData = usingLoggedFallback
+    ? weekSteps.some(d => (d.steps || 0) > 0) || (currentWeek?.daysLogged || 0) > 0
+    : weekSteps.length > 0;
+  if (!hasWeekData) return <Text style={styles.emptyStateText}>No step data yet this week.</Text>;
 
   const goal = metrics?.steps?.goal || 10000;
   const maxSteps = Math.max(...weekSteps.map(d => d.steps || 0), goal);
@@ -760,6 +847,8 @@ function WeekActivityView({ metrics, currentWeek, healthLog, selectedDate, onSel
             activeMinutes={healthLog?.[selectedDate]?.activeMinutes ?? null}
             workoutCalories={healthLog?.[selectedDate]?.workoutCalories ?? null}
             distance={healthLog?.[selectedDate]?.distance ?? null}
+            onEdit={healthLog?.[selectedDate] ? () => onEditDay(selectedDate, healthLog[selectedDate]) : undefined}
+            onDelete={healthLog?.[selectedDate] ? () => onDeleteDay(selectedDate) : undefined}
             theme={theme}
             styles={styles}
           />
@@ -779,7 +868,7 @@ const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 // lighter tint for a logged-but-under-goal day, and a plain neutral circle
 // for a day with nothing logged. Prev/Next lets you page back through any
 // earlier month that has data, not just the current one.
-function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, healthLog, goal, selectedDate, onSelectDate, theme, styles }) {
+function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, healthLog, goal, selectedDate, onSelectDate, onEditDay, onDeleteDay, theme, styles }) {
   const dates = datesInMonth(selectedMonthKey);
   const leadingBlanks = firstWeekdayOfMonth(selectedMonthKey);
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -855,6 +944,8 @@ function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, health
             activeMinutes={healthLog?.[selectedDate]?.activeMinutes ?? null}
             workoutCalories={healthLog?.[selectedDate]?.workoutCalories ?? null}
             distance={healthLog?.[selectedDate]?.distance ?? null}
+            onEdit={healthLog?.[selectedDate] ? () => onEditDay(selectedDate, healthLog[selectedDate]) : undefined}
+            onDelete={healthLog?.[selectedDate] ? () => onDeleteDay(selectedDate) : undefined}
             theme={theme}
             styles={styles}
           />
@@ -913,6 +1004,7 @@ export default function Health({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncVisible, setLogVisible] = useState(false);
+  const [editSheet, setEditSheet] = useState(null); // { date, entry } | null, opened by tapping Edit on a logged day
   const [fitConnected, setFitConnected] = useState(false);
 
   const hasRealDataRef = useRef(false);
@@ -928,6 +1020,24 @@ export default function Health({ navigation }) {
       setWeeklyHistory(groupLogByWeek(log));
       setMonthlyHistory(groupLogByMonth(log, m?.steps?.goal || 10000));
     }
+  };
+
+  const openEditDay = (date, entry) => setEditSheet({ date, entry });
+
+  const deleteLogDay = (date) => {
+    Alert.alert(
+      'Delete this entry?',
+      `${date === new Date().toISOString().slice(0, 10) ? "Today's" : date} health log will be permanently removed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive', onPress: async () => {
+            try { await apiFetch(`/api/health-data/log/${date}`, { method: 'DELETE' }); loadData(true); }
+            catch { Alert.alert('Error', 'Could not delete this entry. Please try again.'); }
+          },
+        },
+      ]
+    );
   };
 
   const loadData = async (isRefresh = false) => {
@@ -1046,7 +1156,17 @@ export default function Health({ navigation }) {
                 ))}
               </View>
 
-              {period === 'day' && <DayActivityView metrics={metrics} todayLog={healthLog?.[todayStr]} theme={theme} styles={styles} />}
+              {period === 'day' && (
+                <DayActivityView
+                  metrics={metrics}
+                  todayLog={healthLog?.[todayStr]}
+                  todayStr={todayStr}
+                  onEdit={openEditDay}
+                  onDelete={deleteLogDay}
+                  theme={theme}
+                  styles={styles}
+                />
+              )}
               {period === 'week' && (
                 <WeekActivityView
                   metrics={metrics}
@@ -1054,6 +1174,8 @@ export default function Health({ navigation }) {
                   healthLog={healthLog}
                   selectedDate={selectedDate}
                   onSelectDate={setSelectedDate}
+                  onEditDay={openEditDay}
+                  onDeleteDay={deleteLogDay}
                   theme={theme}
                   styles={styles}
                 />
@@ -1067,6 +1189,8 @@ export default function Health({ navigation }) {
                   goal={stepGoal}
                   selectedDate={selectedDate}
                   onSelectDate={setSelectedDate}
+                  onEditDay={openEditDay}
+                  onDeleteDay={deleteLogDay}
                   theme={theme}
                   styles={styles}
                 />
@@ -1116,6 +1240,18 @@ export default function Health({ navigation }) {
         onClose={() => setLogVisible(false)}
         onSynced={() => loadData(true)}
         metrics={metrics}
+        bottomInset={insets.bottom}
+        theme={theme}
+        styles={styles}
+      />
+
+      <LogDataSheet
+        visible={!!editSheet}
+        onClose={() => setEditSheet(null)}
+        onSynced={() => loadData(true)}
+        metrics={metrics}
+        editDate={editSheet?.date}
+        editEntry={editSheet?.entry}
         bottomInset={insets.bottom}
         theme={theme}
         styles={styles}
@@ -1232,6 +1368,12 @@ const createStyles = (theme) => StyleSheet.create({
   dayHeroValueRow: { flexDirection: 'row', alignItems: 'baseline' },
   dayHeroValue: { fontSize: 28, fontWeight: '800', color: theme.text },
   dayHeroGoal: { fontSize: 13, fontWeight: '600', color: theme.faint },
+  dayHeroActions: { flexDirection: 'row', gap: 8 },
+  dayHeroActionBtn: {
+    width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.isDark ? 'rgba(52,199,123,0.2)' : '#FFFFFF',
+  },
+  dayHeroActionBtnDanger: { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.18)' : '#FCEAED' },
   dayHeroBadge: {
     width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: theme.isDark ? 'rgba(52,199,123,0.2)' : '#FFFFFF',

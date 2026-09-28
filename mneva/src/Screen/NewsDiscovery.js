@@ -31,23 +31,20 @@ function getCategoryColors(cat) {
   return CATEGORY_COLORS[cat] || ["#6C47FF", "#4A2FCC"];
 }
 
+// Used to go through the full Ask AI agent loop (/api/agent/chat) just to
+// get 6 made-up headlines back as text that then had to be regex-matched out
+// of the reply — paying for the whole system prompt/tools/memory context
+// every single tap, and fragile if the model added any text around the
+// JSON. The backend now answers this with one direct, minimal OpenAI call
+// (see backend/src/services/newsFeed.js) and a short shared cache, so this
+// is just a plain fetch returning ready-made JSON.
 async function fetchNewsFromAI(type, filter) {
-  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const prompts = {
-    foryou:   `Today is ${today}. You are a news agent for Indian urban professionals. Return ONLY a valid JSON array of 6 current top news stories relevant to India covering tech, business, politics, sports, health and startups. Each object: { "headline": string, "summary": string (2 sentences), "source": string, "category": string, "time": string, "readTime": string }. ONLY the JSON array.`,
-    trending: `Today is ${today}. You are a trending news agent. Return ONLY a valid JSON array of 6 currently trending/breaking news stories in India. Each object: { "headline": string, "summary": string (2 sentences), "source": string, "category": string, "time": string, "readTime": string }. ONLY the JSON array.`,
-    discover: `Today is ${today}. Return ONLY a valid JSON array of 6 news stories about "${filter}". Each object: { "headline": string, "summary": string (2 sentences), "source": string, "category": string, "time": string, "readTime": string }. ONLY the JSON array.`,
-  };
-  const res = await apiFetch("/api/agent/chat", {
+  const res = await apiFetch("/api/news/stories", {
     method: "POST",
-    body: { messages: [{ role: "user", content: prompts[type] || prompts.foryou }] },
-    timeoutMs: 45000,
+    body: { type, filter },
+    timeoutMs: 20000,
   });
-  const text = res.response || res.reply || res.message || res.content || "";
-  const match = text.match(/\[\s*\{[\s\S]*?\}\s*\]/);
-  if (!match) return null;
-  const parsed = JSON.parse(match[0]);
-  return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  return Array.isArray(res.stories) && res.stories.length > 0 ? res.stories : null;
 }
 
 const NEWS_TABS = [
@@ -133,16 +130,32 @@ export default function NewsDiscovery({ navigation }) {
   const [error, setError]                 = useState(false);
   const [discoverCat, setDiscoverCat]     = useState(null);
   const [discoverTopic, setDiscoverTopic] = useState(null);
+  // Topics the user follows (AI Profile → Interests → "Topics to follow") —
+  // the Following tab used to just return immediately and always show
+  // "Follow topics to see stories here", no matter what was actually
+  // followed, because nothing here ever read this field at all.
+  const [followTopics, setFollowTopics]   = useState([]);
 
   const tab     = NEWS_TABS.find(t => t.id === activeTab);
   const content = TAB_CONTENT[activeTab];
 
   const loadStories = useCallback(async (tabId, filter) => {
-    if (tabId === "following") return;
     setLoading(true);
     setError(false);
     setStories([]);
     try {
+      if (tabId === "following") {
+        // Re-checked on every open (not just once on mount) so following a
+        // new topic in AI Profile shows up here the next time this tab is
+        // opened, without needing to restart the app.
+        const profileRes = await apiFetch("/api/onboarding/profile").catch(() => null);
+        const topics = Array.isArray(profileRes?.profile?.followTopics) ? profileRes.profile.followTopics : [];
+        setFollowTopics(topics);
+        if (!topics.length) return;
+        const data = await fetchNewsFromAI("following", topics.join(", "));
+        setStories(data || []);
+        return;
+      }
       const data = await fetchNewsFromAI(tabId, filter);
       setStories(data || []);
     } catch {
@@ -318,10 +331,19 @@ export default function NewsDiscovery({ navigation }) {
               </TouchableOpacity>
             </View>
           )}
-          {!loading && !error && activeTab === "following" && (
+          {!loading && !error && activeTab === "following" && stories.length === 0 && (
             <View style={styles.errorBox}>
               <Feather name="bookmark" size={24} color={theme.accent} />
-              <Text style={styles.errorText}>Follow topics to see stories here</Text>
+              <Text style={styles.errorText}>
+                {followTopics.length > 0
+                  ? "No fresh stories for your followed topics right now"
+                  : "Follow topics to see stories here"}
+              </Text>
+              {!followTopics.length && (
+                <TouchableOpacity style={styles.retryBtn} onPress={() => navigation?.navigate?.("AIProfile")}>
+                  <Text style={styles.retryText}>Follow Topics</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
           {!loading && !error && stories.length > 0 && (

@@ -2355,29 +2355,74 @@ healthRouter.get("/log", async (req, res) => {
   }
 });
 
-// PUT /api/health-data/log/:date — edit a specific date entry
+// Every editable field on a health log entry — same set the "Log Health
+// Data" sheet collects, so editing a PAST day supports exactly the same
+// fields as logging today does (this used to only take 6 of the ~30 fields,
+// so the app had no way to actually edit most of what could be logged).
+const HEALTH_LOG_NUMERIC_FIELDS = [
+  "steps", "activeMinutes", "workoutDuration", "workoutCalories", "distance",
+  "weight", "height", "bmi", "bodyFat", "muscleMass", "waist",
+  "heartRate", "bloodPressureSystolic", "bloodPressureDiastolic", "bloodOxygen", "bodyTemp",
+  "sleep", "sleepDeep", "sleepRem", "sleepLight",
+  "calories", "protein", "carbs", "fat", "fiber", "water",
+  "cycleDay",
+];
+const HEALTH_LOG_TEXT_FIELDS = ["workoutType", "sleepBedtime", "sleepWakeup", "cyclePhase", "periodFlow", "symptoms", "source"];
+
+// PUT /api/health-data/log/:date — edit a specific date entry. Also used by
+// the log_health_data / update_record AI tools for a past date, and by
+// editing TODAY's own entry — which additionally refreshes `healthSync` (the
+// separate snapshot the Day tab's live vitals read) so the edit shows up
+// immediately without waiting for the next auto-sync.
 healthRouter.put("/log/:date", async (req, res) => {
   try {
     const { date } = req.params;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
       return res.status(400).json({ error: "invalid_date" });
-    const { steps, heartRate, sleep, calories, weight, height, source } =
-      req.body;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (date > todayStr) return res.status(400).json({ error: "Cannot log data for a future date." });
+
     const user = await userStore.getById(req.user.id);
     const prefs = user?.preferences || {};
     if (!prefs.healthLog) prefs.healthLog = {};
     const existing = prefs.healthLog[date] || {};
-    prefs.healthLog[date] = {
-      ...existing,
-      lastSynced: new Date().toISOString(),
-      ...(source != null && { source }),
-      ...(steps != null && { steps: Number(steps) }),
-      ...(heartRate != null && { heartRate: Number(heartRate) }),
-      ...(sleep != null && { sleep: Number(sleep) }),
-      ...(calories != null && { calories: Number(calories) }),
-      ...(weight != null && { weight: Number(weight) }),
-      ...(height != null && { height: Number(height) }),
-    };
+    const body = req.body || {};
+
+    const updated = { ...existing, lastSynced: new Date().toISOString() };
+    // A field sent as null/empty string explicitly CLEARS it (lets an edit
+    // remove a wrong value); a field simply left out of the body is
+    // untouched, exactly like PATCH semantics elsewhere in this app.
+    for (const key of HEALTH_LOG_NUMERIC_FIELDS) {
+      if (!(key in body)) continue;
+      const v = body[key];
+      updated[key] = v === null || v === "" ? undefined : Number(v);
+    }
+    for (const key of HEALTH_LOG_TEXT_FIELDS) {
+      if (!(key in body)) continue;
+      const v = body[key];
+      updated[key] = v === null || v === "" ? undefined : String(v);
+    }
+
+    const { heightCm, weightKg } = await getBodyMetricsForActivity(req.user.id, updated.weight, updated.height);
+    if (updated.bmi == null) {
+      const computedBmi = computeBmi(weightKg, heightCm);
+      if (computedBmi != null) updated.bmi = computedBmi;
+    }
+    if ("steps" in body && !("distance" in body) && updated.steps != null) {
+      updated.distance = computeDistanceKmFromSteps(updated.steps, heightCm);
+    } else if ("distance" in body && !("steps" in body) && updated.distance != null) {
+      updated.steps = computeStepsFromDistanceKm(updated.distance, heightCm);
+    }
+    if (weightKg && updated.workoutType && (updated.workoutDuration || updated.activeMinutes) && !("workoutCalories" in body)) {
+      const durationMin = updated.workoutDuration || updated.activeMinutes;
+      const met = metForActivity(updated.workoutType, updated.distance, durationMin);
+      updated.workoutCalories = computeCaloriesBurned(met, weightKg, durationMin);
+    }
+
+    prefs.healthLog[date] = updated;
+    // Editing today's own entry should be reflected by the same `healthSync`
+    // snapshot /sync writes, so the Day tab's live vitals pick it up at once.
+    if (date === todayStr) prefs.healthSync = { ...prefs.healthSync, ...updated, date: todayStr };
     await prisma.user.update({
       where: { id: req.user.id },
       data: { preferences: prefs },
@@ -2385,7 +2430,7 @@ healthRouter.put("/log/:date", async (req, res) => {
     ledger.add({
       userId: req.user.id,
       tool: "health_log_updated",
-      input: { date, fields: Object.keys(req.body || {}) },
+      input: { date, fields: Object.keys(body) },
       result: { date },
       status: "completed",
     }).catch(() => {});
@@ -2402,6 +2447,11 @@ healthRouter.delete("/log/:date", async (req, res) => {
     const user = await userStore.getById(req.user.id);
     const prefs = user?.preferences || {};
     if (prefs.healthLog?.[date]) delete prefs.healthLog[date];
+    // Deleting today's own entry should also clear the live-vitals snapshot,
+    // otherwise the Day tab keeps showing the just-deleted numbers until the
+    // next Fit/manual sync overwrites them.
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (date === todayStr && prefs.healthSync?.date === todayStr) prefs.healthSync = null;
     await prisma.user.update({
       where: { id: req.user.id },
       data: { preferences: prefs },

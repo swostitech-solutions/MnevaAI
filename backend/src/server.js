@@ -42,6 +42,7 @@ import { smsRouter, meetingsRouter } from "./routes/_allRoutes.js";
 import tmdbRoutes from "./routes/tmdb.js";
 import notifyRoutes from "./routes/notify.js";
 import { onboardingRouter as onboardingRoutes } from "./routes/onboarding.js";
+import { newsRouter } from "./routes/news.js";
 import { familyRouter } from "./routes/family.js";
 import { petRouter, startPetReminderPoller } from "./routes/pet.js";
 import {
@@ -440,6 +441,7 @@ app.use("/api/contacts", authMiddleware, contactsRoutes);
 app.use("/api/gdrive", authMiddleware, gdriveRoutes);
 app.use("/api/gtasks", authMiddleware, gtasksRoutes);
 
+app.use("/api/news", authMiddleware, newsRouter);
 app.use("/api/conversations", authMiddleware, conversationRoutes);
 app.use("/api/messages", authMiddleware, messageRoutes);
 app.use("/api/documents", authMiddleware, documentsRoutes);

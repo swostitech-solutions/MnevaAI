@@ -75,6 +75,16 @@ export const MODULES = {
     list: { path: '/portfolio/holdings', key: 'holdings' },
     update: { path: '/portfolio/holdings/:id' }, delete: { path: '/portfolio/holdings/:id' },
   },
+  // Special-cased in listRecords/updateRecord/deleteRecord below: this is
+  // keyed by DATE (YYYY-MM-DD), not an id, and its list route returns a
+  // { date: entry } map rather than an array — too different from every
+  // other module's shape to fit the generic path/key handling above.
+  health_log: {
+    domain: 'health', label: 'health log entry', from: 'health',
+    list: { path: '/log' },
+    update: { path: '/log/:date' },
+    delete: { path: '/log/:date' },
+  },
 }
 
 export const MODULE_NAMES = Object.keys(MODULES)
@@ -90,6 +100,7 @@ async function getRouter(from) {
     case 'pet': return (await import('../routes/pet.js')).petRouter
     case 'familyItems': return (await import('../routes/familyItems.js')).familyItemsRouter
     case 'finance': return (await import('../routes/finance.js')).financeRouter
+    case 'health': return (await import('../routes/_allRoutes.js')).healthRouter
     default: throw new Error(`Unknown router ${from}`)
   }
 }
@@ -152,6 +163,18 @@ export async function listRecords(userId, input) {
   const bad = missingParent(spec, input)
   if (bad) return { success: false, error: bad }
   const router = await getRouter(spec.from)
+
+  if (input.module === 'health_log') {
+    const { status, payload } = await callRoute(router, 'get', spec.list.path, { userId })
+    if (status >= 400) return { success: false, error: errorFrom(status, payload) }
+    const log = payload?.log || {}
+    const records = Object.entries(log)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .slice(0, input.limit_days || 14)
+      .map(([date, entry]) => ({ date, ...entry }))
+    return { success: true, module: input.module, count: records.length, records }
+  }
+
   const { status, payload } = await callRoute(router, 'get', spec.list.path, { userId, params: paramsFor(spec, input) })
   if (status >= 400) return { success: false, error: errorFrom(status, payload) }
   const rows = spec.list.key ? payload?.[spec.list.key] : payload
@@ -174,6 +197,13 @@ export async function updateRecord(userId, input) {
   }
   const router = await getRouter(spec.from)
   const params = paramsFor(spec, input)
+
+  if (input.module === 'health_log') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(input.id || ''))) return { success: false, error: 'id must be a date, YYYY-MM-DD (from list_records).' }
+    const { status, payload } = await callRoute(router, 'put', spec.update.path, { userId, params: { date: input.id }, body: fields })
+    if (status >= 400) return { success: false, error: errorFrom(status, payload) }
+    return { success: true, module: input.module, id: input.id, updated: Object.keys(fields), record: payload?.entry }
+  }
 
   // family_task has two separate update endpoints — split the requested
   // fields between them and apply both if the caller mixed status with an
@@ -224,7 +254,8 @@ export async function deleteRecord(userId, input) {
   const bad = missingParent(spec, input)
   if (bad) return { success: false, error: bad }
   const router = await getRouter(spec.from)
-  const { status, payload } = await callRoute(router, 'delete', spec.delete.path, { userId, params: paramsFor(spec, input) })
+  const params = input.module === 'health_log' ? { date: input.id } : paramsFor(spec, input)
+  const { status, payload } = await callRoute(router, 'delete', spec.delete.path, { userId, params })
   if (status >= 400) return { success: false, error: errorFrom(status, payload) }
   return { success: true, module: input.module, id: input.id, deleted: true }
 }
