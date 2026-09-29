@@ -633,51 +633,55 @@ server.on("listening", () => {
     }
   })();
 
-  // FIX: self-ping must NEVER fall back to localhost. A loopback ping never
-  // leaves the container, so it's never seen as external traffic and does
-  // NOT reset Render's inactivity timer — this was silently broken before.
-  const SELF_URLS = Array.from(
-    new Set(
-      [
-        process.env.RENDER_EXTERNAL_URL,
-        process.env.PUBLIC_URL,
-        "https://mneva-backend-v2.onrender.com",
-        "https://mneva-backend.onrender.com",
-      ].filter(Boolean),
-    ),
-  );
-  const pingSelf = () => {
-    const requests = SELF_URLS.map((url) =>
-      fetch(`${url}/api/health`)
-        .then(() => `${url}/api/health`)
-        .catch(() => null),
+  // Self-ping exists only to reset Render's free/starter-tier inactivity
+  // timer (a loopback ping never leaves the container, so it doesn't count as
+  // external traffic there). RENDER_EXTERNAL_URL is set exclusively by
+  // Render, so on any other host (VPS, etc.) this whole block is a no-op —
+  // an always-on host has no inactivity timer to reset.
+  if (process.env.RENDER_EXTERNAL_URL) {
+    const SELF_URLS = Array.from(
+      new Set(
+        [
+          process.env.RENDER_EXTERNAL_URL,
+          process.env.PUBLIC_URL,
+          "https://mneva-backend-v2.onrender.com",
+          "https://mneva-backend.onrender.com",
+        ].filter(Boolean),
+      ),
     );
+    const pingSelf = () => {
+      const requests = SELF_URLS.map((url) =>
+        fetch(`${url}/api/health`)
+          .then(() => `${url}/api/health`)
+          .catch(() => null),
+      );
 
-    return Promise.allSettled(requests).then((results) => {
-      const ok = results
-        .filter((result) => result.status === "fulfilled" && result.value)
-        .map((result) => result.value);
-      if (ok.length) {
-        logger.info(`🔁 Self-ping OK (${ok[0]})`);
-      } else {
-        logger.warn("🔁 Self-ping failed: no external health URL responded");
-      }
-    });
-  };
+      return Promise.allSettled(requests).then((results) => {
+        const ok = results
+          .filter((result) => result.status === "fulfilled" && result.value)
+          .map((result) => result.value);
+        if (ok.length) {
+          logger.info(`🔁 Self-ping OK (${ok[0]})`);
+        } else {
+          logger.warn("🔁 Self-ping failed: no external health URL responded");
+        }
+      });
+    };
 
-  logger.info(`🔁 Self-ping targets: ${SELF_URLS.join(", ")}/api/health`);
-  pingSelf().catch(() => {});
-  selfPingTimer = setInterval(() => {
+    logger.info(`🔁 Self-ping targets: ${SELF_URLS.join(", ")}/api/health`);
     pingSelf().catch(() => {});
-    // Leaves a trail in Render's log history so a past "everything was
-    // unreachable" window can be diagnosed after the fact: a reset uptime
-    // means the process restarted (crash/OOM), a lag spike means the event
-    // loop was blocked, rising rssMB across samples means a leak.
-    const status = getHealthStatus();
-    logger.info(
-      `📈 uptime=${status.uptimeSeconds}s rss=${status.memory.rssMB}MB heap=${status.memory.heapUsedMB}MB loopLag=${status.eventLoopLagMs}ms`,
-    );
-  }, 5 * 60 * 1000);
+    selfPingTimer = setInterval(() => {
+      pingSelf().catch(() => {});
+      // Leaves a trail in Render's log history so a past "everything was
+      // unreachable" window can be diagnosed after the fact: a reset uptime
+      // means the process restarted (crash/OOM), a lag spike means the event
+      // loop was blocked, rising rssMB across samples means a leak.
+      const status = getHealthStatus();
+      logger.info(
+        `📈 uptime=${status.uptimeSeconds}s rss=${status.memory.rssMB}MB heap=${status.memory.heapUsedMB}MB loopLag=${status.eventLoopLagMs}ms`,
+      );
+    }, 5 * 60 * 1000);
+  }
 });
 
 server.on("error", (err) => {
