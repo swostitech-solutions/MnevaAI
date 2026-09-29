@@ -90,3 +90,21 @@ jobs:
           if (failed) process.exit(1);
           console.log('All frontend source files parsed cleanly.');
           "
+
+  deploy:
+    name: Deploy backend to Hostinger VPS
+    needs: backend
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        # The VPS key is locked to a single forced command (see
+        # ~/.ssh/authorized_keys on the server) that pulls main, reinstalls
+        # deps, runs pending Prisma migrations, and restarts the systemd
+        # service — so this step can't run anything else even if the key
+        # ever leaked.
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
