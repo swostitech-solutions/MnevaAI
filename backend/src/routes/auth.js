@@ -114,6 +114,24 @@ function failureCount(key) {
 
 const clearFailures = key => _failedAttempts.delete(key)
 
+// BUG FIX: /register used to create the real, permanent User row
+// immediately — before the OTP was ever checked. So (a) backing out of the
+// OTP screen without entering a code still left a real account behind
+// forever, and (b) that email was then stuck reporting "already registered"
+// on every future signup attempt, even though the person never actually
+// finished signing up. Nothing is written to the User table until the OTP
+// is actually verified; until then, the signup lives only here, in memory,
+// like the failed-attempt counters above — acceptable because OTPs are only
+// ever valid for 10 minutes anyway, so a redeploy in that exact window just
+// means starting the signup over, not losing a real account.
+const _pendingSignups = new Map() // emailKey -> { name, phone, passwordHash, otpHash, otpExp, createdAt }
+const PENDING_SIGNUP_TTL_MS = 15 * 60 * 1000
+
+function prunePendingSignups() {
+  const now = Date.now()
+  for (const [k, v] of _pendingSignups) if (now - v.createdAt > PENDING_SIGNUP_TTL_MS) _pendingSignups.delete(k)
+}
+
 // ── Login ──────────────────────────────────────────────────────────────────────
 router.post('/login',
   [body('email').isEmail(), body('password').isLength({ min: 6 })],
@@ -171,31 +189,36 @@ router.post('/register',
       if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg })
 
       const { email, password, name, phone } = req.body
-      if (await userStore.has(email)) return res.status(409).json({ error: 'Email already registered' })
+      const emailKey = email.toLowerCase().trim()
+      prunePendingSignups()
+
+      if (await userStore.has(emailKey)) return res.status(409).json({ error: 'Email already registered' })
       const existingPhone = await prisma.user.findUnique({ where: { phone } })
       if (existingPhone) return res.status(409).json({ error: 'Phone number already registered' })
+      // Someone else's signup could still be sitting unverified on this same
+      // phone number — block it here too, not just against real accounts.
+      for (const [k, v] of _pendingSignups) {
+        if (k !== emailKey && v.phone === phone) return res.status(409).json({ error: 'Phone number already registered' })
+      }
 
       const hash = await bcrypt.hash(password, 10)
       const otp = generateOtp()
-      const exp = new Date(Date.now() + 10 * 60 * 1000)
 
-      const user = await userStore.create({ email, name, phone, passwordHash: hash })
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { emailVerified: false, verifyToken: hashOtp(otp), verifyTokenExp: exp },
-      })
+      // Nothing is written to the User table yet — see _pendingSignups above.
+      _pendingSignups.set(emailKey, { name, phone, passwordHash: hash, otpHash: hashOtp(otp), otpExp: Date.now() + 10 * 60 * 1000, createdAt: Date.now() })
 
-      clearFailures(`verify:${email}`)
+      clearFailures(`verify:${emailKey}`)
       try {
-        await sendOtpEmail(email, name, otp)
-        res.status(201).json({ pendingVerification: true, email })
+        await sendOtpEmail(emailKey, name, otp)
+        res.status(201).json({ pendingVerification: true, email: emailKey })
       } catch (err) {
         if (!EXPOSE_DEV_OTP) {
+          _pendingSignups.delete(emailKey) // couldn't send a code at all — nothing to verify against, don't leave it stuck
           logger.error(`Verification email failed for new signup: ${err?.message}`)
           return res.status(503).json({ error: 'email_failed', message: "We couldn't send your verification email. Please try again in a moment." })
         }
-        console.warn(`[DEV] OTP for ${email}: ${otp}`)
-        res.status(201).json({ pendingVerification: true, email, devOtp: otp })
+        console.warn(`[DEV] OTP for ${emailKey}: ${otp}`)
+        res.status(201).json({ pendingVerification: true, email: emailKey, devOtp: otp })
       }
     } catch (err) {
       const isDbDown = err?.message?.includes("Can't reach database") || err?.code === 'P1001' || err?.code === 'P1002'
@@ -214,24 +237,37 @@ router.post('/verify-email',
       if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid request' })
 
       const { email, otp } = req.body
-      const user = await prisma.user.findUnique({ where: { email } })
-      if (!user) return res.status(404).json({ error: 'User not found' })
-      if (user.emailVerified) return res.status(400).json({ error: 'Email already verified' })
-      if (!user.verifyToken || !otpMatches(user.verifyToken, otp)) {
-        if (user.verifyToken && recordFailure(`verify:${email}`) >= MAX_CODE_ATTEMPTS) {
-          await prisma.user.update({ where: { email }, data: { verifyToken: null, verifyTokenExp: null } })
-          clearFailures(`verify:${email}`)
-          return res.status(429).json({ error: 'Too many wrong codes. Please request a new code.' })
+      const emailKey = email.toLowerCase().trim()
+      prunePendingSignups()
+      const pending = _pendingSignups.get(emailKey)
+      if (!pending) return res.status(404).json({ error: 'No pending signup found for this email. Please sign up again.' })
+
+      if (Date.now() > pending.otpExp) {
+        _pendingSignups.delete(emailKey)
+        return res.status(400).json({ error: 'Code expired. Please sign up again.' })
+      }
+      if (!otpMatches(pending.otpHash, otp)) {
+        if (recordFailure(`verify:${emailKey}`) >= MAX_CODE_ATTEMPTS) {
+          _pendingSignups.delete(emailKey)
+          clearFailures(`verify:${emailKey}`)
+          return res.status(429).json({ error: 'Too many wrong codes. Please sign up again.' })
         }
         return res.status(400).json({ error: 'Invalid verification code' })
       }
-      clearFailures(`verify:${email}`)
-      if (user.verifyTokenExp && new Date() > user.verifyTokenExp) return res.status(400).json({ error: 'Code expired. Request a new one.' })
+      clearFailures(`verify:${emailKey}`)
 
-      const verified = await prisma.user.update({
-        where: { email },
-        data: { emailVerified: true, verifyToken: null, verifyTokenExp: null },
-      })
+      // The real account is only ever created here, once the code is
+      // actually right — never at /register. Re-check for a race: someone
+      // else could have taken this email/phone in the few minutes this
+      // signup was pending.
+      if (await userStore.has(emailKey)) { _pendingSignups.delete(emailKey); return res.status(409).json({ error: 'Email already registered' }) }
+      const existingPhone = await prisma.user.findUnique({ where: { phone: pending.phone } })
+      if (existingPhone) { _pendingSignups.delete(emailKey); return res.status(409).json({ error: 'Phone number already registered' }) }
+
+      const created = await userStore.create({ email: emailKey, name: pending.name, phone: pending.phone, passwordHash: pending.passwordHash })
+      const verified = await prisma.user.update({ where: { id: created.id }, data: { emailVerified: true } })
+      _pendingSignups.delete(emailKey)
+
       const sessionId = await startNewSession(verified.id)
       res.json({ token: sign(verified, sessionId), refreshToken: await issueRefreshToken(verified.id), user: toPublicUser(verified) })
     } catch (err) {
@@ -251,24 +287,25 @@ router.post('/resend-otp',
       if (!errs.isEmpty()) return res.status(400).json({ error: 'Valid email required' })
 
       const { email } = req.body
-      const user = await prisma.user.findUnique({ where: { email } })
-      if (!user) return res.status(404).json({ error: 'User not found' })
-      if (user.emailVerified) return res.status(400).json({ error: 'Email already verified' })
+      const emailKey = email.toLowerCase().trim()
+      prunePendingSignups()
+      const pending = _pendingSignups.get(emailKey)
+      if (!pending) return res.status(404).json({ error: 'No pending signup found for this email. Please sign up again.' })
 
       const otp = generateOtp()
-      const exp = new Date(Date.now() + 10 * 60 * 1000)
-      await prisma.user.update({ where: { email }, data: { verifyToken: hashOtp(otp), verifyTokenExp: exp } })
-      clearFailures(`verify:${email}`)
+      pending.otpHash = hashOtp(otp)
+      pending.otpExp = Date.now() + 10 * 60 * 1000
+      clearFailures(`verify:${emailKey}`)
 
       try {
-        await sendOtpEmail(email, user.name, otp)
+        await sendOtpEmail(emailKey, pending.name, otp)
         res.json({ sent: true })
       } catch (err) {
         if (!EXPOSE_DEV_OTP) {
           logger.error(`Verification email resend failed: ${err?.message}`)
           return res.status(503).json({ error: 'email_failed', message: "We couldn't send the code. Please try again in a moment." })
         }
-        console.warn(`[DEV] Resent OTP for ${email}: ${otp}`)
+        console.warn(`[DEV] Resent OTP for ${emailKey}: ${otp}`)
         res.json({ sent: true, devOtp: otp })
       }
     } catch (err) {
