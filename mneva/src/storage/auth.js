@@ -61,7 +61,7 @@ export async function clearAuth() {
   // create a require cycle.
   const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY).catch(() => null);
   if (refreshToken) {
-    await fetch('https://mneva-backend-v2.onrender.com/api/auth/logout', {
+    await fetch('https://mneva.swostitechapp.com/api/auth/logout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),

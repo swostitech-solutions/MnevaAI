@@ -253,7 +253,7 @@ export default function Signup({ navigation }) {
               {termsModal === 'terms' ? (
                 <Text style={styles.modalText}>{`Last updated: 28 September 2026
 
-Welcome to Mneva AI. By creating an account, you agree to these Terms of Service (also at mneva-backend-v2.onrender.com/terms).
+Welcome to Mneva AI. By creating an account, you agree to these Terms of Service (also at mneva.swostitechapp.com/terms).
 
 1. USE OF SERVICE
 Mneva AI is a personal AI assistant platform. You must be 18+ to use this service. You are responsible for all activity under your account.

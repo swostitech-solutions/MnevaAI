@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { getStoredAuth, saveTokens } from '../storage/auth';
 
-const PRODUCTION_BACKEND = 'https://mneva-backend-v2.onrender.com';
+const PRODUCTION_BACKEND = 'https://mneva.swostitechapp.com';
 
 // TEMPORARY: force the emulator onto the production backend/DB so a
 // production account can be tested there. Flip back to `false` to resume
