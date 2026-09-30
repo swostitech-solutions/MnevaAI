@@ -15,7 +15,6 @@ export const GATED_DOMAINS = {
   create_fixed_deposit: 'finance',
   add_portfolio_holding: 'finance',
   send_email: 'communications',
-  schedule_event: 'communications',
   log_health_data: 'health',
   add_parent_medication: 'family',
   create_family_task: 'family',
