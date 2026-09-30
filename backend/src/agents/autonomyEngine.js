@@ -959,7 +959,12 @@ export async function executeTool(name, input, userId, opts = {}) {
     const amount = name === 'initiate_payment' ? Number(input.amount) || 0 : 0
     const gate = decideGate(name, domainTrust, amount, domain)
     if (gate.mode === 'blocked') {
-      return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, message: blockedMessage(gate.reason, describeAction(name)) }
+      const reasonMessage = blockedMessage(gate.reason, describeAction(name))
+      // `error` mirrors every other failure path in this switch (the chat
+      // response builder below only ever reads `.error`, not `.message`) —
+      // without it, a blocked gate silently fell back to a generic
+      // "the action did not complete" instead of this specific explanation.
+      return { success: false, blocked: true, domain: gate.domain, reason: gate.reason, error: reasonMessage, message: reasonMessage }
     }
     if (gate.mode === 'pending') {
       await recordDomainAction(userId, domain, 'observed')
@@ -2124,8 +2129,14 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         ['set_reminder', 'schedule_event'].includes(item.tool) && item.result?.success === false
       )
       if (failedAction) {
+        // A gate-blocked result's `error` is already a complete, user-facing
+        // sentence (see blockedMessage) — prefixing "I couldn't X: " onto it
+        // reads as a redundant double sentence, so it's used as-is instead.
+        const response = failedAction.result.blocked
+          ? failedAction.result.error
+          : `I couldn’t ${failedAction.tool === 'set_reminder' ? 'set that reminder' : 'schedule that event'}: ${failedAction.result.error || 'the action did not complete.'}`
         return {
-          response: `I couldn’t ${failedAction.tool === 'set_reminder' ? 'set that reminder' : 'schedule that event'}: ${failedAction.result.error || 'the action did not complete.'}`,
+          response,
           toolResults: allToolResults,
           iterations,
           mode: 'openai',
