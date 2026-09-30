@@ -22,6 +22,13 @@ function isWithinLookahead(dateLike, now) {
 export async function buildFullSummary(userId) {
   const now = new Date()
   const weekEnd = new Date(now.getTime() + LOOKAHEAD_DAYS * DAY_MS)
+  // An item due today but earlier than the current clock time (e.g. a home
+  // maintenance task defaulted to 9am, checked in the afternoon) must still
+  // count as due today — filtering from `now` instead of the start of today
+  // (IST) silently dropped it from Priorities for the rest of the day even
+  // though it's neither done nor actually in the past.
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now)
+  const todayStart = new Date(`${todayKey}T00:00:00+05:30`)
 
   const [
     user,
@@ -42,8 +49,8 @@ export async function buildFullSummary(userId) {
     prisma.notification.findMany({ where: { userId, read: false, priority: { gte: 60 } }, orderBy: { priority: 'desc' }, take: 10 }),
     prisma.familyTask.findMany({ where: { OR: [{ assigneeId: userId }, { creatorId: userId }], status: { notIn: ['COMPLETED', 'DONE'] } }, orderBy: { createdAt: 'desc' }, take: 10 }),
     prisma.parentMedication.findMany({ where: { userId, active: true } }),
-    prisma.petReminder.findMany({ where: { userId, done: false, remindAt: { gte: now, lte: weekEnd } }, orderBy: { remindAt: 'asc' } }),
-    prisma.familyItem.findMany({ where: { userId, done: false, remindAt: { gte: now, lte: weekEnd } }, orderBy: { remindAt: 'asc' } }),
+    prisma.petReminder.findMany({ where: { userId, done: false, remindAt: { gte: todayStart, lte: weekEnd } }, orderBy: { remindAt: 'asc' } }),
+    prisma.familyItem.findMany({ where: { userId, done: false, remindAt: { gte: todayStart, lte: weekEnd } }, orderBy: { remindAt: 'asc' } }),
     prisma.bill.findMany({ where: { userId, status: { in: ['Upcoming', 'Due', 'Overdue'] } } }),
     prisma.loan.findMany({ where: { userId, status: 'Active' } }),
     prisma.emi.findMany({ where: { userId, status: 'Active' } }),
@@ -100,7 +107,7 @@ export async function buildFullSummary(userId) {
       tasks: familyTasks.map(t => ({ title: t.title, status: t.status, priority: t.priority, dueDate: t.dueDate })),
       medicationRefills,
       petReminders: petReminders.map(r => ({ title: r.title, type: r.type, remindAt: r.remindAt })),
-      upcoming: familyItems.map(i => ({ domain: i.domain, type: i.type, remindAt: i.remindAt })),
+      upcoming: familyItems.map(i => ({ domain: i.domain, type: i.type, remindAt: i.remindAt, title: i.data?.title || null, priority: i.data?.priority || null })),
     },
     health: {
       today: healthToday,

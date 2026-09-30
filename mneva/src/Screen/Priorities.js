@@ -85,7 +85,7 @@ function buildAutoItems(summary) {
   (family?.petReminders || []).forEach((p, i) =>
     push(`pet-${i}`, p.title, 'Pet reminder', p.remindAt, 'heart', '#F5A623', 'Pet'));
   (family?.upcoming || []).forEach((f, i) =>
-    push(`fam-${i}`, `${f.type} (${f.domain})`, 'Family', f.remindAt, 'home', '#9B72FF', 'Family'));
+    push(`fam-${i}`, f.title || `${f.type} (${f.domain})`, `Family${f.priority ? ' · ' + f.priority : ''}`, f.remindAt, 'home', '#9B72FF', 'Family'));
   (finance?.upcomingBills || []).forEach((b, i) =>
     push(`bill-${i}`, `${b.name} bill due`, `₹${(b.amount || 0).toLocaleString('en-IN')}`, b.dueDate, 'file-text', '#F5A623', 'Finance'));
   (finance?.upcomingPayments || []).forEach((p, i) =>
