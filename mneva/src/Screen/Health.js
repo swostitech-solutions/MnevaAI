@@ -842,7 +842,14 @@ function WeekActivityView({ metrics, currentWeek, healthLog, selectedDate, onSel
         <View style={styles.selectedDaySection}>
           <DayDetailCard
             dateLabel={fmtSelectedDateLabel(selectedDate, todayStr)}
-            steps={healthLog?.[selectedDate]?.steps ?? selectedDay.steps ?? 0}
+            // selectedDay comes from a fresh Google Fit range query on every
+            // load, so it's the live number for that date — healthLog is
+            // only ever written for "today" and is never revisited once the
+            // date rolls over, so it can freeze at a stale (sometimes 0)
+            // value forever. Prefer the live figure; fall back to healthLog
+            // only when Fit has no record for this day at all (e.g. not
+            // connected, or the day isn't in the trailing-7-day range).
+            steps={selectedDay.steps ?? healthLog?.[selectedDate]?.steps ?? 0}
             stepGoal={goal}
             activeMinutes={healthLog?.[selectedDate]?.activeMinutes ?? null}
             workoutCalories={healthLog?.[selectedDate]?.workoutCalories ?? null}
