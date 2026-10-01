@@ -75,7 +75,7 @@ const SETTINGS_ROWS = [
   {
     id: "6",
     title: "Settings",
-    value: "Trust, privacy, notifications, account",
+    value: "Trust, privacy & more",
     icon: "settings",
     iconColor: "#6B7280",
     screen: "Settings",
@@ -207,9 +207,9 @@ export default function Profile({ navigation }) {
                 }}
               >
                 <Feather name={rowIcon} size={18} color={rowIconColor} />
-                <Text style={styles.settingsLabel}>{row.title}</Text>
+                <Text style={styles.settingsLabel} numberOfLines={1}>{row.title}</Text>
                 {rowValue && (
-                  <Text style={[styles.settingsValue, locked && styles.settingsValueLocked]}>{rowValue}</Text>
+                  <Text style={[styles.settingsValue, locked && styles.settingsValueLocked]} numberOfLines={1} ellipsizeMode="tail">{rowValue}</Text>
                 )}
                 <Feather name="chevron-right" size={18} color={theme.disabled} />
               </TouchableOpacity>
@@ -350,16 +350,19 @@ const createStyles = (theme) => StyleSheet.create({
     borderBottomColor: theme.border,
   },
   settingsLabel: {
-    flex: 1,
+    flexShrink: 0,
     fontSize: 15,
     fontWeight: "700",
     color: theme.text,
     marginLeft: 14,
+    marginRight: 10,
   },
   settingsValue: {
+    flex: 1,
     fontSize: 13,
     color: theme.faint,
     marginRight: 6,
+    textAlign: "right",
   },
   settingsValueLocked: {
     color: theme.warning,
