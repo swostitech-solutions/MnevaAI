@@ -18,6 +18,7 @@ import {
   notificationCaptureAvailable,
 } from '../services/notificationCapture';
 import { useTheme } from '../context/ThemeContext';
+import { getPlanDisplayName } from '../utils/plan';
 import NotificationAccessDisclosure from '../components/NotificationAccessDisclosure';
 
 const TABS = ['Trust', 'Privacy', 'Notifications', 'Account'];
@@ -228,7 +229,7 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
   const INFO_ROWS = [
     { label: 'Email',        value: user?.email || '—',                    icon: 'mail' },
     { label: 'Phone',        value: user?.phone || 'Not added',             icon: 'phone', action: () => { setPhoneInput(user?.phone || ''); setPhoneError(''); setPhoneModal(true); } },
-    { label: 'Plan',         value: user?.plan  || 'Free',                 icon: 'star' },
+    { label: 'Plan',         value: getPlanDisplayName(user?.plan),        icon: 'star' },
     { label: 'Trust Level',  value: `L${currentLevel} · ${LEVEL_NAMES[currentLevel] || ''}`, icon: 'shield' },
     { label: 'Member Since', value: memberSince,                           icon: 'calendar' },
   ];

@@ -16,6 +16,7 @@ import {
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
+import { getPlanDisplayName } from '../utils/plan';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -29,13 +30,6 @@ const AUTOMATION_UNLOCK_LEVEL = 4;
 const TRUST_LEVEL_NAMES = { 1: 'Observe', 2: 'Suggest', 3: 'Draft & Prep', 4: 'Inner Circle' };
 const DOMAIN_LABELS = { finance: 'Finance', communications: 'Communication', health: 'Health Core', family: 'Family' };
 const DOMAINS_COUNT = Object.keys(DOMAIN_LABELS).length;
-
-function displayPlanName(plan) {
-  const value = (plan || '').toLowerCase();
-  if (value.includes('family')) return 'Family';
-  if (value.includes('pro')) return 'Pro';
-  return 'Basic';
-}
 
 const SETTINGS_ROWS = [
   {
@@ -79,38 +73,11 @@ const SETTINGS_ROWS = [
     screen: "TwinDiary",
   },
   {
-    id: "3",
-    title: "Trust & Autonomy",
-    value: null,
-    icon: "shield",
-    iconColor: "#1F9A5A",
-    screen: "Settings",
-  },
-  {
-    id: "4",
-    title: "Privacy & Security",
-    value: null,
-    icon: "lock",
-    // Medium gray reads fine on both a white and a near-black background —
-    // the original #374151 was tuned for light mode only and nearly
-    // disappears once the row's background goes dark.
-    iconColor: "#6B7280",
-    screen: "Settings",
-  },
-  {
-    id: "5",
-    title: "Notifications",
-    value: null,
-    icon: "bell",
-    iconColor: "#1F9A5A",
-    screen: "Settings",
-  },
-  {
     id: "6",
-    title: "Account",
-    value: null,
-    icon: "user",
-    iconColor: "#1F9A5A",
+    title: "Settings",
+    value: "Trust, privacy, notifications, account",
+    icon: "settings",
+    iconColor: "#6B7280",
     screen: "Settings",
   },
 ];
@@ -179,7 +146,7 @@ export default function Profile({ navigation }) {
             <Text style={styles.profileEmail}>{user?.email || ''}</Text>
             <TouchableOpacity style={styles.planBadge} onPress={() => navigation?.navigate?.('Subscription')} activeOpacity={0.75}>
               <Feather name="sun" size={12} color={theme.accent} />
-              <Text style={styles.planBadgeText}>{"  "}{displayPlanName(user?.plan)}</Text>
+              <Text style={styles.planBadgeText}>{"  "}{getPlanDisplayName(user?.plan)}</Text>
               <Feather name="chevron-right" size={13} color={theme.accent} style={{ marginLeft: 4 }} />
             </TouchableOpacity>
           </View>
@@ -236,10 +203,7 @@ export default function Profile({ navigation }) {
                     );
                     return;
                   }
-                  if (row.title === 'Privacy & Security') navigation?.navigate?.('Settings', { tab: 1 });
-                  else if (row.title === 'Notifications') navigation?.navigate?.('Settings', { tab: 2 });
-                  else if (row.title === 'Account') navigation?.navigate?.('Settings', { tab: 3 });
-                  else navigation?.navigate?.(row.screen);
+                  navigation?.navigate?.(row.screen);
                 }}
               >
                 <Feather name={rowIcon} size={18} color={rowIconColor} />

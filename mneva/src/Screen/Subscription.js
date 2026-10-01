@@ -7,6 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { getPlanKey } from '../utils/plan';
 
 const PLANS = [
   {
@@ -46,18 +47,15 @@ const PLANS = [
   },
 ];
 
-function planKey(value = '') {
-  const name = value.toLowerCase();
-  if (name.includes('family')) return 'family';
-  if (name.includes('pro')) return 'pro';
-  return 'basic';
-}
-
 export default function Subscription({ navigation }) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = createStyles(theme);
-  const [currentPlan, setCurrentPlan] = useState('basic');
+  // 'free' deliberately matches none of PLANS' ids (basic/pro/family) below
+  // — there's no "Free" card to highlight, so a free account correctly
+  // shows no plan as current instead of the old bug where it fell back to
+  // 'basic' and wrongly badged the Basic card as the current plan.
+  const [currentPlan, setCurrentPlan] = useState('free');
 
   useEffect(() => {
     // Only the fresh server response decides which plan shows as current —
@@ -65,7 +63,7 @@ export default function Subscription({ navigation }) {
     // refreshed afterward, so a plan change (or this account simply having
     // been Free all along under a stale cached value) could otherwise keep
     // showing the wrong plan highlighted indefinitely.
-    apiFetch('/api/auth/me').then(user => setCurrentPlan(planKey(user?.plan))).catch(() => {});
+    apiFetch('/api/auth/me').then(user => setCurrentPlan(getPlanKey(user?.plan))).catch(() => {});
   }, []);
 
   const selectPlan = (plan) => {
