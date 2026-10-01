@@ -23,6 +23,7 @@
     "android": {
       "userInterfaceStyle": "light",
       "allowBackup": false,
+      "googleServicesFile": "./google-services.json",
       "package": "com.swostitech.mneva",
       "intentFilters": [
         {
