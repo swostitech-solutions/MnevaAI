@@ -3016,6 +3016,24 @@ function phoneAlertAnalysis(meta = {}, title = "", body = "") {
       urgency: "urgent",
     };
   }
+  // Checked before the generic payments/time_sensitive branches below —
+  // a recharge/plan-expiry message often also matches "due"/"bill" or has
+  // an expiry "deadline", which used to route it into copy written for a
+  // bank bill or a calendar appointment instead of an actual recharge.
+  if (
+    category === "recharge" ||
+    reason === "recharge" ||
+    /(recharge|plan (?:expir|validity)|data pack|talktime)/i.test(text)
+  ) {
+    return {
+      label: "Recharge or plan expiry",
+      summary:
+        "Your mobile plan or data pack appears to be expiring or needs a recharge soon.",
+      nextStep:
+        "Open your telecom operator's app to recharge or renew the plan before it expires.",
+      urgency: priority >= 85 ? "urgent" : "important",
+    };
+  }
   if (category === "payments" || /(due|bill|payment|upi|bank)/i.test(text)) {
     return {
       label: "Money-related alert",

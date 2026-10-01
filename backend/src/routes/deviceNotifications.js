@@ -28,6 +28,14 @@ function analyseByKeywords(title = '', body = '', appName = '') {
   if (/(fraud|suspicious|unauthori[sz]ed|security alert|account blocked|card blocked|transaction failed|payment failed|declined|one[ -]?time (?:password|code)|\botp\b)/i.test(text)) {
     return { priority: 100, relevant: true, reason: 'security_or_payment', category: 'payments' }
   }
+  // Telecom recharge / plan-expiry (Jio, Airtel, Vi, BSNL, etc.) — checked
+  // before the generic time_sensitive bucket below, which would otherwise
+  // swallow these (they have an expiry "deadline") and hand them the same
+  // canned "check the time and location, add a reminder" copy written for
+  // calendar events, unrelated to recharging a plan.
+  if (/(recharge|\bplan (?:expir|validity)|data pack|talktime|\bjio\b|\bairtel\b|\bvi\b|vodafone|\bbsnl\b)/i.test(text)) {
+    return { priority: 80, relevant: true, reason: 'recharge', category: 'recharge' }
+  }
   if (/(payment|credited|debited|upi|bank|due today|overdue|urgent|deadline|appointment|meeting|flight|boarding|gate change|delivery today|medicine|emergency|ambulance)/i.test(text)) {
     const category = /(payment|credited|debited|upi|bank|bill)/i.test(text) ? 'payments' : 'time_sensitive'
     return { priority: 85, relevant: true, reason: 'time_sensitive', category }
@@ -38,8 +46,8 @@ function analyseByKeywords(title = '', body = '', appName = '') {
   return { priority: 25, relevant: false, reason: 'low_signal', category: 'other' }
 }
 
-const VALID_REASONS = new Set(['security_or_payment', 'time_sensitive', 'action_needed', 'personal', 'promotional', 'low_signal'])
-const VALID_CATEGORIES = new Set(['payments', 'time_sensitive', 'action_needed', 'personal', 'other'])
+const VALID_REASONS = new Set(['security_or_payment', 'time_sensitive', 'action_needed', 'personal', 'promotional', 'low_signal', 'recharge'])
+const VALID_CATEGORIES = new Set(['payments', 'time_sensitive', 'action_needed', 'personal', 'other', 'recharge'])
 
 // Real judgment of whether a captured notification — from any app, not just
 // the ones with obvious finance/action keywords — actually needs the user's
@@ -59,7 +67,7 @@ async function analyseWithAI(title, body, appName) {
       messages: [
         {
           role: 'system',
-          content: 'You triage a single captured phone notification (it can be from any app — WhatsApp, Instagram, banking, delivery, a game, etc.) for a busy person\'s personal assistant. Decide if it genuinely needs their attention. Mark relevant true for: payments/security/OTP issues, time-sensitive events (appointments, flights, deliveries today, medicine), things needing a response or action (bills, tasks, a direct personal message asking something), or emergencies. Mark relevant false for: promotional/marketing content, social media engagement noise (likes, follows, "X posted a new photo"), generic app updates, or casual chat with no real ask. "reason" must be one of: security_or_payment, time_sensitive, action_needed, personal, promotional, low_signal. "category" must be one of: payments, time_sensitive, action_needed, personal, other. "priority" is 0-100 (0 = ignore entirely, 100 = critical/urgent).',
+          content: 'You triage a single captured phone notification (it can be from any app — WhatsApp, Instagram, banking, delivery, a telecom operator, a game, etc.) for a busy person\'s personal assistant. Decide if it genuinely needs their attention. Mark relevant true for: payments/security/OTP issues, mobile recharge or plan/data-pack expiry (Jio, Airtel, Vi, BSNL, etc.), time-sensitive events (appointments, flights, deliveries today, medicine), things needing a response or action (bills, tasks, a direct personal message asking something), or emergencies. Mark relevant false for: promotional/marketing content, social media engagement noise (likes, follows, "X posted a new photo"), generic app updates, or casual chat with no real ask. "reason" must be one of: security_or_payment, recharge, time_sensitive, action_needed, personal, promotional, low_signal. "category" must be one of: payments, recharge, time_sensitive, action_needed, personal, other — use "recharge" specifically for mobile/DTH recharge or plan-validity-expiry notifications, not "time_sensitive" or "payments". "priority" is 0-100 (0 = ignore entirely, 100 = critical/urgent).',
         },
         {
           role: 'user',

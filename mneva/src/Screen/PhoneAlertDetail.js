@@ -8,6 +8,11 @@ import { useTheme } from '../context/ThemeContext';
 function fallbackAnalysis(alert) {
   const text = `${alert?.title || ''} ${alert?.body || ''}`.toLowerCase();
   if (/(fraud|suspicious|unauthori[sz]ed|blocked|declined|failed)/i.test(text)) return { label: 'Security or payment check', summary: 'This may need your attention to protect your account or resolve a payment issue.', nextStep: 'Open the original app and verify the activity before sharing any details or taking action.', urgency: 'urgent' };
+  // Checked before the generic money/time-sensitive branches below — a
+  // recharge/plan-expiry message often also matches "due" or has an expiry
+  // "deadline", which used to route it into copy written for a bank bill or
+  // a calendar appointment instead of an actual recharge.
+  if (/(recharge|plan (?:expir|validity)|data pack|talktime)/i.test(text)) return { label: 'Recharge or plan expiry', summary: 'Your mobile plan or data pack appears to be expiring or needs a recharge soon.', nextStep: "Open your telecom operator's app to recharge or renew the plan before it expires.", urgency: alert?.priority >= 85 ? 'urgent' : 'important' };
   if (/(payment|upi|bank|debit|credit|bill|due)/i.test(text)) return { label: 'Money-related alert', summary: 'Mneva detected a finance-related notification that may need a quick review.', nextStep: 'Check the amount, due date, and recipient in the original app. Pay or dispute it only after verifying the details.', urgency: alert?.priority >= 85 ? 'urgent' : 'important' };
   if (/(appointment|meeting|flight|delivery today|medicine|deadline)/i.test(text)) return { label: 'Time-sensitive update', summary: 'This alert appears to have a time-sensitive detail worth reviewing soon.', nextStep: 'Review the time and location in the original app, then add or update a reminder if you need one.', urgency: alert?.priority >= 85 ? 'urgent' : 'important' };
   return { label: 'Action may be needed', summary: 'Mneva marked this notification as useful because it may need a response, follow-up, or review.', nextStep: 'Read the full notification and decide whether to respond, complete the request, or dismiss it.', urgency: 'normal' };
