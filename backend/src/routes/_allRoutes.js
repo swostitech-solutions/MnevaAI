@@ -2165,6 +2165,38 @@ healthRouter.get("/metrics", async (req, res) => {
       });
   }
 });
+
+// GET /api/health-data/monthly-steps?month=YYYY-MM — a full calendar
+// month's worth of real per-day step totals from Google Fit, dates in UTC
+// (matching healthLog's own date-key convention everywhere else). /metrics
+// above only ever fetches the trailing 7 days, which is enough for the Week
+// tab but leaves the Month calendar/detail card with nothing but
+// healthLog — a snapshot written once for "today" and never corrected once
+// that date rolls over, so a past day can show stale or 0 steps forever
+// even though Fit has the real number the whole time. Degrades to an empty
+// list (never an error) for a disconnected account or a bad Fit response —
+// the Month tab already has a healthLog fallback for exactly that case.
+healthRouter.get("/monthly-steps", async (req, res) => {
+  try {
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || "") ? req.query.month : new Date().toISOString().slice(0, 7);
+    const [year, mon] = month.split("-").map(Number);
+    const startMs = Date.UTC(year, mon - 1, 1);
+    if (startMs >= Date.now()) return res.json({ month, days: [] }); // future month — nothing to fetch yet
+    const endMs = Math.min(Date.UTC(year, mon, 1), Date.now());
+
+    const user = await userStore.getById(req.user.id);
+    const { getFitAuthClientForUser, fetchSteps } = await import("../services/googleFit.service.js");
+    const auth = await getFitAuthClientForUser(user);
+    if (!auth) return res.json({ month, days: [] });
+
+    const days = await fetchSteps(auth, startMs, endMs);
+    res.json({ month, days });
+  } catch (err) {
+    logger?.warn?.(`monthly-steps fetch failed: ${err?.message || err}`);
+    res.json({ month: req.query.month || null, days: [] });
+  }
+});
+
 // POST /api/health-data/sync — accepts data from iOS Shortcut / Apple Health / manual
 healthRouter.post("/sync", async (req, res) => {
   try {

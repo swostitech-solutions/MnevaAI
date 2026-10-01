@@ -875,7 +875,7 @@ const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 // lighter tint for a logged-but-under-goal day, and a plain neutral circle
 // for a day with nothing logged. Prev/Next lets you page back through any
 // earlier month that has data, not just the current one.
-function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, healthLog, goal, selectedDate, onSelectDate, onEditDay, onDeleteDay, theme, styles }) {
+function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, healthLog, monthlyFitSteps, goal, selectedDate, onSelectDate, onEditDay, onDeleteDay, theme, styles }) {
   const dates = datesInMonth(selectedMonthKey);
   const leadingBlanks = firstWeekdayOfMonth(selectedMonthKey);
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -909,7 +909,12 @@ function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, health
       <View style={styles.calendarGrid}>
         {cells.map((date, i) => {
           if (!date) return <View key={`blank-${i}`} style={styles.calendarCell} />;
-          const steps = healthLog?.[date]?.steps || 0;
+          // Live Fit data for this day wins when it's available (monthlyFitSteps
+          // is only populated for the month actually being viewed) — healthLog
+          // is a one-time "today" snapshot that's never corrected afterward, so
+          // falling back to it unconditionally could show a stale/0 dot for a
+          // day Fit actually has real steps for.
+          const steps = monthlyFitSteps?.[date] ?? healthLog?.[date]?.steps ?? 0;
           const hasData = steps > 0;
           const hitGoal = steps >= goal && steps > 0;
           const isToday = date === todayStr;
@@ -946,7 +951,7 @@ function MonthActivityView({ selectedMonthKey, onChangeMonth, monthStats, health
         <View style={styles.selectedDaySection}>
           <DayDetailCard
             dateLabel={fmtSelectedDateLabel(selectedDate, todayStr)}
-            steps={healthLog?.[selectedDate]?.steps || 0}
+            steps={monthlyFitSteps?.[selectedDate] ?? healthLog?.[selectedDate]?.steps ?? 0}
             stepGoal={goal}
             activeMinutes={healthLog?.[selectedDate]?.activeMinutes ?? null}
             workoutCalories={healthLog?.[selectedDate]?.workoutCalories ?? null}
@@ -1005,6 +1010,11 @@ export default function Health({ navigation }) {
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => new Date().toISOString().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [historyVisible, setHistoryVisible] = useState(false);
+  // Keyed by date ("YYYY-MM-DD" -> steps) — a real, fresh Google Fit fetch
+  // for whichever month is in view, so the Month tab can show the live
+  // figure for a past day instead of relying solely on healthLog (which is
+  // only ever written for "today" and never corrected afterward).
+  const [monthlyFitSteps, setMonthlyFitSteps] = useState({});
   const currentWeek = weeklyHistory.find(w => w.isCurrentWeek) || null;
   const selectedMonthStats = monthlyHistory.find(m => m.monthKey === selectedMonthKey) || null;
   const handleChangeMonth = (delta) => setSelectedMonthKey(k => shiftMonthKey(k, delta));
@@ -1085,6 +1095,25 @@ export default function Health({ navigation }) {
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => onAppDataRefresh(() => loadData(true)), []);
+
+  // Re-fetch live Fit data whenever the Month tab's viewed month changes
+  // (including the first time it's opened). A disconnected account, or any
+  // fetch failure, just resolves to {days: []} server-side — the Month view
+  // already falls back to healthLog in that case, so nothing else to guard
+  // here.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/health-data/monthly-steps?month=${selectedMonthKey}`);
+        if (cancelled) return;
+        const byDate = {};
+        for (const d of res?.days || []) byDate[d.date] = d.steps;
+        setMonthlyFitSteps(byDate);
+      } catch { if (!cancelled) setMonthlyFitSteps({}); }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedMonthKey]);
 
   const METRIC_CARDS = [
     { icon: 'activity', label: 'Steps', value: metrics?.steps?.value, unit: 'steps', color: '#1F9A5A', bg: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' },
@@ -1193,6 +1222,7 @@ export default function Health({ navigation }) {
                   onChangeMonth={handleChangeMonth}
                   monthStats={selectedMonthStats}
                   healthLog={healthLog}
+                  monthlyFitSteps={monthlyFitSteps}
                   goal={stepGoal}
                   selectedDate={selectedDate}
                   onSelectDate={setSelectedDate}
