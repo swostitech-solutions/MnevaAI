@@ -813,10 +813,21 @@ export default function AIProfile({ navigation }) {
     setSaved(done);
   };
 
+  // Bumped on every loadProfile() call AND on every successful save (see
+  // onSave) — a response only gets applied if it's still the most recent
+  // thing in flight when it resolves. Without this, a slow/retried GET
+  // issued before an edit (this screen stays mounted under whatever's
+  // pushed on top of it, so its onAppDataRefresh listener keeps firing in
+  // the background) can resolve AFTER a newer save and silently revert the
+  // field the user just typed and saved back to its pre-edit value.
+  const latestRequestIdRef = useRef(0);
+
   const loadProfile = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
+    const requestId = ++latestRequestIdRef.current;
     try {
       const res = await apiFetch('/api/onboarding/profile');
+      if (requestId !== latestRequestIdRef.current) return; // superseded — discard
       hasRealDataRef.current = true;
       applyProfileData(res?.profile || {});
     } catch {}
@@ -906,6 +917,10 @@ export default function AIProfile({ navigation }) {
         method: 'POST',
         body: { section: sec.key, data: buildPayload(sec, data) },
       });
+      // Invalidates any loadProfile() GET still in flight from before this
+      // save — its response (reflecting the pre-save value) would otherwise
+      // be free to land after this and silently undo it.
+      latestRequestIdRef.current++;
       setCompletionPct(res.completionPct || 0);
       const newSections = Array.isArray(res.completedSections) ? res.completedSections.filter(k => SECTION_KEYS.includes(k)) : completedSections;
       setCompletedSections(newSections);

@@ -41,7 +41,13 @@ function calcCompletionPct(profile) {
 
 function pickSectionFields(section, data) {
   switch (section) {
-    case 'about':       return { nickname: data.nickname ?? null, dateOfBirth: data.dateOfBirth ?? null, gender: data.gender ?? null, country: data.country ?? null, city: data.city ?? null, timezone: data.timezone ?? null, language: data.language ?? null }
+    // timezone is deliberately `data.timezone` (no `?? null`): the About
+    // You form has no timezone field at all, so data.timezone is always
+    // undefined here — `?? null` was silently nulling out the real value on
+    // every single About-section save. Prisma skips an undefined field on
+    // update instead of overwriting it, which is what every other section
+    // here already relies on for fields it doesn't own.
+    case 'about':       return { nickname: data.nickname ?? null, dateOfBirth: data.dateOfBirth ?? null, gender: data.gender ?? null, country: data.country ?? null, city: data.city ?? null, timezone: data.timezone, language: data.language ?? null }
     case 'work':        return { occupation: data.occupation ?? null, company: data.company ?? null, industry: data.industry ?? null, professionalLevel: data.professionalLevel ?? null, skills: Array.isArray(data.skills) ? data.skills : [], learningTopics: Array.isArray(data.learningTopics) ? data.learningTopics : [], careerGoals: data.careerGoals ?? null }
     case 'interests':   return { interests: Array.isArray(data.interests) ? data.interests : [], followTopics: Array.isArray(data.followTopics) ? data.followTopics : [] }
     case 'goals':       return { goals: Array.isArray(data.goals) ? data.goals : [], topGoal: data.topGoal ?? null }
