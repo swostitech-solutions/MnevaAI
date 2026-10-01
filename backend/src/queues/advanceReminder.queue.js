@@ -45,13 +45,25 @@ export function startAdvanceReminderWorker() {
     'advance-reminder',
     async () => {
       const now = Date.now()
-      // Only users with at least one registered device can receive a push,
-      // and only they need their due-dated items scanned at all.
-      const recipients = await prisma.pushToken.findMany({ select: { userId: true }, distinct: ['userId'] })
+      // FIX: this used to scope "who to scan" to prisma.pushToken.findMany()
+      // — i.e. only users who currently have a live device-token row. That
+      // conflated "has a push token right now" with "needs their due items
+      // scanned", so a user with zero rows in PushToken (token registration
+      // never ran, got cleaned up as a dead token, etc.) was silently
+      // skipped entirely: no reminderSchedule bookkeeping, no catch-up once
+      // a token later appeared, and in this production DB PushToken was
+      // *empty for every single user* — the scan was finding "0 users" on
+      // every tick regardless of how many real due items/configured lead
+      // times existed. sendPushToUser() already no-ops gracefully for a
+      // user with no token (pushService.js), so there's no harm in scanning
+      // everyone; it just means a token-less user's reminders are tracked
+      // (and will start actually pushing the moment they do register one)
+      // instead of being silently dropped forever.
+      const recipients = await prisma.user.findMany({ select: { id: true } })
       logger.info(`⏰ Running advance-reminder scan for ${recipients.length} user(s)`)
 
       let sent = 0
-      for (const { userId } of recipients) {
+      for (const { id: userId } of recipients) {
         try {
           const [user, items] = await Promise.all([
             prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } }),

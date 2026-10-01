@@ -154,7 +154,7 @@ export async function getDueSoonItems(userId) {
     return !Number.isNaN(d.getTime()) && d.getTime() > now.getTime() && d.getTime() <= weekEnd.getTime()
   }
 
-  const [bills, loans, emis, subscriptions, fixedDeposits, medications, petReminders, familyItems] = await Promise.all([
+  const [bills, loans, emis, subscriptions, fixedDeposits, medications, petReminders, familyItems, familyTasks] = await Promise.all([
     prisma.bill.findMany({ where: { userId, status: { in: ['Upcoming', 'Due', 'Overdue'] } } }),
     prisma.loan.findMany({ where: { userId, status: 'Active' } }),
     prisma.emi.findMany({ where: { userId, status: 'Active' } }),
@@ -163,6 +163,10 @@ export async function getDueSoonItems(userId) {
     prisma.parentMedication.findMany({ where: { userId, active: true } }),
     prisma.petReminder.findMany({ where: { userId, done: false } }),
     prisma.familyItem.findMany({ where: { userId, done: false } }),
+    // FIX: FamilyTask was never queried here at all, so a family task's due
+    // date — a real, user-facing due date — could never produce an advance
+    // reminder no matter how trust/lead-time settings were configured.
+    prisma.familyTask.findMany({ where: { OR: [{ assigneeId: userId }, { creatorId: userId }], status: { notIn: ['COMPLETED', 'DONE'] }, dueDate: { not: null } } }),
   ])
 
   const items = []
@@ -174,6 +178,13 @@ export async function getDueSoonItems(userId) {
   for (const m of medications) if (inFutureWindow(m.refillDate)) items.push({ itemType: 'medication', itemId: m.id, title: `${m.medName} refill for ${m.parent}`, dueDate: new Date(m.refillDate) })
   for (const p of petReminders) if (inFutureWindow(p.remindAt)) items.push({ itemType: 'pet_reminder', itemId: p.id, title: p.title, dueDate: new Date(p.remindAt) })
   for (const fi of familyItems) if (inFutureWindow(fi.remindAt)) items.push({ itemType: 'family_item', itemId: fi.id, title: `${fi.type} (${fi.domain})`, dueDate: new Date(fi.remindAt) })
+  for (const ft of familyTasks) {
+    // FamilyTask.dueDate is a plain "YYYY-MM-DD" (Asia/Kolkata) with no
+    // time-of-day (see routes/family.js) — default to 9am IST, the same
+    // convention Home Maintenance tasks use for a date-only due date.
+    const d = new Date(`${ft.dueDate}T09:00:00+05:30`)
+    if (inFutureWindow(d)) items.push({ itemType: 'family_task', itemId: ft.id, title: ft.title, dueDate: d })
+  }
 
   return items
 }

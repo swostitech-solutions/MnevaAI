@@ -65,9 +65,15 @@ export async function registerForPushNotifications() {
     });
     await AsyncStorage.setItem(STORED_TOKEN_KEY, token);
     return token;
-  } catch {
+  } catch (err) {
     // Registration is best-effort — the rest of the app must not break if a
     // device can't get a push token (emulator without Play services, etc.).
+    // Still logged (not swallowed silently) — this used to give zero
+    // visibility into why PushToken stayed empty for every real user in
+    // production (missing FCM credentials, a permission dialog always being
+    // dismissed, projectId misconfigured, etc. all looked identical: no
+    // error anywhere, just a token that never showed up).
+    console.warn('[push] registerForPushNotifications failed:', err?.message || err);
     return null;
   }
 }
