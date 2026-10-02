@@ -12,6 +12,7 @@ import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
 import FamilyReminderToggle from '../components/FamilyReminderToggle';
 import DateField from './finance/DateField';
+import TimeField, { formatTimeDisplay } from './finance/TimeField';
 
 const ACTIVITY_TYPES = ['School', 'Sports', 'Music', 'Dance', 'Art', 'Tuition', 'Other'];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -26,14 +27,6 @@ const sanitizeLettersOnly = (value) => value.replace(/[^A-Za-z\s]/g, '');
 // other symbol without blocking legitimate grade formats.
 const sanitizeGrade = (value) => value.replace(/[^A-Za-z0-9\s/-]/g, '');
 
-// Accepts the common ways a time gets typed into a free-text field: 24h
-// "17:00"/"5:00", or 12h with AM/PM "5 PM"/"5:30 PM".
-const isValidTimeLoose = (value) =>
-  /^(([01]?\d|2[0-3]):[0-5]\d|(1[0-2]|[1-9])(:[0-5]\d)?\s?[AaPp][Mm])$/.test(value.trim());
-
-// Strict 24h HH:MM — used for the event-reminder time field, which is
-// explicitly labelled "Time (HH:MM)" and parsed straight into a Date.
-const isValidTimeStrict = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value.trim());
 
 export default function ChildrenActivities({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -67,7 +60,7 @@ export default function ChildrenActivities({ navigation }) {
   // being enabled is the primary guard, this is the backstop in case it's
   // ever reached some other way (e.g. a future submit-on-enter).
   const childFormValid = !!(childForm.name.trim() && childForm.age.trim() && childForm.grade.trim() && childForm.school.trim());
-  const actFormValid = !!(actForm.name.trim() && actForm.type && actForm.child.trim() && actForm.day && isValidTimeLoose(actForm.time) && actForm.venue.trim());
+  const actFormValid = !!(actForm.name.trim() && actForm.type && actForm.child.trim() && actForm.day && actForm.time && actForm.venue.trim());
 
   const saveChild = async () => {
     if (!childFormValid) return;
@@ -85,7 +78,6 @@ export default function ChildrenActivities({ navigation }) {
 
   const saveEvent = async () => {
     if (!eventForm.title.trim()) return;
-    if (eventForm.time && !isValidTimeStrict(eventForm.time)) return;
     const remindAt = (eventForm.date && eventForm.time)
       ? new Date(`${eventForm.date}T${eventForm.time}:00`).toISOString()
       : eventForm.date ? new Date(`${eventForm.date}T09:00:00`).toISOString() : null;
@@ -158,7 +150,7 @@ export default function ChildrenActivities({ navigation }) {
                 <View style={[styles.rowIcon, { backgroundColor: '#EAF3FD' }]}><Feather name="zap" size={14} color="#4FA6E8" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{a.data.name}</Text>
-                  <Text style={styles.rowMeta}>{[a.data.type, a.data.day, a.data.time, a.data.child].filter(Boolean).join(' · ')}</Text>
+                  <Text style={styles.rowMeta}>{[a.data.type, a.data.day, formatTimeDisplay(a.data.time), a.data.child].filter(Boolean).join(' · ')}</Text>
                 </View>
                 <TouchableOpacity onPress={() => remove(a.id)} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
               </View>
@@ -172,7 +164,7 @@ export default function ChildrenActivities({ navigation }) {
                 <View style={[styles.rowIcon, { backgroundColor: '#EFFDF6' }]}><Feather name="calendar" size={14} color="#1F9A5A" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{e.data.title}</Text>
-                  <Text style={styles.rowMeta}>{[e.data.child, e.data.date, e.data.time].filter(Boolean).join(' · ')}</Text>
+                  <Text style={styles.rowMeta}>{[e.data.child, e.data.date, formatTimeDisplay(e.data.time)].filter(Boolean).join(' · ')}</Text>
                 </View>
                 {e.remindAt && <View style={styles.remindTag}><Feather name="bell" size={10} color={theme.accentAlt} /><Text style={styles.remindTagText}>Reminder set</Text></View>}
                 <TouchableOpacity onPress={() => remove(e.id)} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
@@ -219,11 +211,7 @@ export default function ChildrenActivities({ navigation }) {
           ))}
         </View>
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}>
-            <FLabel styles={styles}>Time *</FLabel>
-            <TextInput style={styles.input} placeholder="e.g. 5 PM or 17:00" placeholderTextColor={theme.placeholder} value={actForm.time} onChangeText={v => setActForm(f => ({ ...f, time: v }))} />
-            {!!actForm.time && !isValidTimeLoose(actForm.time) && <Text style={styles.fieldError}>Enter a valid time, e.g. 5 PM or 17:00</Text>}
-          </View>
+          <View style={{ flex: 1 }}><TimeField label="Time" required value={actForm.time} onChange={v => setActForm(f => ({ ...f, time: v }))} /></View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><FLabel styles={styles}>Venue *</FLabel><TextInput style={styles.input} placeholder="e.g. Sports ground" placeholderTextColor={theme.placeholder} value={actForm.venue} onChangeText={v => setActForm(f => ({ ...f, venue: v }))} /></View>
         </View>
@@ -239,12 +227,10 @@ export default function ChildrenActivities({ navigation }) {
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><DateField label="Date" value={eventForm.date} onChange={v => setEventForm(f => ({ ...f, date: v.slice(0, 10) }))} minimumDate={new Date()} /></View>
         </View>
-        <FLabel styles={styles}>Time (HH:MM) — for reminder</FLabel>
-        <TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={eventForm.time} onChangeText={v => setEventForm(f => ({ ...f, time: v }))} keyboardType="numeric" />
-        {!!eventForm.time && !isValidTimeStrict(eventForm.time) && <Text style={styles.fieldError}>Enter a valid 24-hour time, e.g. 09:00</Text>}
+        <TimeField label="Time — for reminder" value={eventForm.time} onChange={v => setEventForm(f => ({ ...f, time: v }))} />
         <FLabel styles={styles}>Notes</FLabel>
         <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder} value={eventForm.notes} onChangeText={v => setEventForm(f => ({ ...f, notes: v }))} />
-        <SaveBtn onPress={saveEvent} disabled={!eventForm.title.trim() || (!!eventForm.time && !isValidTimeStrict(eventForm.time))} colors={['#1F9A5A', '#3CB37A']} label="Save Event" styles={styles} />
+        <SaveBtn onPress={saveEvent} disabled={!eventForm.title.trim()} colors={['#1F9A5A', '#3CB37A']} label="Save Event" styles={styles} />
       </SheetModal>
     </SafeAreaView>
   );
@@ -337,7 +323,6 @@ const createStyles = (theme) => StyleSheet.create({
   sheetIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
-  fieldError: { fontSize: 11, fontWeight: '600', color: theme.danger, marginTop: -12, marginBottom: 14 },
   input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
