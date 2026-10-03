@@ -50,9 +50,7 @@
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "blockedPermissions": [
-        "android.permission.SYSTEM_ALERT_WINDOW",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "backgroundColor": "#FAFAFC",
       "adaptiveIcon": {
@@ -92,6 +90,12 @@
         {
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#1F9A5A"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Mneva uses your location to show the weather for where you actually are, instead of a manually set city."
         }
       ],
       "expo-sharing"

@@ -19,6 +19,7 @@ import { apiFetch, BASE_URL } from '../api/client';
 import { saveAuth } from '../storage/auth';
 import { resetSocket, getSocket } from '../services/socket';
 import { registerForPushNotifications } from '../services/pushNotifications';
+import { requestLocationPermission } from '../services/location';
 import { useTheme } from '../context/ThemeContext';
 
 export default function Signin({ navigation }) {
@@ -116,6 +117,7 @@ export default function Signin({ navigation }) {
       resetSocket();
       await getSocket();
       registerForPushNotifications().catch(() => {});
+      requestLocationPermission().catch(() => {});
       navigation.replace('Home');
     } catch (err) {
       if (err.status === 403) {

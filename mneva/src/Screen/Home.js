@@ -6761,6 +6761,8 @@ import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as Speech from "expo-speech";
 import * as FileSystem from "expo-file-system/legacy";
 import { useTheme } from "../context/ThemeContext";
+import * as Location from "expo-location";
+import { getCurrentCoords } from "../services/location";
 
 // NOTE: This screen expects your app root to be wrapped in
 // <SafeAreaProvider> (from react-native-safe-area-context) so that
@@ -7822,6 +7824,69 @@ export default function Home({ navigation }) {
     }
   };
 
+  // GPS-based weather — skips the geocode-by-city-name step entirely since
+  // we already have real coordinates, and uses the device's own reverse
+  // geocoder (not a network geocoding API) just to get a readable city name
+  // for display. Returns true/false so the caller knows whether to fall
+  // back to the profile-city path.
+  const loadWeatherByCoords = async (lat, lon) => {
+    const cacheKey = `mneva_weather_coords_${lat.toFixed(2)}_${lon.toFixed(2)}`;
+    try {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed._ts && Date.now() - parsed._ts < 30 * 60 * 1000) {
+          setWeather(parsed);
+          return true;
+        }
+      }
+    } catch {}
+
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,weather_code,windspeed_10m,relativehumidity_2m&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      let cityName = "Current location";
+      try {
+        const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+        cityName = places?.[0]?.city || places?.[0]?.subregion || places?.[0]?.region || cityName;
+      } catch {}
+
+      const fresh = {
+        temp: Math.round(data.current?.temperature_2m ?? 27),
+        feelsLike: Math.round(data.current?.apparent_temperature ?? 27),
+        wind: Math.round(data.current?.windspeed_10m ?? 0),
+        humidity: Math.round(data.current?.relativehumidity_2m ?? 0),
+        high: Math.round(data.daily?.temperature_2m_max?.[0] ?? 27),
+        low: Math.round(data.daily?.temperature_2m_min?.[0] ?? 20),
+        code: data.current?.weather_code ?? 0,
+        city: cityName,
+        _ts: Date.now(),
+      };
+      setWeather(fresh);
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(fresh));
+      await AsyncStorage.setItem("mneva_weather", JSON.stringify(fresh));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Prefers the device's actual current location over the manually-set
+  // profile city — falls back to loadWeather(city, country) whenever
+  // location permission isn't granted, services are off, or the fix/fetch
+  // fails for any reason, so a user who never grants location still gets
+  // weather exactly as before.
+  const loadWeatherSmart = async (city, country) => {
+    const coords = await getCurrentCoords();
+    if (coords) {
+      const ok = await loadWeatherByCoords(coords.lat, coords.lon);
+      if (ok) return;
+    }
+    loadWeather(city, country);
+  };
+
   const isMountedRef = useRef(false);
   const isLoadingRef = useRef(false);
   const queuedRefreshRef = useRef(false);
@@ -7870,7 +7935,7 @@ export default function Home({ navigation }) {
       const country = profileRes2?.profile?.country || null;
       setProfilePct(profileRes2?.profile?.completionPct ?? 0);
       setProfileCity(city);
-      loadWeather(city, country);
+      loadWeatherSmart(city, country);
     }
 
     // Seed localPriorities from DB tasks — source of truth

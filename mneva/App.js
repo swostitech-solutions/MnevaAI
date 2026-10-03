@@ -73,6 +73,7 @@ import {
 } from "./src/services/socket";
 import { refreshAppData } from "./src/services/dataRefresh";
 import { registerForPushNotifications } from "./src/services/pushNotifications";
+import { requestLocationPermission } from "./src/services/location";
 import ReminderAlert from "./src/components/ReminderAlert";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import SessionExpiredBanner from "./src/components/SessionExpiredBanner";
@@ -414,6 +415,12 @@ function AppInner() {
           // and never sees the Signin screen again — still gets registered
           // after this feature ships.
           registerForPushNotifications().catch(() => {});
+          // Same rationale as push above — asked on every cold start (the OS
+          // only actually shows the prompt once; subsequent calls just
+          // resolve with the stored answer) so the dashboard's weather card
+          // can use where the device actually is instead of a manually set
+          // city.
+          requestLocationPermission().catch(() => {});
 
           // App-open biometric lock — only meaningful for an already
           // signed-in session; Onboarding/Signin have nothing to protect
