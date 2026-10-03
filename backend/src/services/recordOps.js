@@ -75,6 +75,11 @@ export const MODULES = {
     list: { path: '/portfolio/holdings', key: 'holdings' },
     update: { path: '/portfolio/holdings/:id' }, delete: { path: '/portfolio/holdings/:id' },
   },
+  expense: {
+    domain: 'finance', label: 'expense', from: 'finance',
+    list: { path: '/expenses', key: 'expenses' },
+    update: { path: '/expenses/:id' }, delete: { path: '/expenses/:id' },
+  },
   // Special-cased in listRecords/updateRecord/deleteRecord below: this is
   // keyed by DATE (YYYY-MM-DD), not an id, and its list route returns a
   // { date: entry } map rather than an array — too different from every
@@ -243,7 +248,7 @@ export async function updateRecord(userId, input) {
   const { status, payload } = await callRoute(router, 'patch', spec.update.path, { userId, params, body })
   if (status >= 400) return { success: false, error: errorFrom(status, payload) }
   const record = payload && (payload.medication || payload.task || payload.pet || payload.reminder || payload.item
-    || payload.subscription || payload.loan || payload.emi || payload.fixedDeposit || payload.bill || payload.holding || payload)
+    || payload.subscription || payload.loan || payload.emi || payload.fixedDeposit || payload.bill || payload.holding || payload.expense || payload)
   return { success: true, module: input.module, id: input.id, updated: Object.keys(fields), record }
 }
 

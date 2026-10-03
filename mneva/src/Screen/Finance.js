@@ -57,6 +57,7 @@ function DonutChart({ data, size = 128, strokeWidth = 18, centerLabel, centerSub
 }
 
 const ADD_OPTIONS = [
+  { key: 'expense', label: 'Expense', sub: 'Everyday spending — cash, card, UPI & more', icon: 'shopping-bag', colors: ['#1F9A5A', '#17824A'], screen: 'ExpenseScreen' },
   { key: 'loan', label: 'Loan', sub: 'Home, car, personal & more', icon: 'briefcase', colors: ['#4FA6E8', '#3D8BFF'], screen: 'LoanScreen' },
   { key: 'emi', label: 'EMI', sub: 'Any installment purchase', icon: 'credit-card', colors: ['#F5A623', '#E0901A'], screen: 'EmiScreen' },
   { key: 'subscription', label: 'Subscription', sub: 'Streaming, software & more', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'], screen: 'SubscriptionScreen' },
@@ -276,7 +277,12 @@ export default function Finance({ navigation }) {
           <View style={[styles.sectionCard, { marginTop: 16 }]}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Spending — This Month</Text>
-              <Text style={styles.savingsRate}>Savings {spending.savingsRate || 0}%</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={styles.savingsRate}>Savings {spending.savingsRate || 0}%</Text>
+                <TouchableOpacity onPress={() => navigation?.navigate?.('ExpenseScreen')}>
+                  <Feather name="chevron-right" size={18} color={theme.faint} />
+                </TouchableOpacity>
+              </View>
             </View>
             {(spending.categories || []).length === 0 ? (
               <View style={styles.emptyWrap}>

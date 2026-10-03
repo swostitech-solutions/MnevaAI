@@ -443,6 +443,72 @@ financeRouter.delete('/bills/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// ── Expenses (everyday spending — cash/card/UPI/online) ────────────────────────
+
+financeRouter.get('/expenses', async (req, res) => {
+  try {
+    const expenses = await prisma.expense.findMany({
+      where: { userId: req.user.id },
+      orderBy: { date: 'desc' },
+    })
+    res.json({ expenses })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.post('/expenses', async (req, res) => {
+  try {
+    const b = req.body
+    const amount = toFloat(b.amount)
+    if (amount === undefined || !(amount > 0) || !b.paymentMethod) {
+      return res.status(400).json({ error: 'amount and paymentMethod are required' })
+    }
+    const expense = await prisma.expense.create({
+      data: {
+        userId: req.user.id,
+        amount,
+        category: toStr(b.category),
+        paymentMethod: b.paymentMethod,
+        note: toStr(b.note),
+        date: b.date ? new Date(b.date) : new Date(),
+      },
+    })
+    emit(req.app.get('io'), req.user.id, 'expense:created', expense)
+    res.status(201).json({ expense })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.patch('/expenses/:id', async (req, res) => {
+  try {
+    const existing = await prisma.expense.findUnique({ where: { id: req.params.id } })
+    if (!existing) return res.status(404).json({ error: 'Not found' })
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    const b = req.body
+    const expense = await prisma.expense.update({
+      where: { id: req.params.id },
+      data: {
+        ...(b.amount !== undefined && { amount: toFloat(b.amount) }),
+        ...(b.category !== undefined && { category: toStr(b.category) }),
+        ...(b.paymentMethod !== undefined && { paymentMethod: b.paymentMethod }),
+        ...(b.note !== undefined && { note: toStr(b.note) }),
+        ...(b.date !== undefined && { date: new Date(b.date) }),
+      },
+    })
+    emit(req.app.get('io'), req.user.id, 'expense:updated', expense)
+    res.json({ expense })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+financeRouter.delete('/expenses/:id', async (req, res) => {
+  try {
+    const existing = await prisma.expense.findUnique({ where: { id: req.params.id } })
+    if (!existing) return res.status(404).json({ error: 'Not found' })
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    await prisma.expense.delete({ where: { id: req.params.id } })
+    emit(req.app.get('io'), req.user.id, 'expense:deleted', { id: req.params.id })
+    res.json({ success: true })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // ── Fixed Deposits ───────────────────────────────────────────────────────────
 
 financeRouter.get('/fixed-deposits', async (req, res) => {
@@ -636,9 +702,11 @@ financeRouter.get('/portfolio', async (req, res) => {
     })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
-// Real spend, computed from Bills actually marked Paid this month plus this
-// month's due EMI/Subscription installments — no separate transactions table
-// exists, so this is the best signal already sitting in the database.
+// Real spend: everyday Expense entries logged this month, plus Bills
+// actually marked Paid this month and this month's due EMI/Subscription
+// installments. Expense used to not exist as a table, so this was inferred
+// entirely from Bills/EMIs/Subscriptions — real ad-hoc spending (cash, UPI,
+// card) never showed up here at all.
 financeRouter.get('/spending', async (req, res) => {
   try {
     const now = new Date()
@@ -650,15 +718,17 @@ financeRouter.get('/spending', async (req, res) => {
       return d >= monthStart && d < monthEnd
     }
 
-    const [paidBills, emis, subs] = await Promise.all([
+    const [paidBills, emis, subs, expenses] = await Promise.all([
       prisma.bill.findMany({ where: { userId: req.user.id, status: 'Paid', updatedAt: { gte: monthStart, lt: monthEnd } } }),
       prisma.emi.findMany({ where: { userId: req.user.id, status: 'Active' } }),
       prisma.subscription.findMany({ where: { userId: req.user.id, status: 'Active' } }),
+      prisma.expense.findMany({ where: { userId: req.user.id, date: { gte: monthStart, lt: monthEnd } } }),
     ])
 
     const categoryTotals = {}
     const addCategory = (name, amount) => { if (amount) categoryTotals[name] = (categoryTotals[name] || 0) + amount }
 
+    for (const exp of expenses) addCategory(exp.category || 'Other', exp.amount)
     for (const bill of paidBills) addCategory(bill.category || 'Bills', bill.lastBillAmount ?? bill.expectedAmount ?? 0)
 
     let emiTotal = 0

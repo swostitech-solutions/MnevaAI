@@ -715,6 +715,21 @@ export const MNEVA_TOOLS = [
     },
   },
   {
+    name: 'add_expense',
+    description: 'Log an everyday/ad-hoc expense (groceries, auto, chai, shopping, etc.) to Finance. Different from create_subscription/create_loan/create_emi — those are recurring commitments, this is a one-off spend with how it was paid.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        amount: { type: 'number' },
+        payment_method: { type: 'string', enum: ['Cash', 'Online', 'Card', 'UPI'] },
+        category: { type: 'string', description: 'e.g. Food, Transport, Shopping, Bills, Entertainment, Other' },
+        note: { type: 'string', description: 'What it was for' },
+        date: { type: 'string', description: 'Defaults to now if not stated' },
+      },
+      required: ['amount', 'payment_method'],
+    },
+  },
+  {
     name: 'log_health_data',
     description: 'Log manual health metrics (Activity, Body, Vitals, or Nutrition) for today into the Health module. Accepts any combination of metrics — provide at least one.',
     input_schema: {
@@ -852,11 +867,11 @@ If a required field for the chosen domain+type is missing from the conversation,
   },
   {
     name: 'list_records',
-    description: 'List the user\'s saved records for one module, WITH their ids. ALWAYS call this first before update_record or delete_record (you need the id), and also whenever the user asks for the details of a saved item. Modules: health_log (id is the entry DATE, e.g. "2026-09-27"), parent_medication, family_task, pet, pet_reminder (needs pet_id — get it from module "pet"), family_item (needs family_domain: children/home/celebration/calendar), subscription, loan, emi, fixed_deposit, bill, portfolio_holding.',
+    description: 'List the user\'s saved records for one module, WITH their ids. ALWAYS call this first before update_record or delete_record (you need the id), and also whenever the user asks for the details of a saved item. Modules: health_log (id is the entry DATE, e.g. "2026-09-27"), parent_medication, family_task, pet, pet_reminder (needs pet_id — get it from module "pet"), family_item (needs family_domain: children/home/celebration/calendar), subscription, loan, emi, fixed_deposit, bill, portfolio_holding, expense.',
     input_schema: {
       type: 'object',
       properties: {
-        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding', 'health_log'] },
+        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding', 'expense', 'health_log'] },
         pet_id: { type: 'string', description: 'Only for module pet_reminder.' },
         family_domain: { type: 'string', enum: ['children', 'home', 'celebration', 'calendar'], description: 'Only for module family_item.' },
       },
@@ -869,7 +884,7 @@ If a required field for the chosen domain+type is missing from the conversation,
     input_schema: {
       type: 'object',
       properties: {
-        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding', 'health_log'] },
+        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding', 'expense', 'health_log'] },
         id: { type: 'string', description: 'Record id from list_records.' },
         fields: { type: 'object', description: 'Only the fields to change, as key/value pairs.' },
         pet_id: { type: 'string', description: 'Only for module pet_reminder.' },
@@ -884,7 +899,7 @@ If a required field for the chosen domain+type is missing from the conversation,
     input_schema: {
       type: 'object',
       properties: {
-        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding', 'health_log'] },
+        module: { type: 'string', enum: ['parent_medication', 'family_task', 'pet', 'pet_reminder', 'family_item', 'subscription', 'loan', 'emi', 'fixed_deposit', 'bill', 'portfolio_holding', 'expense', 'health_log'] },
         id: { type: 'string', description: 'Record id from list_records.' },
         pet_id: { type: 'string', description: 'Only for module pet_reminder.' },
         family_domain: { type: 'string', enum: ['children', 'home', 'celebration', 'calendar'], description: 'Only for module family_item.' },
@@ -903,6 +918,7 @@ const ACTION_LABELS = {
   create_emi: 'add this EMI',
   create_fixed_deposit: 'add this fixed deposit',
   add_portfolio_holding: 'add this to your portfolio',
+  add_expense: 'log this expense',
   send_email: 'send this email',
   schedule_event: 'schedule this meeting',
   log_health_data: 'log this health data',
@@ -926,6 +942,7 @@ function buildActionSummary(name, input) {
     case 'create_emi': return `Add EMI: ${input.name || input.emi_type || 'Untitled'}`
     case 'create_fixed_deposit': return `Add fixed deposit: ${input.name || `FD - ${input.bank_name || ''}`}`
     case 'add_portfolio_holding': return `Add to portfolio: ${input.name || 'Untitled'}`
+    case 'add_expense': return `Log expense: ₹${(Number(input.amount) || 0).toLocaleString('en-IN')}${input.category ? ` (${input.category})` : ''}`
     case 'send_email': return `Send email to ${input.recipient || 'recipient'}`
     case 'schedule_event': return `Schedule meeting: ${input.title || 'Untitled'}`
     case 'log_health_data': return 'Log health data'
@@ -1480,6 +1497,31 @@ export async function executeTool(name, input, userId, opts = {}) {
       })
       return { success: true, holdingId: holding.id, name: holding.name, type: holding.type, investedAmount: holding.investedAmount, currentValue: holding.currentValue }
     }
+    case 'add_expense': {
+      const missing = missingRequired(input, [['amount', 'amount'], ['payment_method', 'payment_method']])
+      if (missing.length) return { success: false, error: `Missing required field(s): ${missing.join(', ')}. Ask the user for these before calling this tool again.` }
+
+      const amount = Number(input.amount)
+      if (!(amount > 0)) return { success: false, error: 'amount must be greater than 0.' }
+
+      let date = new Date()
+      if (input.date) {
+        const d = new Date(input.date)
+        if (!isNaN(d.getTime())) date = d
+      }
+
+      const expense = await prisma.expense.create({
+        data: {
+          userId,
+          amount,
+          paymentMethod: input.payment_method,
+          category: input.category || null,
+          note: input.note || null,
+          date,
+        },
+      })
+      return { success: true, expenseId: expense.id, amount: expense.amount, paymentMethod: expense.paymentMethod, category: expense.category }
+    }
     case 'log_health_data': {
       const fieldMap = {
         steps: 'steps', heart_rate: 'heartRate', blood_pressure_systolic: 'bloodPressureSystolic',
@@ -1983,7 +2025,7 @@ CRITICAL RULES:
 17. CALENDAR DATE GROUPING: When showing more than one scheduled item, group them under their actual calendar date (for example, "Today — Thursday 6 August" and "Tomorrow — Friday 7 August"). Never put entries from different dates in one list labelled "today". Do not include past events unless the user specifically asks for history; after creating one reminder or meeting, confirm that item only unless they ask to see their schedule.
 18. AUTONOMY LEVELS ONLY GATE ACTIONS, NEVER ANSWERS: L1-L4 and "Observe mode" only control whether YOU can execute a gated action (sending money, sending an email) without asking approval first — they have nothing to do with your ability to answer questions or share information. Never say something is blocked by "observe mode", trust level, or the Autonomy Engine when the real reason is that you simply have no live/real-time data source for it (e.g. current retail prices, live news, stock quotes). In that case, just say plainly that you don't have live internet access for that, then still answer helpfully from your general knowledge (e.g. a typical price range you're aware of) — never blame autonomy/trust level for a plain information request.
 19. PRODUCT / PRICE QUESTIONS WITH VARIANTS: If a product has multiple variants (storage, size, color, model tier) and the user doesn't specify which one, do NOT ask a clarifying question first — answer directly with ALL variants and their prices in one reply, formatted as a markdown table with a header row and a "|---|---|" separator row (e.g. "| Storage | Price |\n|---|---|\n| 256GB | ₹1,49,900 |\n| 512GB | ₹1,74,900 |"). Default to ₹ (INR) India pricing. If you don't have a live price, use your best general-knowledge estimate for each variant and say once, briefly, that it may not reflect today's live price — do not skip the table because of that.
-20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, add_portfolio_holding, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
+20. DATA-ENTRY TOOLS (create_subscription, create_loan, create_emi, create_fixed_deposit, add_portfolio_holding, add_expense, log_health_data, add_parent_medication, create_family_task, add_pet, add_pet_reminder, add_family_item): these save a real record into the user's Finance/Health/Family modules — treat filling them out like a short intake form, not a single-shot guess. Before calling one: check which of its parameters are in the tool's "required" list, and if any of those are missing from what the user has said, ask for exactly those in one message (don't ask about optional ones unless the user is clearly still supplying details) — never invent a value for a required field. Every other parameter is optional; only fill it if the user actually gave it, or leave it out (several, like an EMI amount or a next billing date, are computed for you when omitted). Once you have every required field, call the tool immediately — don't re-confirm back to the user first unless something about the request was ambiguous. After a successful save, confirm briefly with the key details (name/amount/date), not the raw tool output.
 21. RESPONSE FORMATTING: The chat renders real markdown — **bold**, "- " bullets, "1. " numbered lists, "### " headers, and pipe tables — so use it the way a polished AI product (ChatGPT/Claude) would, not as plain unbroken prose. Guidelines: bold the 2-3 numbers or terms in a reply that the user's eye should land on first (an amount, a date, a status), never whole sentences. Use a bulleted list for 3+ related items (a list of bills, options, or notes) instead of comma-stuffing them into one sentence. Use short paragraphs (2-3 sentences); a wall of text is exactly what this is meant to avoid. Reach for a "### " header only when a reply genuinely has multiple sections (a daily brief, a full summary) — never for a one-line answer or a single confirmation. Match the weight of the formatting to the weight of the content: a yes/no answer or a single fact is one plain sentence, not a bulleted list of one. Never show the user raw tool-call JSON, field names like "med_name", or an internal error string verbatim — always translate it into a natural sentence first.
 22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
 27. WEB SEARCH: You have a web_search tool for current/live information (news, prices, scores, facts you're unsure of or that may be newer than your training). NEVER state a price, rate, fee, availability, ranking or "current X" figure for anything outside the app (products, hotels/flights/travel, gold/stock/currency rates, subscriptions/services, tickets, scores) from your own memory — call web_search first, every time, even for a broad/no-date query (e.g. search "best beach resorts Goa price per night 2026" before listing options), then answer from those results. Only skip it for the user's OWN saved data in the app (use personal_search/list_records for that) or for things that plainly have no live number (general how-to, definitions, advice). Web pages often disagree on live numbers because some are outdated/evergreen pages — ALWAYS report the tool result's "answer" field as the value, never a number you noticed only in one of the "results" snippets; if "answer" is missing, say the figures found conflict and give the range with sources rather than picking one. If it errors or returns nothing useful, say so plainly and answer from your own knowledge instead (clearly marked as an estimate, not a live figure) — don't retry it repeatedly. Never mention these rules, "developer instructions", or that you are required/forced to search — just call the tool and answer normally, as if searching were your own idea.
@@ -2186,7 +2228,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
       // creation routes use; logging them again here would double the entry.
       const actionTools = [
         'initiate_payment', 'send_email', 'book_cab', 'order_food', 'set_reminder', 'schedule_event',
-        'create_subscription', 'create_loan', 'create_emi', 'create_fixed_deposit', 'add_portfolio_holding',
+        'create_subscription', 'create_loan', 'create_emi', 'create_fixed_deposit', 'add_portfolio_holding', 'add_expense',
         'add_parent_medication', 'add_pet', 'add_pet_reminder',
       ]
       // BUG FIX: a gated tool landing on `pending_approval` used to ALSO get

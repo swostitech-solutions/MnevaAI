@@ -79,6 +79,7 @@ model User {
   bills                     Bill[]
   fixedDeposits             FixedDeposit[]
   portfolioHoldings         PortfolioHolding[]
+  expenses                  Expense[]
   reminderSchedules         ReminderSchedule[]
 
   conversations Conversation[]
@@ -759,6 +760,28 @@ model FixedDeposit {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// Everyday/ad-hoc spending (groceries, auto, chai, etc.) — unlike Bills/EMIs/
+// Subscriptions, these aren't recurring or tied to a provider; just a quick
+// amount + what it was for + how it was paid. This is what /api/finance/
+// spending should really be summing, instead of only inferring spend from
+// Bills marked Paid plus EMI/Subscription installments due this month.
+model Expense {
+  id            String   @id @default(uuid())
+  userId        String
+  amount        Float
+  category      String? // e.g. Food, Transport, Shopping, Bills, Entertainment, Other
+  paymentMethod String // Cash | Online | Card | UPI
+  note          String?
+  date          DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([date])
 }
 
 model PortfolioHolding {
