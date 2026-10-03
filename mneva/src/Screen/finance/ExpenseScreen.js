@@ -10,6 +10,7 @@ import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
 import { useTheme } from '../../context/ThemeContext';
 import DateField from './DateField';
+import TimeField, { formatTimeDisplay } from './TimeField';
 
 const PAYMENT_METHODS = ['Cash', 'Online', 'Card', 'UPI'];
 const CATEGORIES = ['Food', 'Transport', 'Shopping', 'Bills', 'Entertainment', 'Health', 'Other'];
@@ -18,15 +19,22 @@ const CATEGORY_ICONS = {
   Entertainment: 'film', Health: 'heart', Other: 'more-horizontal',
 };
 
-const EMPTY_FORM = { amount: '', paymentMethod: 'Cash', category: 'Food', note: '', date: '' };
+const EMPTY_FORM = { amount: '', paymentMethod: 'Cash', category: 'Food', note: '', date: '', time: '' };
 
-const formFromItem = (item) => ({
-  amount: String(item.amount ?? ''),
-  paymentMethod: item.paymentMethod || 'Cash',
-  category: item.category || 'Other',
-  note: item.note || '',
-  date: item.date || '',
-});
+// Expense.date on the backend is a single DateTime column — the form splits
+// it into a DateField (day) and a TimeField ("HH:MM") for easier entry, and
+// handleSave recombines them into one ISO string before sending.
+const formFromItem = (item) => {
+  const d = item.date ? new Date(item.date) : null;
+  return {
+    amount: String(item.amount ?? ''),
+    paymentMethod: item.paymentMethod || 'Cash',
+    category: item.category || 'Other',
+    note: item.note || '',
+    date: d ? d.toISOString() : '',
+    time: d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '',
+  };
+};
 
 const ACCENT = ['#1F9A5A', '#17824A'];
 
@@ -95,14 +103,33 @@ export default function ExpenseScreen({ navigation }) {
     ]);
   };
 
+  // Combines the DateField's day with the TimeField's "HH:MM" into one ISO
+  // datetime for the backend's single Expense.date column. Neither set at
+  // all -> undefined, so the backend's own "defaults to now" behavior
+  // applies instead of forcing midnight.
+  const buildDateForSave = () => {
+    if (!form.date && !form.time) return undefined;
+    const datePart = form.date ? form.date.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const timePart = form.time || '12:00';
+    const d = new Date(`${datePart}T${timePart}:00`);
+    return isNaN(d.getTime()) ? undefined : d.toISOString();
+  };
+
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
     try {
+      const body = {
+        amount: form.amount,
+        paymentMethod: form.paymentMethod,
+        category: form.category,
+        note: form.note,
+        date: buildDateForSave(),
+      };
       if (isEditing) {
-        await apiFetch(`/api/finance/expenses/${editItem.id}`, { method: 'PATCH', body: form });
+        await apiFetch(`/api/finance/expenses/${editItem.id}`, { method: 'PATCH', body });
       } else {
-        await apiFetch('/api/finance/expenses', { method: 'POST', body: form });
+        await apiFetch('/api/finance/expenses', { method: 'POST', body });
       }
       closeForm();
     } catch {
@@ -165,7 +192,11 @@ export default function ExpenseScreen({ navigation }) {
               ))}
             </View>
 
-            <DateField label="Date" value={form.date} onChange={v => setField('date', v)} />
+            <View style={styles.rowFields}>
+              <View style={{ flex: 1 }}><DateField label="Date" value={form.date} onChange={v => setField('date', v)} /></View>
+              <View style={{ width: 12 }} />
+              <View style={{ flex: 1 }}><TimeField label="Time" value={form.time} onChange={v => setField('time', v)} /></View>
+            </View>
 
             <Text style={styles.fieldLabel}>Note</Text>
             <TextInput style={[styles.input, styles.inputMultiline]} placeholder="What was it for..." placeholderTextColor={theme.placeholder} value={form.note} onChangeText={v => setField('note', v)} multiline numberOfLines={3} />
@@ -200,19 +231,24 @@ export default function ExpenseScreen({ navigation }) {
             </View>
           ) : (
             <View style={styles.sectionCard}>
-              {expenses.map((e, i) => (
-                <TouchableOpacity key={e.id} style={[styles.row, i !== expenses.length - 1 && styles.rowDivider]} onPress={() => openEdit(e)} activeOpacity={0.7}>
-                  <View style={styles.iconWrap}>
-                    <Feather name={CATEGORY_ICONS[e.category] || 'shopping-bag'} size={16} color={theme.accent} />
-                  </View>
-                  <View style={styles.rowTextWrap}>
-                    <Text style={styles.rowName} numberOfLines={1}>{e.note || e.category || 'Expense'}</Text>
-                    <Text style={styles.rowSub}>{e.paymentMethod}{e.category ? ` · ${e.category}` : ''} · {new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</Text>
-                  </View>
-                  <Text style={styles.rowAmount}>₹{(e.amount || 0).toLocaleString('en-IN')}</Text>
-                  <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />
-                </TouchableOpacity>
-              ))}
+              {expenses.map((e, i) => {
+                const d = new Date(e.date);
+                const dateLabel = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                const timeLabel = formatTimeDisplay(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                return (
+                  <TouchableOpacity key={e.id} style={[styles.row, i !== expenses.length - 1 && styles.rowDivider]} onPress={() => openEdit(e)} activeOpacity={0.7}>
+                    <View style={styles.iconWrap}>
+                      <Feather name={CATEGORY_ICONS[e.category] || 'shopping-bag'} size={16} color={theme.accent} />
+                    </View>
+                    <View style={styles.rowTextWrap}>
+                      <Text style={styles.rowName} numberOfLines={1}>{e.note || e.category || 'Expense'}</Text>
+                      <Text style={styles.rowSub}>{e.paymentMethod}{e.category ? ` · ${e.category}` : ''} · {dateLabel}, {timeLabel}</Text>
+                    </View>
+                    <Text style={styles.rowAmount}>₹{(e.amount || 0).toLocaleString('en-IN')}</Text>
+                    <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </ScrollView>
@@ -254,6 +290,7 @@ const createStyles = (theme) => StyleSheet.create({
   required: { color: theme.danger },
   input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   inputMultiline: { height: 90, textAlignVertical: 'top' },
+  rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   selectChip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
   selectChipActive: { backgroundColor: theme.isDark ? 'rgba(31,154,90,0.16)' : '#EFFDF6', borderColor: theme.accent },
