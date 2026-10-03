@@ -7,45 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiFetch } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
-import { getPlanKey } from '../utils/plan';
-
-const PLANS = [
-  {
-    id: 'basic', name: 'Basic', price: '$8.99', period: '/ month',
-    seats: 'Individual',
-    icon: 'user',
-    features: [
-      'Daily Brief & Priorities',
-      'Ask Mneva',
-      'Mail & calendar intelligence',
-      'L1 Observe + L2 Suggest',
-    ],
-  },
-  {
-    id: 'pro', name: 'Pro', price: '$18.99', period: '/ month',
-    seats: 'Individual',
-    icon: 'zap',
-    popular: true,
-    popularLabel: 'Most likely for you',
-    features: [
-      'Everything in Basic',
-      'L3 Draft & Prep',
-      'Full Twin Diary signed ledger',
-      'Health & Fit integration',
-    ],
-  },
-  {
-    id: 'family', name: 'Family', price: '$49.99', period: '/ month',
-    seats: 'Up to 4 members',
-    icon: 'users',
-    features: [
-      'Pro features for every member',
-      'Shared family calendar & tasks',
-      'Shared follow-ups and reminders',
-      '+$19/mo for 2 extra members',
-    ],
-  },
-];
+import { getPlanKey, PLANS } from '../utils/plan';
 
 export default function Subscription({ navigation }) {
   const insets = useSafeAreaInsets();

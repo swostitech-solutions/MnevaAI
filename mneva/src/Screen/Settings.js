@@ -18,7 +18,7 @@ import {
   notificationCaptureAvailable,
 } from '../services/notificationCapture';
 import { useTheme } from '../context/ThemeContext';
-import { getPlanDisplayName } from '../utils/plan';
+import { getPlanDisplayName, getNextPlan } from '../utils/plan';
 import NotificationAccessDisclosure from '../components/NotificationAccessDisclosure';
 
 const TABS = ['Trust', 'Privacy', 'Notifications', 'Account'];
@@ -228,6 +228,8 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
     { label: 'Member Since', value: memberSince,                           icon: 'calendar' },
   ];
 
+  const nextPlan = getNextPlan(user?.plan);
+
   return (
     <>
       {/* Name */}
@@ -257,15 +259,20 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
         ))}
       </View>
 
-      {/* Upgrade */}
-      <TouchableOpacity
-        style={styles.upgradeBtn}
-        onPress={() => Alert.alert('Upgrade', 'Upgrade to Inner Circle ₹999/month — full autonomy, priority support, and unlimited AI actions.')}
-        activeOpacity={0.85}
-      >
-        <Feather name="zap" size={16} color="#FFFFFF" />
-        <Text style={styles.upgradeBtnText}>  Upgrade to Inner Circle — ₹999/mo</Text>
-      </TouchableOpacity>
+      {/* Upgrade — the plan one tier above whatever's on the account right
+          now (same PLANS data the Subscription screen itself renders from,
+          so the two can never show a different next plan/price). Nothing
+          to upgrade to once already on the top tier (Family). */}
+      {nextPlan && (
+        <TouchableOpacity
+          style={styles.upgradeBtn}
+          onPress={() => navigation?.navigate?.('Subscription')}
+          activeOpacity={0.85}
+        >
+          <Feather name={nextPlan.icon} size={16} color="#FFFFFF" />
+          <Text style={styles.upgradeBtnText}>  Upgrade to {nextPlan.name} — {nextPlan.price}{nextPlan.period}</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Secure Vault + Change Password */}
       <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Privacy</Text>
