@@ -8516,14 +8516,6 @@ export default function Home({ navigation }) {
     return theme.info;
   };
 
-  const getInitials = (name) => {
-    if (!name) return "ME";
-    const parts = name.trim().split(" ");
-    return parts.length >= 2
-      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-      : name.slice(0, 2).toUpperCase();
-  };
-
   const getGreeting = () => {
     const h = new Date().getHours();
     if (h < 12) return "Good morning";
@@ -8941,16 +8933,6 @@ export default function Home({ navigation }) {
             >
               <Feather name="log-out" size={18} color={theme.faint} />
             </TouchableOpacity>
-            <View style={styles.avatarWrapper}>
-              <LinearGradient
-                colors={["#6C63FF", theme.accentAlt]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.avatar}
-              >
-                <Text style={styles.avatarText}>{getInitials(user?.name)}</Text>
-              </LinearGradient>
-            </View>
           </View>
         </View>
 
@@ -9729,21 +9711,6 @@ const createStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: theme.textSecondary,
-  },
-  avatarWrapper: {
-    position: "relative",
-  },
-  avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
   },
   topRow: {
     flexDirection: "row",

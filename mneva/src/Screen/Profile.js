@@ -115,12 +115,6 @@ export default function Profile({ navigation }) {
 
   React.useEffect(() => onAppDataRefresh(loadProfileData), []);
 
-  const getInitials = (name) => {
-    if (!name) return 'ME';
-    const parts = name.trim().split(' ');
-    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
-  };
-
   const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const horizontalPad = width < 360 ? 16 : 20;
 
@@ -138,9 +132,6 @@ export default function Profile({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.profileHeader}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{getInitials(user?.name)}</Text>
-          </View>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{user?.name || 'Loading…'}</Text>
             <Text style={styles.profileEmail}>{user?.email || ''}</Text>
@@ -272,20 +263,6 @@ const createStyles = (theme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 24,
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#1F9A5A",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 16,
-  },
-  avatarText: {
-    color: "#FFFFFF",
-    fontWeight: "800",
-    fontSize: 22,
   },
   profileInfo: {
     flex: 1,

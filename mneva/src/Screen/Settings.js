@@ -187,12 +187,6 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
     }
   };
 
-  const getInitials = (name) => {
-    if (!name) return 'ME';
-    const parts = name.trim().split(' ');
-    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
-  };
-
   const memberSince = user?.createdAt
     ? new Date(user.createdAt).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
     : 'Not available';
@@ -236,12 +230,9 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
 
   return (
     <>
-      {/* Avatar + name */}
+      {/* Name */}
       <View style={styles.acctHeader}>
-        <View style={styles.acctAvatar}>
-          <Text style={styles.acctAvatarText}>{getInitials(user?.name)}</Text>
-        </View>
-        <View style={{ flex: 1, marginLeft: 16 }}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.acctName}>{user?.name || '—'}</Text>
           <Text style={styles.acctSub}>{user?.email || ''}</Text>
         </View>
@@ -1112,8 +1103,6 @@ const createStyles = (theme) => StyleSheet.create({
   tabLabel:        { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
   // Account tab
   acctHeader:      { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 18, padding: 18, marginBottom: 20 },
-  acctAvatar:      { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1F9A5A', alignItems: 'center', justifyContent: 'center' },
-  acctAvatarText:  { color: '#FFFFFF', fontWeight: '800', fontSize: 20 },
   acctName:        { fontSize: 18, fontWeight: '800', color: theme.text, marginBottom: 3 },
   acctSub:         { fontSize: 13, color: theme.faint },
   infoRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
