@@ -15,12 +15,17 @@ const REL_COLORS = {
   Spouse: '#F5A623', Son: '#4FA6E8', Daughter: '#E0546E', Grandparent: '#6B7280',
   Grandchild: '#1F9A5A', Partner: '#F5A623', Relative: '#9B72FF',
   Caregiver: '#D97706', Other: '#9AA1AE',
+  // Shown instead of Father/Mother, Son/Daughter or Brother/Sister on the
+  // receiving side of a connection whenever the other person's gender isn't
+  // set — see inverseRelationship in routes/family.js.
+  Parent: '#4FA6E8', Child: '#E0546E', Sibling: '#1F9A5A',
 };
 const REL_BG = {
   Father: '#EAF3FD', Mother: '#FCEAED', Brother: '#EFFDF6', Sister: '#F3EFFE',
   Spouse: '#FEF3C7', Son: '#EAF3FD', Daughter: '#FCEAED', Grandparent: '#F5F6F8',
   Grandchild: '#EFFDF6', Partner: '#FEF3C7', Relative: '#F3EFFE',
   Caregiver: '#FEF3C7', Other: '#F5F6F8',
+  Parent: '#EAF3FD', Child: '#FCEAED', Sibling: '#EFFDF6',
 };
 const relColor = r => REL_COLORS[r] || '#9AA1AE';
 const relBg    = r => REL_BG[r]    || '#F5F6F8';

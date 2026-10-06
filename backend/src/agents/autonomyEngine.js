@@ -1912,14 +1912,21 @@ async function buildFamilyContext(userId) {
         status: 'ACCEPTED',
       },
       include: {
-        requester: { select: { id: true, name: true, email: true } },
+        requester: { select: { id: true, name: true, email: true, userProfile: { select: { gender: true } } } },
         receiver:  { select: { id: true, name: true, email: true } },
       },
     })
     if (!conns.length) return ''
+    const { inverseRelationship } = await import('../routes/family.js')
     const lines = conns.map(c => {
-      const other = c.requesterId === userId ? c.receiver : c.requester
-      return `  • ${other.name} (${other.email}) — ${c.relationship}`
+      const iAmRequester = c.requesterId === userId
+      const other = iAmRequester ? c.receiver : c.requester
+      // relationship is stored as "what the receiver is to the requester" —
+      // correct as-is when the AI's own user was the requester, but needs
+      // inverting (Father → Son/Daughter, etc.) when they were the receiver.
+      // See inverseRelationship in routes/family.js.
+      const relationship = iAmRequester ? c.relationship : inverseRelationship(c.relationship, c.requester.userProfile?.gender)
+      return `  • ${other.name} (${other.email}) — ${relationship}`
     })
     return `\n\n══ FAMILY CIRCLE (${conns.length} connected) ══\n${lines.join('\n')}\n══ END FAMILY ══`
   } catch { return '' }

@@ -7,26 +7,67 @@ import { emitToUser } from '../services/realtime.js'
 export const familyRouter = express.Router()
 
 const userSelect  = { id: true, name: true, email: true, avatar: true }
+// Connections additionally need each side's gender, to correctly invert the
+// relationship label for whichever side didn't set it (see
+// inverseRelationship below) — nobody else needs this, so it's kept off the
+// plain userSelect used everywhere else (task creator/assignee, etc).
+const userSelectWithGender = { ...userSelect, userProfile: { select: { gender: true } } }
 const connInclude = {
-  requester: { select: userSelect },
-  receiver:  { select: userSelect },
+  requester: { select: userSelectWithGender },
+  receiver:  { select: userSelectWithGender },
 }
 const taskInclude = {
   creator:  { select: userSelect },
   assignee: { select: userSelect },
 }
 
-const fmtConn = (conn, myId) => ({
-  id:           conn.id,
-  status:       conn.status,
-  relationship: conn.relationship,
-  direction:    conn.requesterId === myId ? 'SENT' : 'RECEIVED',
-  name:         conn.requesterId === myId ? conn.receiver.name   : conn.requester.name,
-  email:        conn.requesterId === myId ? conn.receiver.email  : conn.requester.email,
-  avatar:       conn.requesterId === myId ? conn.receiver.avatar : conn.requester.avatar,
-  otherId:      conn.requesterId === myId ? conn.receiverId      : conn.requesterId,
-  createdAt:    conn.createdAt,
-})
+// `relationship` on FamilyConnection is set once, by whoever sent the
+// request, and means "what the receiver is to me" — e.g. the requester
+// picked "Father" because the receiver is their father. Showing that same
+// label back to the receiver is wrong for every non-symmetric relationship:
+// the receiver must see the requester as "Son"/"Daughter" (or "Child" if
+// gender isn't set), not "Father" right back at them. This computes that
+// inverse from the requester's own gender for the cases where it matters,
+// and leaves symmetric ones (Spouse, Partner, Relative, Other) and the
+// gender-neutral Grandparent/Grandchild pair unchanged either way.
+const GENDERED_INVERSE = {
+  Father:   { Male: 'Son',    Female: 'Daughter', fallback: 'Child' },
+  Mother:   { Male: 'Son',    Female: 'Daughter', fallback: 'Child' },
+  Son:      { Male: 'Father', Female: 'Mother',   fallback: 'Parent' },
+  Daughter: { Male: 'Father', Female: 'Mother',   fallback: 'Parent' },
+  Brother:  { Male: 'Brother', Female: 'Sister',  fallback: 'Sibling' },
+  Sister:   { Male: 'Brother', Female: 'Sister',  fallback: 'Sibling' },
+}
+const SELF_INVERSE = {
+  Spouse: 'Spouse', Partner: 'Partner', Relative: 'Relative', Other: 'Other',
+  // No clean inverse exists for "the person I care for" — Relative is the
+  // closest honest fallback rather than inventing a new label.
+  Caregiver: 'Relative',
+  Grandparent: 'Grandchild', Grandchild: 'Grandparent',
+}
+export function inverseRelationship(relationship, otherGender) {
+  const gendered = GENDERED_INVERSE[relationship]
+  if (gendered) return gendered[otherGender] || gendered.fallback
+  return SELF_INVERSE[relationship] || relationship
+}
+
+const fmtConn = (conn, myId) => {
+  const iAmRequester = conn.requesterId === myId
+  const other = iAmRequester ? conn.receiver : conn.requester
+  return {
+    id:           conn.id,
+    status:       conn.status,
+    // The requester sees exactly what they picked; the receiver sees the
+    // correctly inverted label computed from the requester's gender.
+    relationship: iAmRequester ? conn.relationship : inverseRelationship(conn.relationship, conn.requester.userProfile?.gender),
+    direction:    iAmRequester ? 'SENT' : 'RECEIVED',
+    name:         other.name,
+    email:        other.email,
+    avatar:       other.avatar,
+    otherId:      other.id,
+    createdAt:    conn.createdAt,
+  }
+}
 
 const fmtTask = (t) => ({
   id:           t.id,
