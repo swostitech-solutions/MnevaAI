@@ -404,7 +404,10 @@ function EditTaskModal({ visible, onClose, task, editTask, theme, styles }) {
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <LinearGradient colors={['#0F5132', '#1F9A5A']} style={styles.sheetHero}>
-            <View style={{ flex: 1 }}><Text style={styles.sheetHeroTitle}>Edit Task</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sheetHeroTitle}>Edit Task</Text>
+              <Text style={styles.sheetHeroSub} numberOfLines={1}>{task.title}</Text>
+            </View>
             <TouchableOpacity onPress={onClose} style={styles.sheetCloseBtn}><Feather name="x" size={16} color="#FFFFFF" /></TouchableOpacity>
           </LinearGradient>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ paddingHorizontal: 20 }}>

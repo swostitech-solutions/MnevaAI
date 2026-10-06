@@ -61,8 +61,8 @@ const SECTIONS = [
     fields: [
       { name: 'nickname',    label: 'What should Mneva call you?',     type: 'text',   validate: 'alpha', placeholder: 'e.g. Nivi' },
       { name: 'dateOfBirth', label: 'Date of birth',                   type: 'date',   placeholder: 'YYYY-MM-DD' },
-      { name: 'city',        label: 'City',                            type: 'text',   validate: 'alpha', placeholder: 'Bengaluru' },
-      { name: 'country',     label: 'Country',                         type: 'text',   validate: 'alpha', placeholder: 'India' },
+      { name: 'city',        label: 'City',                            type: 'text',   validate: 'alpha', placeholder: 'Bengaluru', required: true },
+      { name: 'country',     label: 'Country',                         type: 'text',   validate: 'alpha', placeholder: 'India', required: true },
       { name: 'language',    label: 'Preferred language',              type: 'text',   validate: 'alpha', allow: ',', placeholder: 'English' },
       { name: 'gender',      label: 'Gender',                          type: 'chips',  single: true, options: ['Male', 'Female', 'Non-binary', 'Prefer not to say'] },
     ],
@@ -310,6 +310,7 @@ async function verifyLocation(city, countryText) {
 
 function validateFieldValue(f, value) {
   const v = typeof value === 'string' ? value.trim() : value;
+  if (f.required && !v) return `${f.label.replace(/\?$/, '')} is required`;
   if (f.validate === 'alpha') {
     if (!v) return null;
     if (!HAS_LETTER.test(v)) return `${f.label.replace(/\?$/, '')}: use letters only`;
@@ -676,7 +677,7 @@ function SectionCard({ sec, formData, onChange, onSave, saving, saved, errors = 
         <View style={styles.sectionBody}>
           {sec.fields.map(f => (
             <View key={f.name} style={styles.fieldWrap}>
-              <Text style={styles.fieldLabel}>{f.label}</Text>
+              <Text style={styles.fieldLabel}>{f.label}{f.required ? <Text style={styles.required}> *</Text> : null}</Text>
 
               {f.type === 'text' && (f.name === 'city' || f.name === 'country') && (
                 <LocationSuggestField
@@ -1078,6 +1079,7 @@ const createStyles = (theme) => StyleSheet.create({
 
   fieldWrap: { marginTop: 16 },
   fieldLabel: { fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginBottom: 8 },
+  required: { color: theme.danger },
 
   textInput: { backgroundColor: theme.surfaceAlt, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: theme.text, borderWidth: 1, borderColor: theme.borderStrong },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
