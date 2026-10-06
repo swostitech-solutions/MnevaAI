@@ -28,15 +28,18 @@ const EMPTY_GIFT = { person: '', occasionId: '', occasion: '', item: '', budget:
 
 // Mirrors validateFamilyItemData in backend/src/routes/familyItems.js — kept
 // here too so an invalid save is caught before a network round-trip.
+const isValidName = (v) => !v || (/^[^\d!@#$%^&*()_+=\[\]{}<>?/\\|~`":;,]+$/.test(v) && /[A-Za-zÀ-￿]/.test(v));
 function occasionError(f) {
   if (!f.type) return null // required-but-empty just disables Save, no need to nag before the user's picked anything
   if (!f.person.trim()) return null
+  if (!isValidName(f.person)) return 'Person / Name can only contain letters';
   if (f.date && new Date(f.date) < new Date(new Date().toDateString())) return 'Date cannot be in the past';
   if (f.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(f.time)) return 'Time must be a valid HH:MM time';
   return null;
 }
 function giftError(f) {
   if (!f.item.trim() || !f.person.trim()) return null
+  if (!isValidName(f.person)) return 'For can only contain letters';
   if (f.budget && !(Number(f.budget) >= 0)) return 'Budget must be zero or a positive number';
   return null;
 }

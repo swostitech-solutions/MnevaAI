@@ -29,6 +29,11 @@ function isPastDate(dateStr) {
   return String(dateStr).slice(0, 10) < todayKey
 }
 
+// Same rule as isValidDoctorName in routes/family.js (Parent Medication's
+// Doctor Name field) — letters (incl. accented), spaces and . ' - only, no
+// digits or other symbols.
+const isValidName = (v) => !v || (/^[^\d!@#$%^&*()_+=\[\]{}<>?/\\|~`":;,]+$/.test(v) && /[A-Za-zÀ-￿]/.test(v))
+
 // Checked at the route level (not inside validateFamilyItemData) since it
 // needs a DB lookup — confirms a gift's linked occasionId actually belongs
 // to this user, same ownership check every other FK-like reference in this
@@ -43,6 +48,7 @@ export function validateFamilyItemData(domain, type, data) {
   if (domain === 'celebration' && type === 'occasion') {
     if (!data.type || !OCCASION_TYPES.includes(data.type)) return `Occasion Type must be one of: ${OCCASION_TYPES.join(', ')}`
     if (!data.person || !String(data.person).trim()) return 'Person / Name is required'
+    if (!isValidName(data.person)) return 'Person / Name can only contain letters'
     if (data.date && isPastDate(data.date)) return 'Date cannot be in the past — please pick today or a future date.'
     if (data.time && !HHMM.test(String(data.time))) return 'Time must be a valid HH:MM (24h) time'
     return null
@@ -50,6 +56,7 @@ export function validateFamilyItemData(domain, type, data) {
   if (domain === 'celebration' && type === 'gift') {
     if (!data.item || !String(data.item).trim()) return 'Gift Item is required'
     if (!data.person || !String(data.person).trim()) return 'For is required'
+    if (!isValidName(data.person)) return 'For can only contain letters'
     if (data.budget !== undefined && data.budget !== '' && data.budget != null && !(Number(data.budget) >= 0)) return 'Budget must be zero or a positive number'
     if (data.status !== undefined && data.status !== '' && data.status != null && !GIFT_STATUS.includes(data.status)) return `Status must be one of: ${GIFT_STATUS.join(', ')}`
     return null
