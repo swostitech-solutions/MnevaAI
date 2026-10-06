@@ -1197,6 +1197,12 @@ export async function executeTool(name, input, userId, opts = {}) {
         if (!startDt || startDt.getTime() <= Date.now()) return { success: false, error: 'That date and time is in the past (or could not be understood). Tell the user it is a past date and ask for a future date and time.' }
         const endDt = input.end ? normalizeScheduledTime(input.end, timeZone) : new Date(startDt.getTime() + 60 * 60 * 1000)
         if (!endDt || endDt <= startDt) return { success: false, error: 'Meeting end time must be after its start time.' }
+        const { findScheduleConflict } = await import('../services/calendar.service.js')
+        const conflict = await findScheduleConflict(userId, startDt.toISOString(), endDt.toISOString())
+        if (conflict) {
+          const conflictTime = new Date(conflict.start).toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })
+          return { success: false, error: `The user already has "${conflict.title}" at ${conflictTime}. Tell them this clashes and ask them to pick another time — do not create the meeting.` }
+        }
         let meeting
         let calendarError = null
         try {

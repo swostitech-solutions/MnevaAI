@@ -1,5 +1,5 @@
 import express from 'express'
-import { createCalendarAuthUrl, exchangeCodeForTokens, saveCalendarTokens, listEvents, clearCalendarConnection, createMeetingWithGoogleMeet, MEETING_TIME_ZONE } from '../services/calendar.service.js'
+import { createCalendarAuthUrl, exchangeCodeForTokens, saveCalendarTokens, listEvents, clearCalendarConnection, createMeetingWithGoogleMeet, MEETING_TIME_ZONE, findScheduleConflict } from '../services/calendar.service.js'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
@@ -123,6 +123,15 @@ router.post('/meetings', async (req, res) => {
     }
     const endTime = end || new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString()
     const timeZone = MEETING_TIME_ZONE
+    const conflict = await findScheduleConflict(req.user.id, start, endTime)
+    if (conflict) {
+      const conflictTime = new Date(conflict.start).toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })
+      return res.status(409).json({
+        success: false,
+        error: `You already have "${conflict.title}" at ${conflictTime} — please pick another time.`,
+        conflict,
+      })
+    }
     const meeting = await createMeetingWithGoogleMeet(req.user.id, { title, start, end: endTime, description, attendees: attendees || [] })
     const ledgerEntry = await ledger.add({
       userId: req.user.id,

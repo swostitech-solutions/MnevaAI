@@ -91,6 +91,58 @@ export async function resolveMeetingTimeZone() {
   return MEETING_TIME_ZONE
 }
 
+// Checks whether a new meeting would land on top of something the user
+// already has scheduled. Meetings and reminders are the only two record
+// types saved with an actual clock time (a plain to-do Task has none), so
+// those are the only things that can conflict — both are stored as
+// Notification rows with the real start/end buried in `message` JSON, not
+// a queryable column, so this has to fetch and parse rather than filter in
+// SQL. Shared by the manual meeting route (routes/calendar.js) and the
+// schedule_event AI tool (agents/autonomyEngine.js) so a clash is caught
+// the same way no matter how the meeting was created.
+export async function findScheduleConflict(userId, startISO, endISO) {
+  const notifs = await prisma.notification.findMany({
+    where: {
+      userId,
+      OR: [
+        { title: { contains: 'Meeting scheduled' } },
+        { title: '🔔 Reminder set' },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+  })
+  const newStart = new Date(startISO).getTime()
+  const newEnd = new Date(endISO).getTime()
+  for (const n of notifs) {
+    let parsed = {}
+    try { parsed = JSON.parse(n.message) } catch { continue }
+    if (!parsed.start) continue
+    const existingStart = new Date(parsed.start).getTime()
+    if (Number.isNaN(existingStart)) continue
+    const isReminder = n.title === '🔔 Reminder set'
+    // A reminder has no duration of its own — it only conflicts if it falls
+    // inside the new meeting's window. A meeting has a real end time (or
+    // the same implicit 1-hour default createMeetingWithGoogleMeet uses),
+    // so two meetings conflict on any overlap between their windows.
+    const overlaps = isReminder
+      ? existingStart >= newStart && existingStart < newEnd
+      : (() => {
+          const existingEnd = parsed.end ? new Date(parsed.end).getTime() : existingStart + 60 * 60 * 1000
+          return newStart < existingEnd && existingStart < newEnd
+        })()
+    if (overlaps) {
+      return {
+        title: isReminder ? (parsed.preview || 'Reminder') : n.title.replace(/^📅 Meeting scheduled: /, ''),
+        kind: isReminder ? 'reminder' : 'meeting',
+        start: parsed.start,
+        end: parsed.end || null,
+      }
+    }
+  }
+  return null
+}
+
 export async function createMeetingWithGoogleMeet(userId, { title, start, end, description = '', attendees = [] }) {
   const meetingTimeZone = MEETING_TIME_ZONE
   const user = await prisma.user.findUnique({ where: { id: userId } })
