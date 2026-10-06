@@ -2,6 +2,7 @@ import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
 import { prisma } from '../config/prisma.js'
 import { emitToUser } from '../services/realtime.js'
+import { sendPushToUser } from '../services/pushService.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
 import { GATED_DOMAINS, domainForCall, getDomainTrust, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction, recordDomainAction } from '../services/pendingActions.service.js'
@@ -1652,6 +1653,17 @@ export async function executeTool(name, input, userId, opts = {}) {
           notes: input.notes || null,
         },
       })
+      // Same "notify whoever this is actually for" as the manual route —
+      // see notifyConnectedParent in routes/family.js for why this needs its
+      // own call (this tool bypasses that route's POST handler entirely).
+      emitToUser(userId, 'parent_med:created', med)
+      sendPushToUser(userId, {
+        title: 'Medicine added',
+        body: `${med.medName} (${med.dosage}) added for ${med.parent}`,
+        data: { type: 'parent_medication', medicationId: med.id },
+      })
+      const { notifyConnectedParent } = await import('../routes/family.js')
+      notifyConnectedParent(userId, med).catch(() => {})
       return { success: true, medicationId: med.id, medName: med.medName, parent: med.parent }
     }
     case 'create_family_task': {

@@ -2,6 +2,7 @@ import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { sendPushToUser } from '../services/pushService.js'
 import { ledger } from '../services/ledgerService.js'
+import { emitToUser } from '../services/realtime.js'
 
 export const familyRouter = express.Router()
 
@@ -350,6 +351,50 @@ async function syncMedMemory(userId, prismaClient) {
 // Doctor names: letters, spaces and . ' - only — no digits.
 const isValidDoctorName = (v) => !v || (/^[^\d!@#$%^&*()_+=\[\]{}<>?/\\|~`":;,]+$/.test(v) && /[A-Za-z\u00C0-\uFFFF]/.test(v))
 
+// ParentMedication.parent is one of Dad/Mom/Both \u2014 this maps it to the
+// matching FamilyConnection.relationship label(s) so a medicine added for
+// "Dad" can find the connection where he himself is on the other end. Only
+// meaningful when the current user is the one who sent that connection
+// request \u2014 relationship is stored as "what the other side is to the
+// requester", so a connection the current user only received (someone else
+// labeled them, not the reverse) won't match here.
+function relationshipsForParent(parent) {
+  if (parent === 'Dad') return ['Father']
+  if (parent === 'Mom') return ['Mother']
+  if (parent === 'Both') return ['Father', 'Mother']
+  return []
+}
+
+// Notifies whichever connected family member this medicine is actually
+// about (if any) \u2014 e.g. adding a medicine for "Dad" pushes to the
+// connection whose relationship is "Father", since the medicine concerns
+// them, not just the person who logged it. Shared by the manual route
+// below and the add_parent_medication AI tool (autonomyEngine.js), which
+// creates the record via Prisma directly and so needs its own call into
+// this \u2014 same reason create_loan calls into finance.js's emiDataFromLoan.
+export async function notifyConnectedParent(userId, med) {
+  const relationships = relationshipsForParent(med.parent)
+  if (!relationships.length) return
+  const connections = await prisma.familyConnection.findMany({
+    where: {
+      status: 'ACCEPTED',
+      relationship: { in: relationships },
+      OR: [{ requesterId: userId }, { receiverId: userId }],
+    },
+  })
+  if (!connections.length) return
+  const creator = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
+  for (const conn of connections) {
+    const otherId = conn.requesterId === userId ? conn.receiverId : conn.requesterId
+    emitToUser(otherId, 'parent_med:created_for_you', med)
+    sendPushToUser(otherId, {
+      title: 'New medicine added for you',
+      body: `${creator?.name || 'A family member'} added ${med.medName} (${med.dosage}) for you`,
+      data: { type: 'parent_medication', medicationId: med.id },
+    })
+  }
+}
+
 familyRouter.get('/parent-medications', async (req, res) => {
   try {
     const meds = await prisma.parentMedication.findMany({
@@ -381,6 +426,12 @@ familyRouter.post('/parent-medications', async (req, res) => {
     await syncMedMemory(req.user.id, prisma)
     const formatted = fmtMed(med)
     emit(req.app.get('io'), req.user.id, 'parent_med:created', formatted)
+    sendPushToUser(req.user.id, {
+      title: 'Medicine added',
+      body: `${formatted.medName} (${formatted.dosage}) added for ${formatted.parent}`,
+      data: { type: 'parent_medication', medicationId: med.id },
+    })
+    notifyConnectedParent(req.user.id, formatted).catch(() => {})
     ledger.add({
       userId: req.user.id,
       tool: 'parent_medication_created',
