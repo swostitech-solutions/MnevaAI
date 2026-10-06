@@ -64,6 +64,7 @@ import { connectRedis, disconnectRedis } from "./config/redis.js";
 import { startReminderWorker } from "./queues/reminder.queue.js";
 import { startDailyDigestWorker, scheduleDailyDigest } from "./queues/dailyDigest.queue.js";
 import { startAdvanceReminderWorker, scheduleAdvanceReminderScan } from "./queues/advanceReminder.queue.js";
+import { startMeetingAutoCloseWorker, scheduleMeetingAutoCloseScan } from "./queues/meetingAutoClose.queue.js";
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
 import { applyModelCompat } from "./services/openaiCompat.js";
 import { backfillLedgerChain } from "./services/ledgerBackfill.js";
@@ -634,6 +635,8 @@ server.on("listening", () => {
         await scheduleDailyDigest();
         activeWorkers.push(startAdvanceReminderWorker());
         await scheduleAdvanceReminderScan();
+        activeWorkers.push(startMeetingAutoCloseWorker());
+        await scheduleMeetingAutoCloseScan();
         logger.info("✅ BullMQ workers started");
       } catch (error) {
         logger.warn(`⚠️ Could not start BullMQ workers: ${error.message}`);
