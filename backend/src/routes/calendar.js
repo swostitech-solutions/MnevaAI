@@ -1,5 +1,5 @@
 import express from 'express'
-import { createCalendarAuthUrl, exchangeCodeForTokens, saveCalendarTokens, listEvents, clearCalendarConnection, createMeetingWithGoogleMeet, MEETING_TIME_ZONE, findScheduleConflict } from '../services/calendar.service.js'
+import { createCalendarAuthUrl, exchangeCodeForTokens, saveCalendarTokens, listEvents, clearCalendarConnection, createMeetingWithGoogleMeet, MEETING_TIME_ZONE, findScheduleConflict, endActiveMeetConference } from '../services/calendar.service.js'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
@@ -144,7 +144,7 @@ router.post('/meetings', async (req, res) => {
       data: {
         userId: req.user.id,
         title: `📅 Meeting scheduled: ${title}`,
-        message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink || null, preview: title, start, end: endTime, description: description || null, attendees: attendees || [] }),
+        message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink || null, conferenceId: meeting.conferenceId || null, preview: title, start, end: endTime, description: description || null, attendees: attendees || [] }),
       },
     })
     // Calendar meetings created from the Ask AI sheet must use the same task
@@ -219,10 +219,28 @@ router.get('/meetings', async (req, res) => {
         description: parsed.description || null,
         attendees: parsed.attendees || [],
         eventId: parsed.eventId || null,
+        conferenceId: parsed.conferenceId || null,
       }
     }).filter(m => m.start)
     res.json(meetings)
   } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// POST /api/calendar/meetings/:id/end-call — force-ends the live Meet call
+// for everyone still on it (not just this device). Manual-trigger first:
+// see the UNVERIFIED note on endActiveMeetConference in calendar.service.js
+// — this is also how that gets tested against a real connected account
+// before any automatic/scheduled version is built on top of it.
+router.post('/meetings/:id/end-call', async (req, res) => {
+  try {
+    const n = await prisma.notification.findUnique({ where: { id: req.params.id } })
+    if (!n || n.userId !== req.user.id) return res.status(404).json({ error: 'Meeting not found' })
+    let parsed = {}
+    try { parsed = JSON.parse(n.message) } catch {}
+    if (!parsed.conferenceId) return res.status(400).json({ error: 'No conferenceId stored for this meeting — it may predate this feature.' })
+    await endActiveMeetConference(req.user.id, parsed.conferenceId)
+    res.json({ success: true })
+  } catch (err) { res.status(400).json({ success: false, error: err.message }) }
 })
 
 router.get('/events', async (req, res) => {

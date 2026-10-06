@@ -5,6 +5,13 @@ import { createOAuthState } from './oauthState.js'
 
 const CALENDAR_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
+  // Needed only for endActiveMeetConference below (force-ending a live Meet
+  // call via the separate meet.googleapis.com API) — NOT required for
+  // creating/reading events or Meet links, which calendar.events already
+  // covers. Existing connections made before this was added don't have it;
+  // those users must reconnect (Settings → Integrations) before this will
+  // work for them, since Google only grants scopes present at consent time.
+  'https://www.googleapis.com/auth/meetings.space.created',
   'openid', 'email', 'profile'
 ]
 
@@ -182,5 +189,40 @@ export async function createMeetingWithGoogleMeet(userId, { title, start, end, d
     || ev.hangoutLink
     || null
 
-  return { eventId: ev.id, htmlLink: ev.htmlLink, meetLink, title: ev.summary, start: ev.start?.dateTime, end: ev.end?.dateTime, timeZone: meetingTimeZone }
+  // conferenceId is what endActiveMeetConference below needs to find and
+  // end this specific call later — distinct from the Calendar eventId.
+  return { eventId: ev.id, htmlLink: ev.htmlLink, meetLink, conferenceId: ev.conferenceData?.conferenceId || null, title: ev.summary, start: ev.start?.dateTime, end: ev.end?.dateTime, timeZone: meetingTimeZone }
+}
+
+// Force-ends a live Meet call for everyone still on it, via the separate
+// Meet REST API (meet.googleapis.com) — NOT the Calendar API, which has no
+// such capability (deleting/updating the calendar event does nothing to an
+// already-ongoing call). Needs the meetings.space.created scope above, so
+// this throws for any connection made before that scope existed.
+//
+// UNVERIFIED as of writing — this has not yet been tested against a real
+// connected account. In particular it's unconfirmed whether this works for
+// a personal Gmail account or only Google Workspace; that's exactly what
+// the manual "end call" trigger this backs is for finding out before any
+// automatic/scheduled version gets built on top of it.
+export async function endActiveMeetConference(userId, conferenceId) {
+  if (!conferenceId) throw new Error('No conferenceId stored for this meeting — it may predate this feature.')
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  const oauth2 = await getAuthClientForUser(user)
+  if (!oauth2) throw new Error('Calendar not connected.')
+  const { token } = await oauth2.getAccessToken()
+  if (!token) throw new Error('Could not obtain a Google access token — try reconnecting Calendar in Settings.')
+  const res = await fetch(`https://meet.googleapis.com/v2/spaces/${conferenceId}:endActiveConference`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    // 403 here most likely means the connected account is missing the
+    // meetings.space.created scope (reconnect needed) or doesn't support
+    // this API at all for its account type — both real possibilities per
+    // the UNVERIFIED note above, not necessarily a bug.
+    throw new Error(`Meet API endActiveConference failed (${res.status}): ${body || res.statusText}`)
+  }
+  return true
 }

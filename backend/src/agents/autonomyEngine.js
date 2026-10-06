@@ -1227,7 +1227,7 @@ export async function executeTool(name, input, userId, opts = {}) {
             data: {
               userId,
               title: `📅 Meeting scheduled: ${input.title}`,
-              message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink, preview: input.description || input.title, start: startDt.toISOString(), end: endDt.toISOString(), description: input.description || null, attendees: input.attendees || [] }),
+              message: JSON.stringify({ source: 'calendar', eventId: meeting.eventId, meetLink: meeting.meetLink, conferenceId: meeting.conferenceId || null, preview: input.description || input.title, start: startDt.toISOString(), end: endDt.toISOString(), description: input.description || null, attendees: input.attendees || [] }),
             },
           }),
           prisma.task.create({
