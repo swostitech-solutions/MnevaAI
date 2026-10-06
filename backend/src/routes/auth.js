@@ -2,6 +2,8 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import crypto from 'node:crypto'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { body, validationResult } from 'express-validator'
 import { toPublicUser, userStore } from '../models/userStore.js'
 import { prisma } from '../config/prisma.js'
@@ -431,13 +433,56 @@ router.patch('/phone', authMiddleware, async (req, res) => {
 })
 
 // ── Update Avatar ─────────────────────────────────────────────────────────────────
+const AVATAR_MIME_EXT = { 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024 // decoded size — the picker already compresses to quality 0.85
+
+// Stored locally under storage/avatars/<userId><ext>, one file per user (a
+// new upload deletes any previous one first, so switching .png -> .jpg
+// never leaves an orphaned file behind) — served back by the static mount
+// in server.js. imageBase64 is the real upload path: the picked photo read
+// as base64 and sent as JSON, the same convention /api/agent/transcribe
+// already uses to avoid React Native's FormData binary issues. A plain
+// `avatar` URL string is still accepted too, for a future flow that sets a
+// photo without uploading bytes (e.g. a Google profile picture URL).
 router.patch('/avatar', authMiddleware, async (req, res) => {
   try {
-    const { avatar } = req.body
-    if (!avatar) return res.status(400).json({ error: 'avatar required' })
+    const { avatar, imageBase64, mimeType } = req.body
+
+    if (imageBase64) {
+      const ext = AVATAR_MIME_EXT[String(mimeType || '').toLowerCase()]
+      if (!ext) return res.status(400).json({ error: 'Unsupported image type. Use JPEG, PNG or WebP.' })
+      const buffer = Buffer.from(String(imageBase64), 'base64')
+      if (!buffer.length) return res.status(400).json({ error: 'Empty image data received' })
+      if (buffer.length > AVATAR_MAX_BYTES) return res.status(400).json({ error: 'Image is too large (max 5MB).' })
+
+      const avatarDir = path.resolve(process.cwd(), 'storage', 'avatars')
+      await fs.mkdir(avatarDir, { recursive: true })
+      const existingFiles = await fs.readdir(avatarDir).catch(() => [])
+      await Promise.all(
+        existingFiles
+          .filter((f) => f.startsWith(`${req.user.id}.`))
+          .map((f) => fs.unlink(path.join(avatarDir, f)).catch(() => {})),
+      )
+      const filename = `${req.user.id}${ext}`
+      await fs.writeFile(path.join(avatarDir, filename), buffer)
+
+      // Cache-busting query param — the filename alone never changes across
+      // re-uploads, so without it a client that cached the image by URL
+      // would keep showing the old photo after a new one is picked.
+      const updated = await prisma.user.update({
+        where: { id: req.user.id },
+        data: { avatar: `/avatars/${filename}?v=${Date.now()}` },
+      })
+      return res.json(toPublicUser(updated))
+    }
+
+    if (!avatar) return res.status(400).json({ error: 'imageBase64 or avatar is required' })
     const updated = await prisma.user.update({ where: { id: req.user.id }, data: { avatar } })
     res.json(toPublicUser(updated))
-  } catch { res.status(500).json({ error: 'Could not update avatar.' }) }
+  } catch (err) {
+    logger.error(`Avatar update failed: ${err.message}`)
+    res.status(500).json({ error: 'Could not update avatar.' })
+  }
 })
 
 // ── Change Password ────────────────────────────────────────────────────────────

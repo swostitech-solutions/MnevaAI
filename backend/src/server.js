@@ -1,6 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import { fileURLToPath } from "url";
+import path from "node:path";
+import fs from "node:fs";
 import { createServer } from "http";
 import { Server as IO } from "socket.io";
 import cors from "cors";
@@ -264,6 +266,14 @@ app.use("/api/agent/draft", agentLimiter);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(morgan("short", { stream: { write: (m) => logger.info(m.trim()) } }));
+
+// Profile photos uploaded via PATCH /api/auth/avatar (routes/auth.js) —
+// served back as plain static files since they're not sensitive like Vault
+// documents are, so the mobile <Image> component can load them directly by
+// URL with no auth header needed.
+const avatarDir = path.resolve(process.cwd(), "storage", "avatars");
+fs.mkdirSync(avatarDir, { recursive: true });
+app.use("/avatars", express.static(avatarDir));
 
 // Most route handlers end in `res.status(500).json({ error: err.message })`,
 // which hands internal details (Prisma/DB errors, file paths, upstream API

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Switch, ActivityIndicator, useWindowDimensions, Alert, TextInput, Modal, Linking,
+  Switch, ActivityIndicator, useWindowDimensions, Alert, TextInput, Modal, Linking, Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { apiFetch, peekCachedResponse, PRIVACY_POLICY_URL } from '../api/client';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { apiFetch, peekCachedResponse, PRIVACY_POLICY_URL, BASE_URL } from '../api/client';
 import { useSocket } from '../services/socket';
 import { clearAuth, saveTokens } from '../storage/auth';
 import { isAppLockEnabled, setAppLockEnabled } from '../storage/appLock';
@@ -121,9 +123,10 @@ function PwAlertBox({ message, theme, styles }) {
   );
 }
 
-function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
+function AccountTab({ user, currentLevel, navigation, onPhoneUpdated, onAvatarUpdated }) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [phoneModal, setPhoneModal] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
   const [phoneSaving, setPhoneSaving] = useState(false);
@@ -187,6 +190,48 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
     }
   };
 
+  // Reads the picked photo as base64 and sends it as JSON — the same
+  // convention used everywhere else in the app that uploads a file (voice
+  // notes, chat image attachments), since React Native's FormData handling
+  // of binary bodies is unreliable across platforms.
+  const uploadAvatar = async (useCamera) => {
+    try {
+      const perm = useCamera
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', `Allow ${useCamera ? 'camera' : 'photo library'} access to set a profile photo.`);
+        return;
+      }
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7, allowsEditing: true, aspect: [1, 1] })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsEditing: true, aspect: [1, 1] });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const mimeType = asset.mimeType || 'image/jpeg';
+      setAvatarUploading(true);
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      const res = await apiFetch('/api/auth/avatar', {
+        method: 'PATCH',
+        body: { imageBase64: base64, mimeType },
+      });
+      if (res?.avatar) onAvatarUpdated(res.avatar);
+    } catch (err) {
+      Alert.alert('Could not update photo', err?.message || 'Please try again.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const changeAvatar = () => {
+    Alert.alert('Profile Photo', undefined, [
+      { text: 'Take Photo', onPress: () => uploadAvatar(true) },
+      { text: 'Choose from Library', onPress: () => uploadAvatar(false) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const memberSince = user?.createdAt
     ? new Date(user.createdAt).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
     : 'Not available';
@@ -232,9 +277,21 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated }) {
 
   return (
     <>
-      {/* Name */}
+      {/* Photo + Name */}
       <View style={styles.acctHeader}>
-        <View style={{ flex: 1 }}>
+        <TouchableOpacity style={styles.acctAvatarWrap} onPress={changeAvatar} activeOpacity={0.8} disabled={avatarUploading}>
+          {user?.avatar ? (
+            <Image source={{ uri: `${BASE_URL}${user.avatar}` }} style={styles.acctAvatarImg} />
+          ) : (
+            <View style={styles.acctAvatarPlaceholder}>
+              <Feather name="user" size={26} color={theme.faint} />
+            </View>
+          )}
+          <View style={styles.acctAvatarBadge}>
+            {avatarUploading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Feather name="camera" size={12} color="#FFFFFF" />}
+          </View>
+        </TouchableOpacity>
+        <View style={{ flex: 1, marginLeft: 14 }}>
           <Text style={styles.acctName}>{user?.name || '—'}</Text>
           <Text style={styles.acctSub}>{user?.email || ''}</Text>
         </View>
@@ -1007,6 +1064,7 @@ export default function Settings({ navigation, route }) {
             currentLevel={currentLevel}
             navigation={navigation}
             onPhoneUpdated={(phone) => setUser(u => ({ ...u, phone }))}
+            onAvatarUpdated={(avatar) => setUser(u => ({ ...u, avatar }))}
           />
         )}
       </ScrollView>
@@ -1110,6 +1168,10 @@ const createStyles = (theme) => StyleSheet.create({
   tabLabel:        { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
   // Account tab
   acctHeader:      { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderRadius: 18, padding: 18, marginBottom: 20 },
+  acctAvatarWrap:  { width: 64, height: 64 },
+  acctAvatarImg:   { width: 64, height: 64, borderRadius: 32, backgroundColor: theme.soft },
+  acctAvatarPlaceholder: { width: 64, height: 64, borderRadius: 32, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },
+  acctAvatarBadge: { position: 'absolute', right: -2, bottom: -2, width: 24, height: 24, borderRadius: 12, backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: theme.card },
   acctName:        { fontSize: 18, fontWeight: '800', color: theme.text, marginBottom: 3 },
   acctSub:         { fontSize: 13, color: theme.faint },
   infoRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
