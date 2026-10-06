@@ -11,6 +11,7 @@ import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
 import DateField from './finance/DateField';
+import TimeField from './finance/TimeField';
 
 const EVENT_TYPES = ['Birthday', 'Anniversary', 'School', 'Medical', 'Travel', 'Festival', 'Meeting', 'Other'];
 const MEMBERS     = ['Dad', 'Mom', 'Self', 'Spouse', 'Child', 'All'];
@@ -209,8 +210,7 @@ export default function FamilyCalendar({ navigation }) {
                 </View>
                 <View style={{ width: 12 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Time (HH:MM)</Text>
-                  <TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={form.time} onChangeText={v => setForm(f => ({ ...f, time: v }))} keyboardType="numeric" />
+                  <TimeField label="Time" value={form.time} onChange={v => setForm(f => ({ ...f, time: v }))} />
                 </View>
               </View>
               <Text style={styles.fieldLabel}>Notes</Text>
