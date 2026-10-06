@@ -35,14 +35,17 @@ function isPastDate(dateStr) {
 const isValidName = (v) => !v || (/^[^\d!@#$%^&*()_+=\[\]{}<>?/\\|~`":;,]+$/.test(v) && /[A-Za-zÀ-￿]/.test(v))
 
 // Checked at the route level (not inside validateFamilyItemData) since it
-// needs a DB lookup — confirms a gift's linked occasionId actually belongs
-// to this user, same ownership check every other FK-like reference in this
-// app gets.
-async function occasionBelongsToUser(userId, occasionId) {
-  if (!occasionId) return true
-  const occ = await prisma.familyItem.findUnique({ where: { id: occasionId } })
-  return !!occ && occ.userId === userId && occ.domain === 'celebration' && occ.type === 'occasion'
+// needs a DB lookup — confirms a linked *Id (occasionId, childId, ...)
+// actually belongs to this user and points at the right domain+type, same
+// ownership check every other FK-like reference in this app gets.
+async function linkedItemBelongsToUser(userId, linkedId, domain, type) {
+  if (!linkedId) return true
+  const item = await prisma.familyItem.findUnique({ where: { id: linkedId } })
+  return !!item && item.userId === userId && item.domain === domain && item.type === type
 }
+
+const ACTIVITY_TYPES = ['School', 'Sports', 'Music', 'Dance', 'Art', 'Tuition', 'Other']
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function validateFamilyItemData(domain, type, data) {
   if (domain === 'celebration' && type === 'occasion') {
@@ -59,6 +62,28 @@ export function validateFamilyItemData(domain, type, data) {
     if (!isValidName(data.person)) return 'For can only contain letters'
     if (data.budget !== undefined && data.budget !== '' && data.budget != null && !(Number(data.budget) >= 0)) return 'Budget must be zero or a positive number'
     if (data.status !== undefined && data.status !== '' && data.status != null && !GIFT_STATUS.includes(data.status)) return `Status must be one of: ${GIFT_STATUS.join(', ')}`
+    return null
+  }
+  if (domain === 'children' && type === 'child') {
+    if (data.name && !isValidName(data.name)) return 'Name can only contain letters'
+    return null
+  }
+  if (domain === 'children' && type === 'activity') {
+    // No time-format check here (unlike celebration/finance): a lot of
+    // existing Activity/Event records predate the TimeField picker and still
+    // hold whatever free text was typed into the old raw text box ("4pm",
+    // "5:00 PM", "9494") — enforcing HH:MM now would retroactively block
+    // editing real records over a field nobody asked to have validated yet.
+    if (data.type != null && data.type !== '' && !ACTIVITY_TYPES.includes(data.type)) return `Activity Type must be one of: ${ACTIVITY_TYPES.join(', ')}`
+    if (data.child && !isValidName(data.child)) return 'For Child can only contain letters'
+    if (data.day != null && data.day !== '' && !DAYS.includes(data.day)) return `Day must be one of: ${DAYS.join(', ')}`
+    return null
+  }
+  if (domain === 'children' && type === 'event') {
+    // No past-date check (unlike celebration's occasions, which the section
+    // itself frames as upcoming-only) — School Events has no such framing
+    // and can legitimately log something that already happened.
+    if (data.child && !isValidName(data.child)) return 'Child can only contain letters'
     return null
   }
   return null
@@ -131,8 +156,11 @@ familyItemsRouter.post('/:domain', async (req, res) => {
     if (!type || !data) return res.status(400).json({ error: 'type and data required' })
     const validationError = validateFamilyItemData(req.params.domain, type, data)
     if (validationError) return res.status(400).json({ error: validationError })
-    if (data.occasionId && !(await occasionBelongsToUser(req.user.id, data.occasionId))) {
+    if (data.occasionId && !(await linkedItemBelongsToUser(req.user.id, data.occasionId, 'celebration', 'occasion'))) {
       return res.status(400).json({ error: 'That linked occasion was not found' })
+    }
+    if (data.childId && !(await linkedItemBelongsToUser(req.user.id, data.childId, 'children', 'child'))) {
+      return res.status(400).json({ error: 'That linked child was not found' })
     }
     let remindAtDate = null
     if (remindAt) {
@@ -166,8 +194,11 @@ familyItemsRouter.patch('/:domain/:id', async (req, res) => {
       const merged = { ...(existing.data || {}), ...data }
       const validationError = validateFamilyItemData(req.params.domain, existing.type, merged)
       if (validationError) return res.status(400).json({ error: validationError })
-      if (merged.occasionId && !(await occasionBelongsToUser(req.user.id, merged.occasionId))) {
+      if (merged.occasionId && !(await linkedItemBelongsToUser(req.user.id, merged.occasionId, 'celebration', 'occasion'))) {
         return res.status(400).json({ error: 'That linked occasion was not found' })
+      }
+      if (merged.childId && !(await linkedItemBelongsToUser(req.user.id, merged.childId, 'children', 'child'))) {
+        return res.status(400).json({ error: 'That linked child was not found' })
       }
     }
     let remindAtDate = existing.remindAt
@@ -204,18 +235,26 @@ familyItemsRouter.delete('/:domain/:id', async (req, res) => {
     if (!existing || existing.userId !== req.user.id) return res.status(404).json({ error: 'Not found' })
     await prisma.familyItem.delete({ where: { id: req.params.id } })
 
-    // A gift linked to this occasion isn't deleted along with it (the link
-    // is optional, not ownership) — just drop the now-dangling occasionId so
-    // the gift falls back to showing its own free-text occasion label.
+    // Anything linked to this item isn't deleted along with it (the link is
+    // optional, not ownership) — just drop the now-dangling *Id so the
+    // linked item falls back to showing its own free-text label.
+    const unlinkConfigs = []
     if (existing.domain === 'celebration' && existing.type === 'occasion') {
-      const linkedGifts = await prisma.familyItem.findMany({
-        where: { userId: req.user.id, domain: 'celebration', type: 'gift' },
-      })
-      for (const gift of linkedGifts) {
-        if (gift.data?.occasionId !== existing.id) continue
-        const { occasionId, ...rest } = gift.data
-        const updatedGift = await prisma.familyItem.update({ where: { id: gift.id }, data: { data: rest } })
-        emit(req.app.get('io'), req.user.id, `family:celebration:updated`, fmt(updatedGift))
+      unlinkConfigs.push({ linkField: 'occasionId', targets: [{ domain: 'celebration', type: 'gift' }] })
+    }
+    if (existing.domain === 'children' && existing.type === 'child') {
+      unlinkConfigs.push({ linkField: 'childId', targets: [{ domain: 'children', type: 'activity' }, { domain: 'children', type: 'event' }] })
+    }
+    for (const { linkField, targets } of unlinkConfigs) {
+      for (const { domain, type } of targets) {
+        const linkedItems = await prisma.familyItem.findMany({ where: { userId: req.user.id, domain, type } })
+        for (const linked of linkedItems) {
+          if (linked.data?.[linkField] !== existing.id) continue
+          const rest = { ...linked.data }
+          delete rest[linkField]
+          const updatedLinked = await prisma.familyItem.update({ where: { id: linked.id }, data: { data: rest } })
+          emit(req.app.get('io'), req.user.id, `family:${domain}:updated`, fmt(updatedLinked))
+        }
       }
     }
 
