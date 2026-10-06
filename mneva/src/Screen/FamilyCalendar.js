@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback, useWindowDimensions, ActivityIndicator,
+  TouchableWithoutFeedback, useWindowDimensions, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -18,18 +18,22 @@ const tColor = (t) => ({ Birthday: '#E0546E', Anniversary: '#9B72FF', School: '#
 const tBg    = (t) => ({ Birthday: '#FCEAED', Anniversary: '#F3EFFE', School: '#EAF3FD', Medical: '#EFFDF6', Travel: '#FEF3C7', Festival: '#FEF3C7', Meeting: '#F5F6F8', Other: '#F5F6F8' }[t] || '#F5F6F8');
 const tIcon  = (t) => ({ Birthday: 'gift', Anniversary: 'heart', School: 'book', Medical: 'activity', Travel: 'map-pin', Festival: 'star', Meeting: 'users', Other: 'calendar' }[t] || 'calendar');
 
+const EMPTY_FORM = { type: '', title: '', member: '', date: '', time: '', notes: '' };
+
 export default function FamilyCalendar({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const pad = width < 360 ? 16 : 20;
-  const { items, loading, saving, create, remove } = useFamilyItems('calendar');
+  const { items, loading, saving, create, update, remove } = useFamilyItems('calendar');
   const { on } = useSocket();
 
-  const [alert, setAlert]   = useState(null);
-  const [modal, setModal]   = useState(false);
-  const [form, setForm]     = useState({ type: '', title: '', member: '', date: '', time: '', notes: '' });
+  const [alert, setAlert]     = useState(null);
+  const [modal, setModal]     = useState(false);
+  const [editItem, setEditItem] = useState(null); // null = adding; otherwise the event being edited
+  const [form, setForm]       = useState(EMPTY_FORM);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     const off = on('family:alert', (data) => {
@@ -38,14 +42,41 @@ export default function FamilyCalendar({ navigation }) {
     return () => off?.();
   }, [on]);
 
+  const openAdd = () => { setEditItem(null); setForm(EMPTY_FORM); setSaveError(''); setModal(true); };
+  const openEdit = (item) => {
+    setEditItem(item);
+    setForm({
+      type: item.data?.type || '', title: item.data?.title || '', member: item.data?.member || '',
+      date: item.data?.date || '', time: item.data?.time || '', notes: item.data?.notes || '',
+    });
+    setSaveError('');
+    setModal(true);
+  };
+  const closeModal = () => setModal(false);
+
   const saveEvent = async () => {
     if (!form.title.trim() || !form.type || !form.date.trim()) return;
+    setSaveError('');
     const remindAt = (form.date && form.time)
       ? new Date(`${form.date}T${form.time}:00`).toISOString()
       : new Date(`${form.date}T09:00:00`).toISOString();
-    await create('event', form, remindAt);
-    setForm({ type: '', title: '', member: '', date: '', time: '', notes: '' });
-    setModal(false);
+    try {
+      if (editItem) await update(editItem.id, { data: form, remindAt });
+      else await create('event', form, remindAt);
+      setModal(false);
+    } catch (err) {
+      setSaveError(err.message || 'Could not save this event.');
+    }
+  };
+
+  const deleteEvent = () => {
+    Alert.alert('Delete Event', `Remove "${editItem.data?.title}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try { await remove(editItem.id); setModal(false); }
+        catch (err) { setSaveError(err.message || 'Could not delete this event.'); }
+      } },
+    ]);
   };
 
   // Group by month (date field YYYY-MM-DD)
@@ -80,7 +111,7 @@ export default function FamilyCalendar({ navigation }) {
           <Text style={styles.headerTitle}>Family Calendar</Text>
           <Text style={styles.headerSub}>{items.length} event{items.length !== 1 ? 's' : ''} scheduled</Text>
         </View>
-        <TouchableOpacity onPress={() => setModal(true)} style={styles.addFab}>
+        <TouchableOpacity onPress={openAdd} style={styles.addFab}>
           <LinearGradient colors={['#F5A623', '#E8943A']} style={styles.addFabGrad}>
             <Feather name="plus" size={20} color="#FFFFFF" />
           </LinearGradient>
@@ -114,7 +145,7 @@ export default function FamilyCalendar({ navigation }) {
                 <Text style={styles.monthLabel}>{month}</Text>
                 <View style={styles.card}>
                   {evts.map((e, i) => (
-                    <View key={e.id} style={[styles.listRow, i < evts.length - 1 && styles.divider]}>
+                    <TouchableOpacity key={e.id} style={[styles.listRow, i < evts.length - 1 && styles.divider]} onPress={() => openEdit(e)} activeOpacity={0.7}>
                       <View style={[styles.rowIcon, { backgroundColor: tBg(e.data?.type) }]}>
                         <Feather name={tIcon(e.data?.type)} size={14} color={tColor(e.data?.type)} />
                       </View>
@@ -126,8 +157,8 @@ export default function FamilyCalendar({ navigation }) {
                         <Text style={[styles.tagText, { color: tColor(e.data?.type) }]}>{e.data?.type}</Text>
                       </View>
                       {e.remindAt && <View style={styles.remindDot}><Feather name="bell" size={10} color={theme.warning} /></View>}
-                      <TouchableOpacity onPress={() => remove(e.id)} style={{ padding: 4, marginLeft: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-                    </View>
+                      <Feather name="chevron-right" size={16} color={theme.faint} style={{ marginLeft: 6 }} />
+                    </TouchableOpacity>
                   ))}
                 </View>
               </View>
@@ -136,17 +167,22 @@ export default function FamilyCalendar({ navigation }) {
         </ScrollView>
       )}
 
-      {/* Add Event Modal */}
-      <Modal visible={modal} transparent animationType="slide" onRequestClose={() => setModal(false)}>
+      {/* Add/Edit Event Modal */}
+      <Modal visible={modal} transparent animationType="slide" onRequestClose={closeModal}>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableWithoutFeedback onPress={() => setModal(false)}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
+          <TouchableWithoutFeedback onPress={closeModal}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
           <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <LinearGradient colors={['#F5A623', '#E8943A']} style={styles.sheetIcon}>
                 <Feather name="calendar" size={20} color="#FFFFFF" />
               </LinearGradient>
-              <Text style={styles.sheetTitle}>Add Event</Text>
+              <Text style={[styles.sheetTitle, { flex: 1 }]}>{editItem ? 'Edit Event' : 'Add Event'}</Text>
+              {editItem && (
+                <TouchableOpacity onPress={deleteEvent} style={styles.deleteBtn}>
+                  <Feather name="trash-2" size={18} color={theme.danger} />
+                </TouchableOpacity>
+              )}
             </View>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.fieldLabel}>Event Type *</Text>
@@ -179,14 +215,15 @@ export default function FamilyCalendar({ navigation }) {
               </View>
               <Text style={styles.fieldLabel}>Notes</Text>
               <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder} value={form.notes} onChangeText={v => setForm(f => ({ ...f, notes: v }))} />
+              {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
               <TouchableOpacity
-                style={[styles.saveBtn, (!form.title.trim() || !form.type || !form.date.trim()) && styles.saveBtnDisabled]}
-                disabled={!form.title.trim() || !form.type || !form.date.trim()}
+                style={[styles.saveBtn, (!form.title.trim() || !form.type || !form.date.trim() || saving) && styles.saveBtnDisabled]}
+                disabled={!form.title.trim() || !form.type || !form.date.trim() || saving}
                 onPress={saveEvent}
               >
                 <LinearGradient colors={['#F5A623', '#E8943A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
                   <Feather name="check" size={16} color="#FFFFFF" />
-                  <Text style={styles.saveBtnText}>Save Event</Text>
+                  <Text style={styles.saveBtnText}>{editItem ? 'Update Event' : 'Save Event'}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </ScrollView>
@@ -244,6 +281,7 @@ const createStyles = (theme) => StyleSheet.create({
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   sheetIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   rowFields: { flexDirection: 'row' },
@@ -252,6 +290,7 @@ const createStyles = (theme) => StyleSheet.create({
   chipActive: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderColor: theme.warning },
   chipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
   chipTextActive: { color: theme.warning },
+  errorText: { fontSize: 12, color: theme.danger, marginBottom: 12 },
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
