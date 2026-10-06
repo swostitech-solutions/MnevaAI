@@ -12,6 +12,39 @@ const toBool = (v) => (v === undefined || v === null || v === '') ? undefined : 
 const toStr = (v) => (v === undefined || v === null) ? undefined : String(v).trim() || null
 const toDate = (v) => (v === undefined || v === null || v === '') ? undefined : v
 
+// A Loan already collects its own full EMI schedule (emiAmount, frequency,
+// dates, installment counts) — this mirrors those fields into a real Emi
+// row so the loan's EMI actually shows up in the EMI tracker too, instead
+// of being invisible outside the Loan screen. The Emi.loanId link is what
+// marks it as derived (see guards on PATCH/DELETE /emis/:id below).
+export function emiDataFromLoan(loan) {
+  return {
+    userId: loan.userId,
+    name: `${loan.name} EMI`,
+    emiType: 'Loan EMI',
+    provider: loan.lenderName,
+    description: loan.purpose || null,
+    totalAmount: loan.originalAmount,
+    financedAmount: loan.originalAmount,
+    emiAmount: loan.emiAmount,
+    interestRate: loan.interestRate,
+    processingFee: loan.processingFee,
+    numberOfInstallments: loan.numberOfEmis,
+    installmentsPaid: loan.emisPaid,
+    installmentsRemaining: loan.emisRemaining,
+    startDate: loan.emiStartDate,
+    nextPaymentDate: loan.nextEmiDate,
+    endDate: loan.emiEndDate,
+    frequency: loan.emiFrequency,
+    autoDebit: loan.autoDebit,
+    paymentAccount: loan.paymentAccount,
+    paymentDay: loan.paymentDay,
+    status: loan.status === 'Closed' ? 'Completed' : loan.status,
+    notes: loan.notes,
+    loanId: loan.id,
+  }
+}
+
 // ── Loans ────────────────────────────────────────────────────────────────────
 
 financeRouter.get('/loans', async (req, res) => {
@@ -70,6 +103,8 @@ financeRouter.post('/loans', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'loan:created', loan)
+    const linkedEmi = await prisma.emi.create({ data: emiDataFromLoan(loan) })
+    emit(req.app.get('io'), req.user.id, 'emi:created', linkedEmi)
     res.status(201).json({ loan })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -117,6 +152,16 @@ financeRouter.patch('/loans/:id', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'loan:updated', loan)
+
+    // Keep the linked EMI in sync with the loan's own EMI fields — upsert
+    // rather than assume it exists, since a loan created before this
+    // feature shipped won't have one yet (its first edit backfills it).
+    const existingEmi = await prisma.emi.findFirst({ where: { loanId: loan.id } })
+    const linkedEmi = existingEmi
+      ? await prisma.emi.update({ where: { id: existingEmi.id }, data: emiDataFromLoan(loan) })
+      : await prisma.emi.create({ data: emiDataFromLoan(loan) })
+    emit(req.app.get('io'), req.user.id, existingEmi ? 'emi:updated' : 'emi:created', linkedEmi)
+
     res.json({ loan })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -126,8 +171,13 @@ financeRouter.delete('/loans/:id', async (req, res) => {
     const existing = await prisma.loan.findUnique({ where: { id: req.params.id } })
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    // Fetch the linked EMI's id before deleting — the DB foreign key cascade
+    // (onDelete: Cascade) removes it automatically, but the open EMI screen
+    // still needs its own socket event to drop the row live.
+    const linkedEmi = await prisma.emi.findFirst({ where: { loanId: req.params.id }, select: { id: true } })
     await prisma.loan.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'loan:deleted', { id: req.params.id })
+    if (linkedEmi) emit(req.app.get('io'), req.user.id, 'emi:deleted', { id: linkedEmi.id })
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -193,6 +243,10 @@ financeRouter.patch('/emis/:id', async (req, res) => {
     const existing = await prisma.emi.findUnique({ where: { id: req.params.id } })
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    // A loan-derived EMI (see emiDataFromLoan) would just drift out of sync
+    // with its loan if edited directly here — the loan is the source of
+    // truth for it, so changes go through PATCH /loans/:id instead.
+    if (existing.loanId) return res.status(400).json({ error: 'This EMI is linked to a loan — edit the loan instead.' })
     const b = req.body
     const emi = await prisma.emi.update({
       where: { id: req.params.id },
@@ -235,6 +289,7 @@ financeRouter.delete('/emis/:id', async (req, res) => {
     const existing = await prisma.emi.findUnique({ where: { id: req.params.id } })
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
+    if (existing.loanId) return res.status(400).json({ error: 'This EMI is linked to a loan — delete the loan instead.' })
     await prisma.emi.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'emi:deleted', { id: req.params.id })
     res.json({ success: true })

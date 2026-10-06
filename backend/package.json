@@ -11,7 +11,8 @@
     "db:test": "node -r dotenv/config test-db.js",
     "db:clean-demo": "node scripts/cleanDemoData.js",
     "db:encrypt-google-tokens": "node scripts/encryptGoogleTokens.js",
-    "db:encrypt-vector-memory": "node scripts/encryptVectorMemory.js"
+    "db:encrypt-vector-memory": "node scripts/encryptVectorMemory.js",
+    "db:backfill-loan-emis": "node scripts/backfillLoanEmis.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",

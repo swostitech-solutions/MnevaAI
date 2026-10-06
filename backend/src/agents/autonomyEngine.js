@@ -1393,6 +1393,12 @@ export async function executeTool(name, input, userId, opts = {}) {
           notes: input.notes || null,
         },
       })
+      // Mirrors the Loan's own EMI fields into a real Emi row (see
+      // emiDataFromLoan in routes/finance.js) so it shows up in the EMI
+      // tracker too, not just the Loan screen — same as the manual
+      // POST /loans route does.
+      const { emiDataFromLoan } = await import('../routes/finance.js')
+      await prisma.emi.create({ data: emiDataFromLoan(loan) })
       return { success: true, loanId: loan.id, name: loan.name, emiAmount: loan.emiAmount, outstandingAmount: loan.outstandingAmount }
     }
     case 'create_emi': {

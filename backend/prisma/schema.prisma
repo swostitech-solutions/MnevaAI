@@ -622,6 +622,7 @@ model Loan {
   updatedAt           DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emis Emi[]
 
   @@index([userId])
 }
@@ -658,9 +659,18 @@ model Emi {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
+  // Set only for an EMI auto-derived from a Loan's own EMI fields (Loan
+  // already collects emiAmount/numberOfEmis/etc. itself) — null for an EMI
+  // the user added directly (phone, credit card, product) with no loan
+  // behind it. Cascades on delete: a loan-derived EMI has no independent
+  // meaning once its loan is gone.
+  loanId String?
+  loan   Loan?   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([loanId])
 }
 
 model Subscription {

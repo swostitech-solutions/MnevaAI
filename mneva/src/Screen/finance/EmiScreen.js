@@ -96,7 +96,13 @@ export default function EmiScreen({ navigation }) {
     && form.numberOfInstallments && form.startDate;
 
   const openAdd = () => { setEditItem(null); setShowForm(true); };
-  const openEdit = (item) => { setEditItem(item); setShowForm(true); };
+  const openEdit = (item) => {
+    if (item.loanId) {
+      Alert.alert('Linked to a Loan', 'This EMI was auto-created from a loan. Edit or delete it from Finance > Loans instead.', [{ text: 'OK' }]);
+      return;
+    }
+    setEditItem(item); setShowForm(true);
+  };
   const closeForm = () => { setShowForm(false); setEditItem(null); };
 
   const handleDelete = () => {
@@ -310,14 +316,22 @@ export default function EmiScreen({ navigation }) {
                     <Feather name="credit-card" size={16} color={theme.warning} />
                   </View>
                   <View style={styles.rowTextWrap}>
-                    <Text style={styles.rowName}>{emi.name}</Text>
+                    <View style={styles.rowNameLine}>
+                      <Text style={styles.rowName}>{emi.name}</Text>
+                      {emi.loanId ? (
+                        <View style={styles.linkedBadge}>
+                          <Feather name="link" size={9} color={theme.warning} />
+                          <Text style={styles.linkedBadgeText}>Loan</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={styles.rowSub}>{emi.provider} · {remainingFor(emi)} left</Text>
                   </View>
                   <View style={styles.rowRight}>
                     <Text style={styles.rowAmount}>₹{(emi.emiAmount || 0).toLocaleString('en-IN')}</Text>
                     <Text style={styles.rowMeta}>{fmtShortDate(emi.nextPaymentDate)}</Text>
                   </View>
-                  <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />
+                  <Feather name={emi.loanId ? 'lock' : 'edit-2'} size={14} color={theme.faint} style={{ marginLeft: 8 }} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -347,7 +361,10 @@ const createStyles = (theme) => StyleSheet.create({
   rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
   iconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   rowTextWrap: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 2 },
+  rowNameLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  rowName: { fontSize: 14, fontWeight: '700', color: theme.text },
+  linkedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  linkedBadgeText: { fontSize: 9, fontWeight: '700', color: theme.warning },
   rowSub: { fontSize: 12, color: theme.faint },
   rowRight: { alignItems: 'flex-end', gap: 4 },
   rowAmount: { fontSize: 15, fontWeight: '800', color: theme.text },
