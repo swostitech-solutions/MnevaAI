@@ -12,6 +12,74 @@ const toBool = (v) => (v === undefined || v === null || v === '') ? undefined : 
 const toStr = (v) => (v === undefined || v === null) ? undefined : String(v).trim() || null
 const toDate = (v) => (v === undefined || v === null || v === '') ? undefined : v
 
+// Matches the fixed chip options in mneva/src/Screen/finance/LoanScreen.js
+// exactly, and the enum create_loan's own tool schema already restricts the
+// AI to in autonomyEngine.js — so this never conflicts with either caller,
+// it just also enforces it server-side instead of trusting the client.
+export const LOAN_TYPES = ['Personal Loan', 'Home Loan', 'Car Loan', 'Education Loan', 'Business Loan', 'Gold Loan', 'Other']
+export const LOAN_STATUSES = ['Active', 'Closed', 'Pending']
+export const LOAN_INTEREST_TYPES = ['Fixed', 'Floating']
+export const LOAN_INTEREST_CALCULATIONS = ['Reducing Balance', 'Flat Rate']
+export const LOAN_EMI_FREQUENCIES = ['Monthly', 'Bi-weekly', 'Quarterly']
+
+// Validates a loan's full, merged field set — not just whatever one request
+// happened to touch — so a PATCH that only changes one field still catches
+// a cross-field problem like an EMI end date that's now before an
+// unrelated, already-stored start date. Returns the first problem found, or
+// null if everything checks out. Shared by POST/PATCH /loans below and the
+// create_loan AI tool (autonomyEngine.js), which creates a Loan via Prisma
+// directly and so needs its own call into this — same reason emiDataFromLoan
+// above is exported.
+export function validateLoanData(d) {
+  if (!d.name || !String(d.name).trim()) return 'name is required'
+  if (!LOAN_TYPES.includes(d.loanType)) return `loanType must be one of: ${LOAN_TYPES.join(', ')}`
+  if (!d.lenderName || !String(d.lenderName).trim()) return 'lenderName is required'
+  if (d.status != null && !LOAN_STATUSES.includes(d.status)) return `status must be one of: ${LOAN_STATUSES.join(', ')}`
+
+  if (!(d.originalAmount > 0)) return 'originalAmount must be a positive number'
+  if (!(d.outstandingAmount >= 0)) return 'outstandingAmount must be zero or a positive number'
+  if (d.outstandingAmount > d.originalAmount) return 'outstandingAmount cannot be more than originalAmount'
+  if (d.amountPaid != null && !(d.amountPaid >= 0)) return 'amountPaid must be zero or a positive number'
+  if (d.processingFee != null && !(d.processingFee >= 0)) return 'processingFee must be zero or a positive number'
+  if (d.otherCharges != null && !(d.otherCharges >= 0)) return 'otherCharges must be zero or a positive number'
+
+  if (!(d.interestRate >= 0) || d.interestRate > 100) return 'interestRate must be between 0 and 100'
+  if (!LOAN_INTEREST_TYPES.includes(d.interestType)) return `interestType must be one of: ${LOAN_INTEREST_TYPES.join(', ')}`
+  if (!LOAN_INTEREST_CALCULATIONS.includes(d.interestCalculation)) return `interestCalculation must be one of: ${LOAN_INTEREST_CALCULATIONS.join(', ')}`
+
+  if (!(d.emiAmount > 0)) return 'emiAmount must be a positive number'
+  if (d.emiFrequency != null && !LOAN_EMI_FREQUENCIES.includes(d.emiFrequency)) return `emiFrequency must be one of: ${LOAN_EMI_FREQUENCIES.join(', ')}`
+
+  const emiStart = d.emiStartDate ? new Date(d.emiStartDate) : null
+  if (!emiStart || isNaN(emiStart.getTime())) return 'emiStartDate is required and must be a valid date'
+  if (d.nextEmiDate != null && isNaN(new Date(d.nextEmiDate).getTime())) return 'nextEmiDate is not a valid date'
+  if (d.emiEndDate != null) {
+    const emiEnd = new Date(d.emiEndDate)
+    if (isNaN(emiEnd.getTime())) return 'emiEndDate is not a valid date'
+    if (emiEnd <= emiStart) return 'emiEndDate must be after emiStartDate'
+  }
+
+  if (!Number.isInteger(d.numberOfEmis) || d.numberOfEmis <= 0) return 'numberOfEmis must be a positive whole number'
+  if (d.emisPaid != null) {
+    if (!Number.isInteger(d.emisPaid) || d.emisPaid < 0) return 'emisPaid must be zero or a positive whole number'
+    if (d.emisPaid > d.numberOfEmis) return 'emisPaid cannot be more than numberOfEmis'
+  }
+  if (d.emisRemaining != null && (!Number.isInteger(d.emisRemaining) || d.emisRemaining < 0)) return 'emisRemaining must be zero or a positive whole number'
+
+  const loanStart = d.loanStartDate ? new Date(d.loanStartDate) : null
+  if (!loanStart || isNaN(loanStart.getTime())) return 'loanStartDate is required and must be a valid date'
+  if (d.loanMaturityDate != null) {
+    const maturity = new Date(d.loanMaturityDate)
+    if (isNaN(maturity.getTime())) return 'loanMaturityDate is not a valid date'
+    if (maturity <= loanStart) return 'loanMaturityDate must be after loanStartDate'
+  }
+
+  if (d.paymentDay != null && (!Number.isInteger(d.paymentDay) || d.paymentDay < 1 || d.paymentDay > 31)) return 'paymentDay must be between 1 and 31'
+  if (d.prepaymentCharges != null && !(d.prepaymentCharges >= 0)) return 'prepaymentCharges must be zero or a positive number'
+
+  return null
+}
+
 // A Loan already collects its own full EMI schedule (emiAmount, frequency,
 // dates, installment counts) — this mirrors those fields into a real Emi
 // row so the loan's EMI actually shows up in the EMI tracker too, instead
@@ -66,42 +134,43 @@ financeRouter.post('/loans', async (req, res) => {
       || !b.loanStartDate || !b.emiStartDate) {
       return res.status(400).json({ error: 'name, loanType, lenderName, originalAmount, outstandingAmount, interestRate, interestType, interestCalculation, emiAmount, numberOfEmis, loanStartDate and emiStartDate are required' })
     }
-    const loan = await prisma.loan.create({
-      data: {
-        userId: req.user.id,
-        name: b.name.trim(),
-        loanType: b.loanType,
-        lenderName: b.lenderName.trim(),
-        accountNumber: toStr(b.accountNumber),
-        purpose: toStr(b.purpose),
-        status: b.status || 'Active',
-        originalAmount: toFloat(b.originalAmount),
-        outstandingAmount: toFloat(b.outstandingAmount),
-        amountPaid: toFloat(b.amountPaid) ?? 0,
-        processingFee: toFloat(b.processingFee),
-        otherCharges: toFloat(b.otherCharges),
-        interestRate: toFloat(b.interestRate),
-        interestType: b.interestType,
-        interestCalculation: b.interestCalculation,
-        emiAmount: toFloat(b.emiAmount),
-        emiFrequency: b.emiFrequency || 'Monthly',
-        emiStartDate: b.emiStartDate,
-        nextEmiDate: toDate(b.nextEmiDate),
-        emiEndDate: toDate(b.emiEndDate),
-        numberOfEmis: toInt(b.numberOfEmis),
-        emisPaid: toInt(b.emisPaid) ?? 0,
-        emisRemaining: toInt(b.emisRemaining),
-        loanStartDate: b.loanStartDate,
-        loanMaturityDate: toDate(b.loanMaturityDate),
-        autoDebit: toBool(b.autoDebit) ?? false,
-        paymentAccount: toStr(b.paymentAccount),
-        paymentDay: toInt(b.paymentDay),
-        prepaymentAllowed: toBool(b.prepaymentAllowed),
-        prepaymentCharges: toFloat(b.prepaymentCharges),
-        notes: toStr(b.notes),
-        attachmentDocId: toStr(b.attachmentDocId),
-      },
-    })
+    const data = {
+      userId: req.user.id,
+      name: b.name.trim(),
+      loanType: b.loanType,
+      lenderName: b.lenderName.trim(),
+      accountNumber: toStr(b.accountNumber),
+      purpose: toStr(b.purpose),
+      status: b.status || 'Active',
+      originalAmount: toFloat(b.originalAmount),
+      outstandingAmount: toFloat(b.outstandingAmount),
+      amountPaid: toFloat(b.amountPaid) ?? 0,
+      processingFee: toFloat(b.processingFee),
+      otherCharges: toFloat(b.otherCharges),
+      interestRate: toFloat(b.interestRate),
+      interestType: b.interestType,
+      interestCalculation: b.interestCalculation,
+      emiAmount: toFloat(b.emiAmount),
+      emiFrequency: b.emiFrequency || 'Monthly',
+      emiStartDate: b.emiStartDate,
+      nextEmiDate: toDate(b.nextEmiDate),
+      emiEndDate: toDate(b.emiEndDate),
+      numberOfEmis: toInt(b.numberOfEmis),
+      emisPaid: toInt(b.emisPaid) ?? 0,
+      emisRemaining: toInt(b.emisRemaining),
+      loanStartDate: b.loanStartDate,
+      loanMaturityDate: toDate(b.loanMaturityDate),
+      autoDebit: toBool(b.autoDebit) ?? false,
+      paymentAccount: toStr(b.paymentAccount),
+      paymentDay: toInt(b.paymentDay),
+      prepaymentAllowed: toBool(b.prepaymentAllowed),
+      prepaymentCharges: toFloat(b.prepaymentCharges),
+      notes: toStr(b.notes),
+      attachmentDocId: toStr(b.attachmentDocId),
+    }
+    const validationError = validateLoanData(data)
+    if (validationError) return res.status(400).json({ error: validationError })
+    const loan = await prisma.loan.create({ data })
     emit(req.app.get('io'), req.user.id, 'loan:created', loan)
     const linkedEmi = await prisma.emi.create({ data: emiDataFromLoan(loan) })
     emit(req.app.get('io'), req.user.id, 'emi:created', linkedEmi)
@@ -115,42 +184,45 @@ financeRouter.patch('/loans/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const b = req.body
-    const loan = await prisma.loan.update({
-      where: { id: req.params.id },
-      data: {
-        ...(b.name !== undefined && { name: b.name.trim() }),
-        ...(b.loanType !== undefined && { loanType: b.loanType }),
-        ...(b.lenderName !== undefined && { lenderName: b.lenderName.trim() }),
-        ...(b.accountNumber !== undefined && { accountNumber: toStr(b.accountNumber) }),
-        ...(b.purpose !== undefined && { purpose: toStr(b.purpose) }),
-        ...(b.status !== undefined && { status: b.status }),
-        ...(b.originalAmount !== undefined && { originalAmount: toFloat(b.originalAmount) }),
-        ...(b.outstandingAmount !== undefined && { outstandingAmount: toFloat(b.outstandingAmount) }),
-        ...(b.amountPaid !== undefined && { amountPaid: toFloat(b.amountPaid) }),
-        ...(b.processingFee !== undefined && { processingFee: toFloat(b.processingFee) }),
-        ...(b.otherCharges !== undefined && { otherCharges: toFloat(b.otherCharges) }),
-        ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
-        ...(b.interestType !== undefined && { interestType: b.interestType }),
-        ...(b.interestCalculation !== undefined && { interestCalculation: b.interestCalculation }),
-        ...(b.emiAmount !== undefined && { emiAmount: toFloat(b.emiAmount) }),
-        ...(b.emiFrequency !== undefined && { emiFrequency: b.emiFrequency }),
-        ...(b.emiStartDate !== undefined && { emiStartDate: b.emiStartDate }),
-        ...(b.nextEmiDate !== undefined && { nextEmiDate: toDate(b.nextEmiDate) }),
-        ...(b.emiEndDate !== undefined && { emiEndDate: toDate(b.emiEndDate) }),
-        ...(b.numberOfEmis !== undefined && { numberOfEmis: toInt(b.numberOfEmis) }),
-        ...(b.emisPaid !== undefined && { emisPaid: toInt(b.emisPaid) }),
-        ...(b.emisRemaining !== undefined && { emisRemaining: toInt(b.emisRemaining) }),
-        ...(b.loanStartDate !== undefined && { loanStartDate: b.loanStartDate }),
-        ...(b.loanMaturityDate !== undefined && { loanMaturityDate: toDate(b.loanMaturityDate) }),
-        ...(b.autoDebit !== undefined && { autoDebit: toBool(b.autoDebit) }),
-        ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
-        ...(b.paymentDay !== undefined && { paymentDay: toInt(b.paymentDay) }),
-        ...(b.prepaymentAllowed !== undefined && { prepaymentAllowed: toBool(b.prepaymentAllowed) }),
-        ...(b.prepaymentCharges !== undefined && { prepaymentCharges: toFloat(b.prepaymentCharges) }),
-        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
-        ...(b.attachmentDocId !== undefined && { attachmentDocId: toStr(b.attachmentDocId) }),
-      },
-    })
+    const patch = {
+      ...(b.name !== undefined && { name: b.name.trim() }),
+      ...(b.loanType !== undefined && { loanType: b.loanType }),
+      ...(b.lenderName !== undefined && { lenderName: b.lenderName.trim() }),
+      ...(b.accountNumber !== undefined && { accountNumber: toStr(b.accountNumber) }),
+      ...(b.purpose !== undefined && { purpose: toStr(b.purpose) }),
+      ...(b.status !== undefined && { status: b.status }),
+      ...(b.originalAmount !== undefined && { originalAmount: toFloat(b.originalAmount) }),
+      ...(b.outstandingAmount !== undefined && { outstandingAmount: toFloat(b.outstandingAmount) }),
+      ...(b.amountPaid !== undefined && { amountPaid: toFloat(b.amountPaid) }),
+      ...(b.processingFee !== undefined && { processingFee: toFloat(b.processingFee) }),
+      ...(b.otherCharges !== undefined && { otherCharges: toFloat(b.otherCharges) }),
+      ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
+      ...(b.interestType !== undefined && { interestType: b.interestType }),
+      ...(b.interestCalculation !== undefined && { interestCalculation: b.interestCalculation }),
+      ...(b.emiAmount !== undefined && { emiAmount: toFloat(b.emiAmount) }),
+      ...(b.emiFrequency !== undefined && { emiFrequency: b.emiFrequency }),
+      ...(b.emiStartDate !== undefined && { emiStartDate: b.emiStartDate }),
+      ...(b.nextEmiDate !== undefined && { nextEmiDate: toDate(b.nextEmiDate) }),
+      ...(b.emiEndDate !== undefined && { emiEndDate: toDate(b.emiEndDate) }),
+      ...(b.numberOfEmis !== undefined && { numberOfEmis: toInt(b.numberOfEmis) }),
+      ...(b.emisPaid !== undefined && { emisPaid: toInt(b.emisPaid) }),
+      ...(b.emisRemaining !== undefined && { emisRemaining: toInt(b.emisRemaining) }),
+      ...(b.loanStartDate !== undefined && { loanStartDate: b.loanStartDate }),
+      ...(b.loanMaturityDate !== undefined && { loanMaturityDate: toDate(b.loanMaturityDate) }),
+      ...(b.autoDebit !== undefined && { autoDebit: toBool(b.autoDebit) }),
+      ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
+      ...(b.paymentDay !== undefined && { paymentDay: toInt(b.paymentDay) }),
+      ...(b.prepaymentAllowed !== undefined && { prepaymentAllowed: toBool(b.prepaymentAllowed) }),
+      ...(b.prepaymentCharges !== undefined && { prepaymentCharges: toFloat(b.prepaymentCharges) }),
+      ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+      ...(b.attachmentDocId !== undefined && { attachmentDocId: toStr(b.attachmentDocId) }),
+    }
+    // Validated against the merged result, not just this request's fields —
+    // a PATCH that only touches e.g. notes must still fail if it would
+    // leave some other already-stored field (an enum, a date order) broken.
+    const validationError = validateLoanData({ ...existing, ...patch })
+    if (validationError) return res.status(400).json({ error: validationError })
+    const loan = await prisma.loan.update({ where: { id: req.params.id }, data: patch })
     emit(req.app.get('io'), req.user.id, 'loan:updated', loan)
 
     // Keep the linked EMI in sync with the loan's own EMI fields — upsert

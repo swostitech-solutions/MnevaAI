@@ -65,6 +65,7 @@ export default function LoanScreen({ navigation }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const isEditing = !!editItem;
 
   const loadData = async (isRefresh = false) => {
@@ -98,14 +99,47 @@ export default function LoanScreen({ navigation }) {
 
   useEffect(() => {
     setForm(editItem ? formFromItem(editItem) : EMPTY_FORM);
+    setSaveError('');
   }, [editItem, showForm]);
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
+  // Mirrors validateLoanData in backend/src/routes/finance.js — kept here
+  // too so an obviously invalid save (bad amount, EMI end before its start,
+  // etc.) is caught before a network round-trip, not just after one.
+  const validationError = (() => {
+    if (!form.name.trim()) return null // required-but-empty fields just disable Save, no need to nag before the user's typed anything
+    if (!form.loanType) return null
+    if (!form.lenderName.trim()) return null
+    const originalAmount = Number(form.originalAmount);
+    const outstandingAmount = Number(form.outstandingAmount);
+    if (form.originalAmount && !(originalAmount > 0)) return 'Original loan amount must be a positive number';
+    if (form.outstandingAmount && !(outstandingAmount >= 0)) return 'Outstanding amount must be zero or a positive number';
+    if (form.originalAmount && form.outstandingAmount && outstandingAmount > originalAmount) return 'Outstanding amount cannot be more than the original amount';
+    if (form.interestRate) {
+      const interestRate = Number(form.interestRate);
+      if (!(interestRate >= 0) || interestRate > 100) return 'Interest rate must be between 0 and 100';
+    }
+    if (form.emiAmount && !(Number(form.emiAmount) > 0)) return 'EMI amount must be a positive number';
+    if (form.emiStartDate && form.emiEndDate && new Date(form.emiEndDate) <= new Date(form.emiStartDate)) return 'EMI end date must be after the EMI start date';
+    if (form.numberOfEmis) {
+      const numberOfEmis = Number(form.numberOfEmis);
+      if (!Number.isInteger(numberOfEmis) || numberOfEmis <= 0) return 'Number of EMIs must be a positive whole number';
+      if (form.emisPaid !== '' && Number(form.emisPaid) > numberOfEmis) return 'EMIs paid cannot be more than the number of EMIs';
+    }
+    if (form.loanStartDate && form.loanMaturityDate && new Date(form.loanMaturityDate) <= new Date(form.loanStartDate)) return 'Loan maturity date must be after the loan start date';
+    if (form.paymentDay !== '') {
+      const day = Number(form.paymentDay);
+      if (!Number.isInteger(day) || day < 1 || day > 31) return 'Payment day must be between 1 and 31';
+    }
+    return null;
+  })();
+
   const canSave = form.name.trim() && form.loanType && form.lenderName.trim()
     && form.originalAmount && form.outstandingAmount && form.interestRate
     && form.interestType && form.interestCalculation && form.emiAmount
-    && form.numberOfEmis && form.loanStartDate && form.emiStartDate;
+    && form.numberOfEmis && form.loanStartDate && form.emiStartDate
+    && !validationError;
 
   const openAdd = () => { setEditItem(null); setShowForm(true); };
   const openEdit = (item) => { setEditItem(item); setShowForm(true); };
@@ -147,6 +181,7 @@ export default function LoanScreen({ navigation }) {
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
+    setSaveError('');
     try {
       if (isEditing) {
         await apiFetch(`/api/finance/loans/${editItem.id}`, { method: 'PATCH', body: form });
@@ -154,8 +189,12 @@ export default function LoanScreen({ navigation }) {
         await apiFetch('/api/finance/loans', { method: 'POST', body: form });
       }
       closeForm();
-    } catch {
-      // Socket event updates the list on success; a failed request leaves the form open to retry.
+    } catch (err) {
+      // Socket event updates the list on success; a failed request leaves the
+      // form open to retry, now actually showing why it failed instead of
+      // silently doing nothing (e.g. a backend validation rule this form's
+      // own checks didn't happen to catch).
+      setSaveError(err.message || 'Could not save this loan.');
     } finally {
       setSaving(false);
     }
@@ -338,6 +377,8 @@ export default function LoanScreen({ navigation }) {
               <Text style={styles.attachBtnText}>{form.attachmentName || 'Attach a document'}</Text>
             </TouchableOpacity>
 
+            {(validationError || saveError) ? <Text style={styles.errorText}>{validationError || saveError}</Text> : null}
+
             <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={handleSave}>
               <LinearGradient colors={ACCENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
                 {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Feather name="check" size={16} color="#FFFFFF" />}
@@ -429,6 +470,7 @@ const createStyles = (theme) => StyleSheet.create({
   attachBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.isDark ? 'rgba(107,184,240,0.14)' : '#EAF3FD', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
   attachBtnText: { fontSize: 13, fontWeight: '600', color: theme.info, flex: 1 },
 
+  errorText: { fontSize: 12, color: theme.danger, marginBottom: 12 },
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },

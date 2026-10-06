@@ -1379,27 +1379,32 @@ export async function executeTool(name, input, userId, opts = {}) {
       const loanStartDate = parseFlexibleDate(input.loan_start_date)
       const emiAmount = input.emi_amount != null ? Number(input.emi_amount) : computeEmi(principal, rate, months)
       if (emiAmount == null) return { success: false, error: 'Could not determine an EMI amount from the figures given — please also provide emi_amount.' }
-      const loan = await prisma.loan.create({
-        data: {
-          userId,
-          name: input.name || `${input.loan_type} from ${input.lender_name}`,
-          loanType: input.loan_type,
-          lenderName: input.lender_name,
-          accountNumber: input.account_number || null,
-          originalAmount: principal,
-          outstandingAmount: input.outstanding_amount != null ? Number(input.outstanding_amount) : principal,
-          interestRate: rate,
-          interestType: input.interest_type || 'Fixed',
-          interestCalculation: input.interest_calculation || 'Reducing Balance',
-          emiAmount,
-          emiFrequency: input.emi_frequency || 'Monthly',
-          emiStartDate: loanStartDate,
-          numberOfEmis: months,
-          loanStartDate,
-          autoDebit: !!input.auto_debit,
-          notes: input.notes || null,
-        },
-      })
+      const loanData = {
+        userId,
+        name: input.name || `${input.loan_type} from ${input.lender_name}`,
+        loanType: input.loan_type,
+        lenderName: input.lender_name,
+        accountNumber: input.account_number || null,
+        originalAmount: principal,
+        outstandingAmount: input.outstanding_amount != null ? Number(input.outstanding_amount) : principal,
+        interestRate: rate,
+        interestType: input.interest_type || 'Fixed',
+        interestCalculation: input.interest_calculation || 'Reducing Balance',
+        emiAmount,
+        emiFrequency: input.emi_frequency || 'Monthly',
+        emiStartDate: loanStartDate,
+        numberOfEmis: months,
+        loanStartDate,
+        autoDebit: !!input.auto_debit,
+        notes: input.notes || null,
+      }
+      // Same checks POST/PATCH /loans run — this tool creates a Loan via
+      // Prisma directly, bypassing that route entirely, so it needs its own
+      // call into the shared validator (see finance.js).
+      const { validateLoanData } = await import('../routes/finance.js')
+      const validationError = validateLoanData(loanData)
+      if (validationError) return { success: false, error: `${validationError}. Ask the user to correct this before trying again.` }
+      const loan = await prisma.loan.create({ data: loanData })
       // Mirrors the Loan's own EMI fields into a real Emi row (see
       // emiDataFromLoan in routes/finance.js) so it shows up in the EMI
       // tracker too, not just the Loan screen — same as the manual
