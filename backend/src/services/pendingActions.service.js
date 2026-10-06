@@ -72,23 +72,25 @@ export async function getAllDomainTrust(userId) {
 }
 
 // This staged L1 Observe -> L2 Suggest -> L3 Draft & Prep -> L4 Inner Circle
-// progression is for the AI acting on its OWN initiative — nothing in this
-// codebase currently does that (every executeTool call is either the model
-// responding to something the user just explicitly said in chat, or an
-// already-decided pending action being approved — see executeTool's two
-// real callers). Gating a tool call that IS the user's own direct
-// instruction ("add this EMI", "delete that task") made Ask AI refuse to do
-// what it was just told, which isn't what staged trust-building is for — so
-// only two things still gate here:
+// progression is for the AI acting on its OWN initiative, NOT for carrying
+// out something the user just explicitly asked for in chat — gating a
+// direct instruction ("add this EMI", "delete that task") made Ask AI
+// refuse to do what it was just told, which isn't what staged
+// trust-building is for. `autonomous` is how a caller declares which kind
+// of call this is: false (the default — every current caller) means a
+// direct user command, so only two things still gate it:
 //   - initiate_payment above the threshold: real money moving always needs
 //     a tap, independent of any trust level, same as Bills' own biometric gate.
 //   - send_email: the one tool here with a genuinely hard-to-reverse,
-//     externally-visible effect (lands in someone else's inbox) — kept on
-//     the staged system since the user didn't ask to change this one.
-// Finance's other tools (create_loan, create_emi, ...), Health, Family, and
-// update_record/delete_record across all three now always execute — a
-// user-disabled domain (Trust & Autonomy toggle) is still respected either way.
-export function decideGate(tool, domainTrust, amount = 0, domainOverride = null) {
+//     externally-visible effect (lands in someone else's inbox).
+// autonomous: true is for a future caller that decides to act on its OWN
+// initiative (e.g. a background job spotting a pattern and proposing
+// something, with no preceding user message asking for it) — that always
+// runs the full staged L1-L4 check for every gated tool, same as before
+// this rewrite. No caller passes this yet (see executeTool's two real
+// callers) — it exists so a proactive-suggestion feature can opt into real
+// trust-gating later without this function needing to change again.
+export function decideGate(tool, domainTrust, amount = 0, domainOverride = null, { autonomous = false } = {}) {
   const domain = domainOverride || GATED_DOMAINS[tool]
   if (!domain) return { mode: 'execute', domain: null }
   if (domainTrust.enabled === false) return { mode: 'blocked', domain, reason: 'domain_disabled' }
@@ -96,7 +98,7 @@ export function decideGate(tool, domainTrust, amount = 0, domainOverride = null)
   const isLargePayment = tool === 'initiate_payment' && amount >= 1000
   if (isLargePayment) return { mode: 'pending', domain }
 
-  if (tool !== 'send_email') return { mode: 'execute', domain }
+  if (!autonomous && tool !== 'send_email') return { mode: 'execute', domain }
 
   if (domainTrust.level <= 1) return { mode: 'blocked', domain, reason: 'observe_mode' }
   if (domainTrust.level >= 4) return { mode: 'execute', domain }

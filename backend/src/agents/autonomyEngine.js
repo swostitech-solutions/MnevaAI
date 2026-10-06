@@ -964,21 +964,23 @@ function recordLabel(module) {
 
 // ── Tool Executor ────────────────────────────────────────────────────────────
 // The gate check below runs ONCE, generically, for every domain-gated tool
-// (see GATED_DOMAINS and decideGate in pendingActions.service.js). As of the
-// decideGate rewrite, this only actually defers/blocks anything for
-// send_email (still staged L1-L4) and initiate_payment above the threshold
-// (always needs a tap) — every other gated tool (Finance/Health/Family data
-// entry, update_record, delete_record) now falls straight through to the
-// switch below, since those are always a direct response to something the
-// user just explicitly asked for in chat. `opts.skipGate` is used only by
-// resolvePendingAction's internal re-invocation on approval, so a
-// just-approved action doesn't get deferred to pending all over again.
+// (see GATED_DOMAINS and decideGate in pendingActions.service.js). Every
+// current caller is a direct user command (see executeTool's two real
+// callers), so this only actually defers/blocks anything for send_email
+// (still staged L1-L4) and initiate_payment above the threshold (always
+// needs a tap) — every other gated tool (Finance/Health/Family data entry,
+// update_record, delete_record) falls straight through to the switch below.
+// `opts.skipGate` is used only by resolvePendingAction's internal
+// re-invocation on approval, so a just-approved action doesn't get deferred
+// to pending all over again. `opts.autonomous` is for a future caller that
+// decided to act on its own initiative, with no preceding user request —
+// see the comment on decideGate; nothing passes this yet.
 export async function executeTool(name, input, userId, opts = {}) {
   const domain = domainForCall(name, input)
   if (domain && !opts.skipGate) {
     const domainTrust = await getDomainTrust(userId, domain)
     const amount = name === 'initiate_payment' ? Number(input.amount) || 0 : 0
-    const gate = decideGate(name, domainTrust, amount, domain)
+    const gate = decideGate(name, domainTrust, amount, domain, { autonomous: !!opts.autonomous })
     if (gate.mode === 'blocked') {
       const reasonMessage = blockedMessage(gate.reason, describeAction(name))
       // `error` mirrors every other failure path in this switch (the chat
