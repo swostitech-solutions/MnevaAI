@@ -11,6 +11,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { usePet } from './PetContext';
 import { useSocket } from '../../services/socket';
 import DateField from '../finance/DateField';
+import TimeField from '../finance/TimeField';
 
 const REMINDER_TYPES = ['Vaccination', 'Medication', 'Grooming', 'Vet Appointment', 'Feeding'];
 const GROOM_TYPES    = ['Bath', 'Hair Trimming', 'Nail Trimming', 'Dental Care', 'Ear Cleaning'];
@@ -31,6 +32,10 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
   // Grooming modal
   const [groomModal, setGroomModal] = useState(false);
   const [groomForm, setGroomForm]   = useState({ type: '', freq: '', lastDate: '', nextDate: '', notes: '' });
+  // Catches the edge case the picker's own minimumDate can't: Last Done
+  // changed to something after an already-picked Next Due.
+  const groomNextDueErr = (groomForm.lastDate && groomForm.nextDate && new Date(groomForm.nextDate) <= new Date(groomForm.lastDate))
+    ? 'Next Due must be after Last Done' : '';
 
   // Exercise modal
   const [exModal, setExModal]       = useState(false);
@@ -95,7 +100,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
   };
 
   const saveGroom = async () => {
-    if (!groomForm.type) return;
+    if (!groomForm.type || groomNextDueErr) return;
     const existing = activePet?.groomings || [];
     await patch('groomings', [{ id: Date.now().toString(), ...groomForm }, ...existing]);
     setGroomForm({ type: '', freq: '', lastDate: '', nextDate: '', notes: '' });
@@ -302,13 +307,18 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
-            <DateField label="Next Due" value={groomForm.nextDate} onChange={v => setGroomForm(f => ({ ...f, nextDate: v.slice(0, 10) }))} />
+            <DateField
+              label="Next Due" value={groomForm.nextDate}
+              minimumDate={groomForm.lastDate ? new Date(new Date(groomForm.lastDate).getTime() + 24 * 60 * 60 * 1000) : undefined}
+              onChange={v => setGroomForm(f => ({ ...f, nextDate: v.slice(0, 10) }))}
+            />
           </View>
         </View>
+        {groomNextDueErr ? <Text style={styles.errorText}>{groomNextDueErr}</Text> : null}
         <Text style={styles.fieldLabel}>Notes</Text>
         <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder}
           value={groomForm.notes} onChangeText={v => setGroomForm(f => ({ ...f, notes: v }))} />
-        <SaveBtn onPress={saveGroom} disabled={!groomForm.type} colors={['#9B72FF', '#7C5CE8']} label="Save Grooming" styles={styles} />
+        <SaveBtn onPress={saveGroom} disabled={!groomForm.type || !!groomNextDueErr} colors={['#9B72FF', '#7C5CE8']} label="Save Grooming" styles={styles} />
       </SheetModal>
 
       {/* ── Exercise Modal ── */}
@@ -366,9 +376,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Time (HH:MM)</Text>
-            <TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder}
-              value={remForm.time} onChangeText={v => setRemForm(f => ({ ...f, time: v }))} keyboardType="numeric" />
+            <TimeField label="Time" value={remForm.time} onChange={v => setRemForm(f => ({ ...f, time: v }))} />
           </View>
         </View>
         <Text style={styles.fieldLabel}>Notes</Text>
@@ -461,6 +469,7 @@ const createStyles = (theme) => StyleSheet.create({
   sheetTitle:     { fontSize: 20, fontWeight: '800', color: theme.text },
   fieldLabel:     { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   req:            { color: theme.danger },
+  errorText:      { fontSize: 12, color: theme.danger, marginBottom: 12 },
   input:          { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   rowFields:      { flexDirection: 'row' },
   chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
