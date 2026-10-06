@@ -195,7 +195,6 @@ export default function Finance({ navigation }) {
     { key: 'fd', label: 'Fixed Deposits', icon: 'lock', colors: ['#06B6D4', '#0891B2'], screen: 'FDScreen', count: activeFds.length, total: fdInvested, totalLabel: 'invested' },
     { key: 'portfolio', label: 'Portfolio', icon: 'trending-up', colors: ['#615FF8', '#4A47D5'], screen: 'PortfolioScreen', count: portfolio?.holdings?.length || 0, total: portfolio?.totalCurrent || 0, totalLabel: 'current value' },
   ];
-  const maxOverviewTotal = Math.max(...OVERVIEW.map(ov => ov.total), 1);
 
   const spendChartData = (spending?.categories || []).map((cat, i) => ({
     value: cat.amount || 0,
@@ -232,20 +231,6 @@ export default function Finance({ navigation }) {
         {/* Overview — totals for everything added via "Add to Finance" */}
         <View style={[styles.sectionCard, { marginTop: 4 }]}>
           <Text style={styles.sectionTitle}>Overview</Text>
-
-          <View style={styles.barChartWrap}>
-            {OVERVIEW.map((ov) => {
-              const pct = ov.total > 0 ? Math.max((ov.total / maxOverviewTotal) * 100, 6) : 2;
-              return (
-                <View key={ov.key} style={styles.barChartCol}>
-                  <View style={styles.barChartTrack}>
-                    <LinearGradient colors={ov.colors} style={[styles.barChartFill, { height: `${pct}%` }]} />
-                  </View>
-                  <Text style={styles.barChartLabel} numberOfLines={1}>{ov.label}</Text>
-                </View>
-              );
-            })}
-          </View>
 
           <View style={{ marginTop: 4 }}>
             {OVERVIEW.map((ov, i) => (
@@ -404,12 +389,6 @@ const createStyles = (theme) => StyleSheet.create({
   legendName: { flex: 1, fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginLeft: 6 },
   legendPct: { fontSize: 11, color: theme.faint, width: 32, textAlign: 'right' },
   legendAmount: { fontSize: 12, fontWeight: '700', color: theme.text, width: 76, textAlign: 'right', marginLeft: 6 },
-
-  barChartWrap: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 108, marginTop: 6, marginBottom: 4, paddingHorizontal: 2 },
-  barChartCol: { flex: 1, alignItems: 'center' },
-  barChartTrack: { width: 26, height: 84, backgroundColor: theme.soft, borderRadius: 13, justifyContent: 'flex-end', overflow: 'hidden' },
-  barChartFill: { width: '100%', borderRadius: 13 },
-  barChartLabel: { fontSize: 10, color: theme.faint, fontWeight: '700', marginTop: 8, textAlign: 'center' },
 
   chooserOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   chooserIconGrad: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
