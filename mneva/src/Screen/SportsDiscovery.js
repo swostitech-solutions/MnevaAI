@@ -28,7 +28,7 @@ Each object must have exactly these fields:
 { "teamA": string, "teamB": string, "scoreA": string, "scoreB": string, "info": string, "venue": string, "status": "${tab === "Live" ? "live" : tab === "Upcoming" ? "upcoming" : "result"}" }
 Rules:
 - scoreA/scoreB: empty string for upcoming matches, actual score for live/result
-- info: for live = current over/minute/quarter + competition name, for upcoming = date + time (IST), for result = winner + margin
+- info: for live = current over/minute/quarter + competition name, for upcoming = date + time, for result = winner + margin
 - venue: stadium/city name
 - Return 3 to 5 matches maximum
 - Use real current data based on your knowledge

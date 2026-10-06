@@ -799,7 +799,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
             <Text style={styles.fieldLabel}>Time *</Text>
             <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowTimePicker(true)}>
               <Feather name="clock" size={16} color={theme.accent} />
-              <Text style={styles.pickerBtnText}>{fmtTime(selectedTime)} IST</Text>
+              <Text style={styles.pickerBtnText}>{fmtTime(selectedTime)}</Text>
               <Feather name="chevron-down" size={16} color={theme.faint} />
             </TouchableOpacity>
             {showTimePicker && (
@@ -1569,7 +1569,7 @@ export default function AskAI({ navigation }) {
       ? start.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", year: "numeric" })
       : "";
     const timeStr = start
-      ? `${start.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true })} IST`
+      ? start.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true })
       : "";
     const durationMin = start && end ? Math.round((end - start) / 60000) : null;
     const durationStr = durationMin
