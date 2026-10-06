@@ -67,8 +67,12 @@ export function useFamilyItems(domain) {
         method: 'POST',
         body: { type, data, remindAt },
       });
-    } catch { /* socket updates state */ }
-    finally { setSaving(false); }
+      // On success the socket event updates state — nothing to do here.
+    } finally { setSaving(false); }
+    // Re-thrown (not swallowed): a caller that doesn't catch this just keeps
+    // its form open on failure instead of closing as if it had saved, same
+    // as every other failed-save path in the app. A caller that does catch
+    // it (to show the actual message) now can.
   }, [domain]);
 
   const update = useCallback(async (id, patch) => {
@@ -78,14 +82,14 @@ export function useFamilyItems(domain) {
         method: 'PATCH',
         body: patch,
       });
-    } catch { /* socket updates state */ }
-    finally { setSaving(false); }
+    } finally { setSaving(false); }
   }, [domain]);
 
   const remove = useCallback(async (id) => {
-    try {
-      await apiFetch(`/api/family-items/${domain}/${id}`, { method: 'DELETE' });
-    } catch { /* socket updates state */ }
+    // Re-thrown, same as create/update above — a caller that awaits and
+    // catches this (e.g. to keep a confirmation sheet open on failure) can;
+    // one that doesn't just gets an unhandled-rejection log, same as before.
+    await apiFetch(`/api/family-items/${domain}/${id}`, { method: 'DELETE' });
   }, [domain]);
 
   // Filter helpers

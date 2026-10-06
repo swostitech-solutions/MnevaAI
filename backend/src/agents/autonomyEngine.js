@@ -1771,6 +1771,12 @@ export async function executeTool(name, input, userId, opts = {}) {
       const missing = requiredForType.filter((f) => !fields[f])
       if (missing.length) return { success: false, error: `Missing required field(s) for ${domain}/${type}: ${missing.join(', ')}. Ask the user for these before retrying.` }
 
+      // Same checks POST/PATCH /family-items run — this tool creates a
+      // FamilyItem via Prisma directly, bypassing that route entirely.
+      const { validateFamilyItemData } = await import('../routes/familyItems.js')
+      const validationError = validateFamilyItemData(domain, type, fields)
+      if (validationError) return { success: false, error: `${validationError}. Ask the user to correct this before trying again.` }
+
       let remindAtDate = null
       if (remind_at) {
         const d = new Date(remind_at)

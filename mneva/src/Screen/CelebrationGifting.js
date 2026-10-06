@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback, useWindowDimensions, ActivityIndicator,
+  TouchableWithoutFeedback, useWindowDimensions, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import { useFamilyItems } from '../hooks/useFamilyItems';
 import { useSocket } from '../services/socket';
 import { useTheme } from '../context/ThemeContext';
 import DateField from './finance/DateField';
+import TimeField from './finance/TimeField';
 
 const OCCASION_TYPES = ['Birthday', 'Anniversary', 'Festival', 'Wedding', 'Graduation', 'Baby Shower', 'Other'];
 const GIFT_STATUS    = ['Idea', 'Ordered', 'Delivered', 'Given'];
@@ -22,20 +23,41 @@ const sBg    = (s, theme) => {
   return theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE';
 };
 
+const EMPTY_OCC  = { type: '', person: '', date: '', time: '', notes: '' };
+const EMPTY_GIFT = { person: '', occasionId: '', occasion: '', item: '', budget: '', status: 'Idea', notes: '' };
+
+// Mirrors validateFamilyItemData in backend/src/routes/familyItems.js — kept
+// here too so an invalid save is caught before a network round-trip.
+function occasionError(f) {
+  if (!f.type) return null // required-but-empty just disables Save, no need to nag before the user's picked anything
+  if (!f.person.trim()) return null
+  if (f.date && new Date(f.date) < new Date(new Date().toDateString())) return 'Date cannot be in the past';
+  if (f.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(f.time)) return 'Time must be a valid HH:MM time';
+  return null;
+}
+function giftError(f) {
+  if (!f.item.trim() || !f.person.trim()) return null
+  if (f.budget && !(Number(f.budget) >= 0)) return 'Budget must be zero or a positive number';
+  return null;
+}
+
 export default function CelebrationGifting({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const pad = width < 360 ? 16 : 20;
   const { theme } = useTheme();
   const styles = createStyles(theme);
-  const { items, loading, saving, create, remove, byType } = useFamilyItems('celebration');
+  const { items, loading, saving, create, update, remove, byType } = useFamilyItems('celebration');
   const { on } = useSocket();
 
   const [alert, setAlert]         = useState(null);
   const [occModal, setOccModal]   = useState(false);
   const [giftModal, setGiftModal] = useState(false);
-  const [occForm, setOccForm]     = useState({ type: '', person: '', date: '', time: '', notes: '' });
-  const [giftForm, setGiftForm]   = useState({ person: '', occasion: '', item: '', budget: '', status: 'Idea', notes: '' });
+  const [editOcc, setEditOcc]     = useState(null); // null = adding; otherwise the item being edited
+  const [editGift, setEditGift]   = useState(null);
+  const [occForm, setOccForm]     = useState(EMPTY_OCC);
+  const [giftForm, setGiftForm]   = useState(EMPTY_GIFT);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     const off = on('family:alert', (data) => {
@@ -48,21 +70,74 @@ export default function CelebrationGifting({ navigation }) {
   const gifts     = byType('gift');
   const totalBudget = gifts.reduce((sum, g) => sum + (parseFloat(g.data?.budget) || 0), 0);
 
+  const occErr  = occasionError(occForm);
+  const giftErr = giftError(giftForm);
+  const occCanSave  = !!occForm.type && occForm.person.trim() && !occErr;
+  const giftCanSave = giftForm.item.trim() && giftForm.person.trim() && !giftErr;
+
+  const openAddOcc  = () => { setEditOcc(null); setOccForm(EMPTY_OCC); setSaveError(''); setOccModal(true); };
+  const openEditOcc = (item) => {
+    setEditOcc(item);
+    setOccForm({ type: item.data.type || '', person: item.data.person || '', date: item.data.date || '', time: item.data.time || '', notes: item.data.notes || '' });
+    setSaveError('');
+    setOccModal(true);
+  };
+  const openAddGift  = () => { setEditGift(null); setGiftForm(EMPTY_GIFT); setSaveError(''); setGiftModal(true); };
+  const openEditGift = (item) => {
+    setEditGift(item);
+    setGiftForm({
+      person: item.data.person || '', occasionId: item.data.occasionId || '', occasion: item.data.occasion || '',
+      item: item.data.item || '', budget: item.data.budget != null ? String(item.data.budget) : '',
+      status: item.data.status || 'Idea', notes: item.data.notes || '',
+    });
+    setSaveError('');
+    setGiftModal(true);
+  };
+
   const saveOccasion = async () => {
-    if (!occForm.person.trim() || !occForm.type) return;
+    if (!occCanSave) return;
+    setSaveError('');
     const remindAt = (occForm.date && occForm.time)
       ? new Date(`${occForm.date}T${occForm.time}:00`).toISOString()
       : occForm.date ? new Date(`${occForm.date}T09:00:00`).toISOString() : null;
-    await create('occasion', occForm, remindAt);
-    setOccForm({ type: '', person: '', date: '', time: '', notes: '' });
-    setOccModal(false);
+    try {
+      if (editOcc) await update(editOcc.id, { data: occForm, remindAt });
+      else await create('occasion', occForm, remindAt);
+      setOccModal(false);
+    } catch (err) {
+      setSaveError(err.message || 'Could not save this occasion.');
+    }
   };
 
   const saveGift = async () => {
-    if (!giftForm.item.trim() || !giftForm.person.trim()) return;
-    await create('gift', giftForm);
-    setGiftForm({ person: '', occasion: '', item: '', budget: '', status: 'Idea', notes: '' });
-    setGiftModal(false);
+    if (!giftCanSave) return;
+    setSaveError('');
+    try {
+      if (editGift) await update(editGift.id, { data: giftForm });
+      else await create('gift', giftForm);
+      setGiftModal(false);
+    } catch (err) {
+      setSaveError(err.message || 'Could not save this gift.');
+    }
+  };
+
+  const deleteOccasion = () => {
+    Alert.alert('Delete Occasion', `Remove "${editOcc.data.person}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try { await remove(editOcc.id); setOccModal(false); }
+        catch (err) { setSaveError(err.message || 'Could not delete this occasion.'); }
+      } },
+    ]);
+  };
+  const deleteGift = () => {
+    Alert.alert('Delete Gift', `Remove "${editGift.data.item}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try { await remove(editGift.id); setGiftModal(false); }
+        catch (err) { setSaveError(err.message || 'Could not delete this gift.'); }
+      } },
+    ]);
   };
 
   return (
@@ -111,25 +186,29 @@ export default function CelebrationGifting({ navigation }) {
             </View>
           )}
 
-          <SectionHeader label="UPCOMING OCCASIONS" color={theme.danger} bg={theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'} onAdd={() => setOccModal(true)} styles={styles} />
+          <SectionHeader label="UPCOMING OCCASIONS" color={theme.danger} bg={theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'} onAdd={openAddOcc} styles={styles} />
           <View style={styles.card}>
-            {occasions.length === 0 ? <EmptyRow icon="gift" text="No occasions added" theme={theme} styles={styles} /> : occasions.map((o, i) => (
-              <View key={o.id} style={[styles.listRow, i < occasions.length - 1 && styles.divider]}>
-                <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED' }]}><Feather name="gift" size={14} color={theme.danger} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle}>{o.data.person}</Text>
-                  <Text style={styles.rowMeta}>{[o.data.type, o.data.date].filter(Boolean).join(' · ')}</Text>
-                </View>
-                {o.remindAt && <View style={styles.remindTag}><Feather name="bell" size={10} color={theme.danger} /><Text style={styles.remindTagText}>Reminder</Text></View>}
-                <TouchableOpacity onPress={() => remove(o.id)} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-              </View>
-            ))}
+            {occasions.length === 0 ? <EmptyRow icon="gift" text="No occasions added" theme={theme} styles={styles} /> : occasions.map((o, i) => {
+              const linkedGiftCount = gifts.filter(g => g.data?.occasionId === o.id).length;
+              return (
+                <TouchableOpacity key={o.id} style={[styles.listRow, i < occasions.length - 1 && styles.divider]} onPress={() => openEditOcc(o)} activeOpacity={0.7}>
+                  <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED' }]}><Feather name="gift" size={14} color={theme.danger} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{o.data.person}</Text>
+                    <Text style={styles.rowMeta}>{[o.data.type, o.data.date].filter(Boolean).join(' · ')}</Text>
+                  </View>
+                  {linkedGiftCount > 0 && <View style={styles.linkTag}><Feather name="link" size={9} color={theme.accentAlt} /><Text style={styles.linkTagText}>{linkedGiftCount}</Text></View>}
+                  {o.remindAt && <View style={styles.remindTag}><Feather name="bell" size={10} color={theme.danger} /><Text style={styles.remindTagText}>Reminder</Text></View>}
+                  <Feather name="chevron-right" size={16} color={theme.faint} style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          <SectionHeader label="GIFT IDEAS & TRACKER" color={theme.accentAlt} bg={theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'} onAdd={() => setGiftModal(true)} styles={styles} />
+          <SectionHeader label="GIFT IDEAS & TRACKER" color={theme.accentAlt} bg={theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'} onAdd={openAddGift} styles={styles} />
           <View style={styles.card}>
             {gifts.length === 0 ? <EmptyRow icon="package" text="No gifts added" theme={theme} styles={styles} /> : gifts.map((g, i) => (
-              <View key={g.id} style={[styles.listRow, i < gifts.length - 1 && styles.divider]}>
+              <TouchableOpacity key={g.id} style={[styles.listRow, i < gifts.length - 1 && styles.divider]} onPress={() => openEditGift(g)} activeOpacity={0.7}>
                 <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE' }]}><Feather name="package" size={14} color={theme.accentAlt} /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{g.data.item}</Text>
@@ -138,15 +217,19 @@ export default function CelebrationGifting({ navigation }) {
                 <View style={[styles.tag, { backgroundColor: sBg(g.data.status, theme) }]}>
                   <Text style={[styles.tagText, { color: sColor(g.data.status, theme) }]}>{g.data.status}</Text>
                 </View>
-                <TouchableOpacity onPress={() => remove(g.id)} style={{ padding: 4, marginLeft: 6 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-              </View>
+                <Feather name="chevron-right" size={16} color={theme.faint} style={{ marginLeft: 6 }} />
+              </TouchableOpacity>
             ))}
           </View>
         </ScrollView>
       )}
 
       {/* Occasion Modal */}
-      <SheetModal visible={occModal} onClose={() => setOccModal(false)} insets={insets} title="Add Occasion" gradColors={['#E0546E', '#C8405A']} icon="gift" theme={theme} styles={styles}>
+      <SheetModal
+        visible={occModal} onClose={() => setOccModal(false)} insets={insets}
+        title={editOcc ? 'Edit Occasion' : 'Add Occasion'} gradColors={['#E0546E', '#C8405A']} icon="gift" theme={theme} styles={styles}
+        onDelete={editOcc ? deleteOccasion : null} deleteColor={theme.danger}
+      >
         <FLabel styles={styles}>Occasion Type *</FLabel>
         <View style={styles.chipRow}>
           {OCCASION_TYPES.map(t => (
@@ -158,17 +241,22 @@ export default function CelebrationGifting({ navigation }) {
         <FLabel styles={styles}>Person / Name *</FLabel>
         <TextInput style={styles.input} placeholder="e.g. Mom's Birthday" placeholderTextColor={theme.placeholder} value={occForm.person} onChangeText={v => setOccForm(f => ({ ...f, person: v }))} />
         <View style={styles.rowFields}>
-          <View style={{ flex: 1 }}><DateField label="Date" value={occForm.date} onChange={v => setOccForm(f => ({ ...f, date: v.slice(0, 10) }))} /></View>
+          <View style={{ flex: 1 }}><DateField label="Date" value={occForm.date} minimumDate={new Date()} onChange={v => setOccForm(f => ({ ...f, date: v.slice(0, 10) }))} /></View>
           <View style={{ width: 12 }} />
-          <View style={{ flex: 1 }}><FLabel styles={styles}>Time (HH:MM)</FLabel><TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={occForm.time} onChangeText={v => setOccForm(f => ({ ...f, time: v }))} keyboardType="numeric" /></View>
+          <View style={{ flex: 1 }}><TimeField label="Time" value={occForm.time} onChange={v => setOccForm(f => ({ ...f, time: v }))} /></View>
         </View>
         <FLabel styles={styles}>Notes</FLabel>
         <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder} value={occForm.notes} onChangeText={v => setOccForm(f => ({ ...f, notes: v }))} />
-        <SaveBtn onPress={saveOccasion} disabled={!occForm.person.trim() || !occForm.type} colors={['#E0546E', '#C8405A']} label="Save Occasion" styles={styles} />
+        {(occErr || saveError) ? <Text style={styles.errorText}>{occErr || saveError}</Text> : null}
+        <SaveBtn onPress={saveOccasion} disabled={!occCanSave || saving} colors={['#E0546E', '#C8405A']} label={editOcc ? 'Update Occasion' : 'Save Occasion'} styles={styles} />
       </SheetModal>
 
       {/* Gift Modal */}
-      <SheetModal visible={giftModal} onClose={() => setGiftModal(false)} insets={insets} title="Add Gift" gradColors={['#9B72FF', '#7C5CE8']} icon="package" theme={theme} styles={styles}>
+      <SheetModal
+        visible={giftModal} onClose={() => setGiftModal(false)} insets={insets}
+        title={editGift ? 'Edit Gift' : 'Add Gift'} gradColors={['#9B72FF', '#7C5CE8']} icon="package" theme={theme} styles={styles}
+        onDelete={editGift ? deleteGift : null} deleteColor={theme.danger}
+      >
         <FLabel styles={styles}>Gift Item *</FLabel>
         <TextInput style={styles.input} placeholder="e.g. Silk saree, Watch" placeholderTextColor={theme.placeholder} value={giftForm.item} onChangeText={v => setGiftForm(f => ({ ...f, item: v }))} />
         <View style={styles.rowFields}>
@@ -176,8 +264,35 @@ export default function CelebrationGifting({ navigation }) {
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><FLabel styles={styles}>Budget (₹)</FLabel><TextInput style={styles.input} placeholder="e.g. 2000" placeholderTextColor={theme.placeholder} value={giftForm.budget} onChangeText={v => setGiftForm(f => ({ ...f, budget: v }))} keyboardType="numeric" /></View>
         </View>
-        <FLabel styles={styles}>Occasion</FLabel>
-        <TextInput style={styles.input} placeholder="e.g. Birthday, Diwali" placeholderTextColor={theme.placeholder} value={giftForm.occasion} onChangeText={v => setGiftForm(f => ({ ...f, occasion: v }))} />
+
+        <FLabel styles={styles}>Link to an Occasion (optional)</FLabel>
+        <View style={styles.chipRow}>
+          <TouchableOpacity
+            style={[styles.chip, !giftForm.occasionId && styles.chipActive]}
+            onPress={() => setGiftForm(f => ({ ...f, occasionId: '' }))}
+          >
+            <Text style={[styles.chipText, !giftForm.occasionId && styles.chipTextActive]}>None</Text>
+          </TouchableOpacity>
+          {occasions.map(o => (
+            <TouchableOpacity
+              key={o.id}
+              style={[styles.chip, giftForm.occasionId === o.id && styles.chipActive]}
+              onPress={() => setGiftForm(f => ({ ...f, occasionId: o.id, occasion: `${o.data.person} (${o.data.type})` }))}
+            >
+              <Text style={[styles.chipText, giftForm.occasionId === o.id && styles.chipTextActive]}>{o.data.person}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <FLabel styles={styles}>Occasion{giftForm.occasionId ? ' (linked above)' : ''}</FLabel>
+        <TextInput
+          style={[styles.input, !!giftForm.occasionId && styles.inputDisabled]}
+          editable={!giftForm.occasionId}
+          placeholder="e.g. Birthday, Diwali"
+          placeholderTextColor={theme.placeholder}
+          value={giftForm.occasion}
+          onChangeText={v => setGiftForm(f => ({ ...f, occasion: v }))}
+        />
+
         <FLabel styles={styles}>Status</FLabel>
         <View style={styles.chipRow}>
           {GIFT_STATUS.map(s => (
@@ -186,7 +301,8 @@ export default function CelebrationGifting({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
-        <SaveBtn onPress={saveGift} disabled={!giftForm.item.trim() || !giftForm.person.trim()} colors={['#9B72FF', '#7C5CE8']} label="Save Gift" styles={styles} />
+        {(giftErr || saveError) ? <Text style={styles.errorText}>{giftErr || saveError}</Text> : null}
+        <SaveBtn onPress={saveGift} disabled={!giftCanSave || saving} colors={['#9B72FF', '#7C5CE8']} label={editGift ? 'Update Gift' : 'Save Gift'} styles={styles} />
       </SheetModal>
     </SafeAreaView>
   );
@@ -214,7 +330,7 @@ function EmptyRow({ icon, text, theme, styles }) {
   return <View style={styles.emptyRow}><Feather name={icon} size={18} color={theme.disabled} /><Text style={styles.emptyText}>{text}</Text></View>;
 }
 function FLabel({ children, styles }) { return <Text style={styles.fieldLabel}>{children}</Text>; }
-function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles }) {
+function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles, onDelete, deleteColor }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -223,7 +339,12 @@ function SheetModal({ visible, onClose, insets, title, gradColors, icon, childre
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <LinearGradient colors={gradColors} style={styles.sheetIcon}><Feather name={icon} size={20} color="#FFFFFF" /></LinearGradient>
-            <Text style={styles.sheetTitle}>{title}</Text>
+            <Text style={[styles.sheetTitle, { flex: 1 }]}>{title}</Text>
+            {onDelete && (
+              <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
+                <Feather name="trash-2" size={18} color={deleteColor} />
+              </TouchableOpacity>
+            )}
           </View>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>
@@ -275,6 +396,8 @@ const createStyles = (theme) => StyleSheet.create({
   tagText: { fontSize: 10, fontWeight: '800' },
   remindTag: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 3 },
   remindTagText: { fontSize: 10, fontWeight: '700', color: theme.danger },
+  linkTag: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 3 },
+  linkTagText: { fontSize: 10, fontWeight: '700', color: theme.accentAlt },
   emptyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 20, justifyContent: 'center' },
   emptyText: { fontSize: 13, color: theme.faint, fontWeight: '600' },
   overlay: { flex: 1, backgroundColor: theme.overlay, justifyContent: 'flex-end' },
@@ -283,14 +406,17 @@ const createStyles = (theme) => StyleSheet.create({
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   sheetIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
+  inputDisabled: { opacity: 0.6 },
   rowFields: { flexDirection: 'row' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   chip: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderWidth: 1.5, borderColor: 'transparent' },
   chipActive: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderColor: theme.warning },
   chipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
   chipTextActive: { color: theme.warning },
+  errorText: { fontSize: 12, color: theme.danger, marginBottom: 12 },
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },

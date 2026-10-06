@@ -13,6 +13,50 @@ const fmt = (item) => ({
   createdAt: item.createdAt, updatedAt: item.updatedAt,
 })
 
+// ── Validation ─────────────────────────────────────────────────────────────────
+// `data` is a freeform Json column shared by every domain+type this generic
+// route serves, so there's no schema-level validation possible — this is it.
+// Only celebration's two types have real rules for now (matches the fixed
+// chip options CelebrationGifting.js uses); other domain+type combos pass
+// through unchanged until they get the same treatment.
+const OCCASION_TYPES = ['Birthday', 'Anniversary', 'Festival', 'Wedding', 'Graduation', 'Baby Shower', 'Other']
+const GIFT_STATUS = ['Idea', 'Ordered', 'Delivered', 'Given']
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
+
+function isPastDate(dateStr) {
+  if (!dateStr) return false
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+  return String(dateStr).slice(0, 10) < todayKey
+}
+
+// Checked at the route level (not inside validateFamilyItemData) since it
+// needs a DB lookup — confirms a gift's linked occasionId actually belongs
+// to this user, same ownership check every other FK-like reference in this
+// app gets.
+async function occasionBelongsToUser(userId, occasionId) {
+  if (!occasionId) return true
+  const occ = await prisma.familyItem.findUnique({ where: { id: occasionId } })
+  return !!occ && occ.userId === userId && occ.domain === 'celebration' && occ.type === 'occasion'
+}
+
+export function validateFamilyItemData(domain, type, data) {
+  if (domain === 'celebration' && type === 'occasion') {
+    if (!data.type || !OCCASION_TYPES.includes(data.type)) return `Occasion Type must be one of: ${OCCASION_TYPES.join(', ')}`
+    if (!data.person || !String(data.person).trim()) return 'Person / Name is required'
+    if (data.date && isPastDate(data.date)) return 'Date cannot be in the past — please pick today or a future date.'
+    if (data.time && !HHMM.test(String(data.time))) return 'Time must be a valid HH:MM (24h) time'
+    return null
+  }
+  if (domain === 'celebration' && type === 'gift') {
+    if (!data.item || !String(data.item).trim()) return 'Gift Item is required'
+    if (!data.person || !String(data.person).trim()) return 'For is required'
+    if (data.budget !== undefined && data.budget !== '' && data.budget != null && !(Number(data.budget) >= 0)) return 'Budget must be zero or a positive number'
+    if (data.status !== undefined && data.status !== '' && data.status != null && !GIFT_STATUS.includes(data.status)) return `Status must be one of: ${GIFT_STATUS.join(', ')}`
+    return null
+  }
+  return null
+}
+
 // ── AI Memory sync ────────────────────────────────────────────────────────────
 // Exported so autonomyEngine.js's add_family_item tool can reuse the exact
 // same memory-sync behavior as this HTTP route, instead of duplicating it.
@@ -78,6 +122,11 @@ familyItemsRouter.post('/:domain', async (req, res) => {
   try {
     const { type, data, remindAt } = req.body
     if (!type || !data) return res.status(400).json({ error: 'type and data required' })
+    const validationError = validateFamilyItemData(req.params.domain, type, data)
+    if (validationError) return res.status(400).json({ error: validationError })
+    if (data.occasionId && !(await occasionBelongsToUser(req.user.id, data.occasionId))) {
+      return res.status(400).json({ error: 'That linked occasion was not found' })
+    }
     let remindAtDate = null
     if (remindAt) {
       remindAtDate = new Date(remindAt)
@@ -106,6 +155,14 @@ familyItemsRouter.patch('/:domain/:id', async (req, res) => {
     const existing = await prisma.familyItem.findUnique({ where: { id: req.params.id } })
     if (!existing || existing.userId !== req.user.id) return res.status(404).json({ error: 'Not found' })
     const { data, done, remindAt } = req.body
+    if (data !== undefined) {
+      const merged = { ...(existing.data || {}), ...data }
+      const validationError = validateFamilyItemData(req.params.domain, existing.type, merged)
+      if (validationError) return res.status(400).json({ error: validationError })
+      if (merged.occasionId && !(await occasionBelongsToUser(req.user.id, merged.occasionId))) {
+        return res.status(400).json({ error: 'That linked occasion was not found' })
+      }
+    }
     let remindAtDate = existing.remindAt
     if (remindAt !== undefined) {
       remindAtDate = remindAt ? new Date(remindAt) : null
@@ -139,6 +196,22 @@ familyItemsRouter.delete('/:domain/:id', async (req, res) => {
     const existing = await prisma.familyItem.findUnique({ where: { id: req.params.id } })
     if (!existing || existing.userId !== req.user.id) return res.status(404).json({ error: 'Not found' })
     await prisma.familyItem.delete({ where: { id: req.params.id } })
+
+    // A gift linked to this occasion isn't deleted along with it (the link
+    // is optional, not ownership) — just drop the now-dangling occasionId so
+    // the gift falls back to showing its own free-text occasion label.
+    if (existing.domain === 'celebration' && existing.type === 'occasion') {
+      const linkedGifts = await prisma.familyItem.findMany({
+        where: { userId: req.user.id, domain: 'celebration', type: 'gift' },
+      })
+      for (const gift of linkedGifts) {
+        if (gift.data?.occasionId !== existing.id) continue
+        const { occasionId, ...rest } = gift.data
+        const updatedGift = await prisma.familyItem.update({ where: { id: gift.id }, data: { data: rest } })
+        emit(req.app.get('io'), req.user.id, `family:celebration:updated`, fmt(updatedGift))
+      }
+    }
+
     await syncFamilyMemory(req.user.id, req.params.domain, prisma)
     emit(req.app.get('io'), req.user.id, `family:${req.params.domain}:deleted`, { id: req.params.id })
     ledger.add({
