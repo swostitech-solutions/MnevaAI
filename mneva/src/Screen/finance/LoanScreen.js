@@ -19,6 +19,16 @@ const INTEREST_TYPES = ['Fixed', 'Floating'];
 const INTEREST_CALCULATIONS = ['Reducing Balance', 'Flat Rate'];
 const EMI_FREQUENCIES = ['Monthly', 'Bi-weekly', 'Quarterly'];
 
+// Mirrors LENDER_NAME_RE / ACCOUNT_NUMBER_RE in backend/src/routes/finance.js
+// — strips disallowed characters as the user types/pastes, instead of only
+// complaining after the fact. Lender/Bank Name is a real institution name
+// (letters only, but with the punctuation those actually use: "Punjab &
+// Sind Bank", "M/s. XYZ Finance"); Loan Account Number is alphanumeric in
+// practice (banks prefix with letters, e.g. "HL2024887732"), never purely
+// numeric-only, so this only blocks spaces/symbols, not letters.
+const sanitizeLenderName = (v) => v.replace(/[^A-Za-z\s.&'-]/g, '');
+const sanitizeAccountNumber = (v) => v.replace(/[^A-Za-z0-9]/g, '');
+
 const EMPTY_FORM = {
   name: '', loanType: '', lenderName: '', accountNumber: '', purpose: '', status: 'Active',
   originalAmount: '', outstandingAmount: '', amountPaid: '', processingFee: '', otherCharges: '',
@@ -121,11 +131,14 @@ export default function LoanScreen({ navigation }) {
       if (!(interestRate >= 0) || interestRate > 100) return 'Interest rate must be between 0 and 100';
     }
     if (form.emiAmount && !(Number(form.emiAmount) > 0)) return 'EMI amount must be a positive number';
+    if (form.accountNumber && form.accountNumber.trim().length < 4) return 'Loan account number must be at least 4 characters';
+    if (form.emiStartDate && form.nextEmiDate && new Date(form.nextEmiDate) <= new Date(form.emiStartDate)) return 'Next EMI date must be after the EMI start date';
     if (form.emiStartDate && form.emiEndDate && new Date(form.emiEndDate) <= new Date(form.emiStartDate)) return 'EMI end date must be after the EMI start date';
     if (form.numberOfEmis) {
       const numberOfEmis = Number(form.numberOfEmis);
       if (!Number.isInteger(numberOfEmis) || numberOfEmis <= 0) return 'Number of EMIs must be a positive whole number';
       if (form.emisPaid !== '' && Number(form.emisPaid) > numberOfEmis) return 'EMIs paid cannot be more than the number of EMIs';
+      if (form.emisRemaining !== '' && Number(form.emisRemaining) > numberOfEmis) return 'EMIs remaining cannot be more than the number of EMIs';
     }
     if (form.loanStartDate && form.loanMaturityDate && new Date(form.loanMaturityDate) <= new Date(form.loanStartDate)) return 'Loan maturity date must be after the loan start date';
     if (form.paymentDay !== '') {
@@ -242,10 +255,10 @@ export default function LoanScreen({ navigation }) {
             </View>
 
             <Text style={styles.fieldLabel}>Lender / Bank Name <Text style={styles.required}>*</Text></Text>
-            <TextInput style={styles.input} placeholder="e.g. HDFC Bank" placeholderTextColor={theme.placeholder} value={form.lenderName} onChangeText={v => setField('lenderName', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HDFC Bank" placeholderTextColor={theme.placeholder} value={form.lenderName} onChangeText={v => setField('lenderName', sanitizeLenderName(v))} />
 
             <Text style={styles.fieldLabel}>Loan Account Number</Text>
-            <TextInput style={styles.input} placeholder="e.g. ••••4521" placeholderTextColor={theme.placeholder} value={form.accountNumber} onChangeText={v => setField('accountNumber', v)} />
+            <TextInput style={styles.input} placeholder="e.g. HL2024887732" placeholderTextColor={theme.placeholder} maxLength={20} value={form.accountNumber} onChangeText={v => setField('accountNumber', sanitizeAccountNumber(v))} />
 
             <Text style={styles.fieldLabel}>Purpose</Text>
             <TextInput style={styles.input} placeholder="e.g. Home renovation" placeholderTextColor={theme.placeholder} value={form.purpose} onChangeText={v => setField('purpose', v)} />
@@ -317,8 +330,18 @@ export default function LoanScreen({ navigation }) {
             </View>
 
             <DateField label="EMI Start Date" required value={form.emiStartDate} onChange={v => setField('emiStartDate', v)} />
-            <DateField label="Next EMI Date" value={form.nextEmiDate} onChange={v => setField('nextEmiDate', v)} />
-            <DateField label="EMI End Date" value={form.emiEndDate} onChange={v => setField('emiEndDate', v)} />
+            <DateField
+              label="Next EMI Date"
+              value={form.nextEmiDate}
+              onChange={v => setField('nextEmiDate', v)}
+              minimumDate={form.emiStartDate ? new Date(new Date(form.emiStartDate).getTime() + 24 * 60 * 60 * 1000) : undefined}
+            />
+            <DateField
+              label="EMI End Date"
+              value={form.emiEndDate}
+              onChange={v => setField('emiEndDate', v)}
+              minimumDate={form.emiStartDate ? new Date(new Date(form.emiStartDate).getTime() + 24 * 60 * 60 * 1000) : undefined}
+            />
 
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
@@ -337,7 +360,12 @@ export default function LoanScreen({ navigation }) {
 
             <Text style={styles.sectionLabel}>LOAN DATES</Text>
             <DateField label="Loan Start Date" required value={form.loanStartDate} onChange={v => setField('loanStartDate', v)} />
-            <DateField label="Loan Maturity Date" value={form.loanMaturityDate} onChange={v => setField('loanMaturityDate', v)} />
+            <DateField
+              label="Loan Maturity Date"
+              value={form.loanMaturityDate}
+              onChange={v => setField('loanMaturityDate', v)}
+              minimumDate={form.loanStartDate ? new Date(new Date(form.loanStartDate).getTime() + 24 * 60 * 60 * 1000) : undefined}
+            />
 
             <Text style={styles.sectionLabel}>PAYMENT</Text>
             <Text style={styles.fieldLabel}>Auto Debit?</Text>

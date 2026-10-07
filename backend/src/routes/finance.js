@@ -22,6 +22,16 @@ export const LOAN_INTEREST_TYPES = ['Fixed', 'Floating']
 export const LOAN_INTEREST_CALCULATIONS = ['Reducing Balance', 'Flat Rate']
 export const LOAN_EMI_FREQUENCIES = ['Monthly', 'Bi-weekly', 'Quarterly']
 
+// Lender/Bank Name is a real-world institution name (SBI, HDFC Bank, Punjab
+// & Sind Bank, M/s. XYZ Finance Ltd.) — letters only, but with the
+// punctuation those actually use. No digits, unlike a loan name/label.
+const LENDER_NAME_RE = /^[A-Za-zÀ-￿\s.&'-]+$/
+// Loan account numbers are alphanumeric in practice — banks prefix them
+// with letters (confirmed against production data: "HL2024887732" is a
+// real-looking HDFC home-loan account number) — so this can't be
+// digits-only. Just blocks spaces/symbols and obviously-wrong lengths.
+const ACCOUNT_NUMBER_RE = /^[A-Za-z0-9]{4,20}$/
+
 // Validates a loan's full, merged field set — not just whatever one request
 // happened to touch — so a PATCH that only changes one field still catches
 // a cross-field problem like an EMI end date that's now before an
@@ -34,6 +44,10 @@ export function validateLoanData(d) {
   if (!d.name || !String(d.name).trim()) return 'name is required'
   if (!LOAN_TYPES.includes(d.loanType)) return `loanType must be one of: ${LOAN_TYPES.join(', ')}`
   if (!d.lenderName || !String(d.lenderName).trim()) return 'lenderName is required'
+  if (!LENDER_NAME_RE.test(d.lenderName.trim())) return 'lenderName must contain letters only (no digits)'
+  if (d.accountNumber != null && String(d.accountNumber).trim() && !ACCOUNT_NUMBER_RE.test(String(d.accountNumber).trim())) {
+    return 'accountNumber must be 4-20 letters/digits, with no spaces or symbols'
+  }
   if (d.status != null && !LOAN_STATUSES.includes(d.status)) return `status must be one of: ${LOAN_STATUSES.join(', ')}`
 
   if (!(d.originalAmount > 0)) return 'originalAmount must be a positive number'
@@ -52,7 +66,11 @@ export function validateLoanData(d) {
 
   const emiStart = d.emiStartDate ? new Date(d.emiStartDate) : null
   if (!emiStart || isNaN(emiStart.getTime())) return 'emiStartDate is required and must be a valid date'
-  if (d.nextEmiDate != null && isNaN(new Date(d.nextEmiDate).getTime())) return 'nextEmiDate is not a valid date'
+  if (d.nextEmiDate != null) {
+    const nextEmi = new Date(d.nextEmiDate)
+    if (isNaN(nextEmi.getTime())) return 'nextEmiDate is not a valid date'
+    if (nextEmi <= emiStart) return 'nextEmiDate must be after emiStartDate'
+  }
   if (d.emiEndDate != null) {
     const emiEnd = new Date(d.emiEndDate)
     if (isNaN(emiEnd.getTime())) return 'emiEndDate is not a valid date'
@@ -64,7 +82,10 @@ export function validateLoanData(d) {
     if (!Number.isInteger(d.emisPaid) || d.emisPaid < 0) return 'emisPaid must be zero or a positive whole number'
     if (d.emisPaid > d.numberOfEmis) return 'emisPaid cannot be more than numberOfEmis'
   }
-  if (d.emisRemaining != null && (!Number.isInteger(d.emisRemaining) || d.emisRemaining < 0)) return 'emisRemaining must be zero or a positive whole number'
+  if (d.emisRemaining != null) {
+    if (!Number.isInteger(d.emisRemaining) || d.emisRemaining < 0) return 'emisRemaining must be zero or a positive whole number'
+    if (d.emisRemaining > d.numberOfEmis) return 'emisRemaining cannot be more than numberOfEmis'
+  }
 
   const loanStart = d.loanStartDate ? new Date(d.loanStartDate) : null
   if (!loanStart || isNaN(loanStart.getTime())) return 'loanStartDate is required and must be a valid date'
