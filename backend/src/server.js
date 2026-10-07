@@ -32,6 +32,7 @@ import documentsRoutes from "./routes/documents.js";
 import vaultRoutes from "./routes/vault.js";
 import preferencesRoutes from "./routes/preferences.js";
 import gmailRoutes, { gmailCallbackHandler } from "./routes/gmail.js";
+import slackRoutes, { slackCallbackHandler } from "./routes/slack.js";
 import calendarRoutes, { calendarCallbackHandler } from "./routes/calendar.js";
 import googleFitRoutes, {
   googleFitCallbackHandler,
@@ -391,6 +392,7 @@ app.get("/privacy-policy", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/device-notifications", deviceNotificationRoutes);
 app.get("/api/gmail/callback", gmailCallbackHandler);
+app.get("/api/slack/callback", slackCallbackHandler);
 app.get("/api/calendar/callback", calendarCallbackHandler);
 app.get("/api/googlefit/callback", googleFitCallbackHandler);
 app.get("/api/contacts/callback", googleContactsCallbackHandler);
@@ -406,7 +408,11 @@ app.get("/api/gmail/config-status", (req, res) => {
   );
   res.json({ configured });
 });
+app.get("/api/slack/config-status", (req, res) => {
+  res.json({ configured: !!(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET) });
+});
 app.use("/api/gmail", authMiddleware, gmailRoutes);
+app.use("/api/slack", authMiddleware, slackRoutes);
 app.use("/api/calendar", authMiddleware, calendarRoutes);
 app.use("/api/googlefit", authMiddleware, googleFitRoutes);
 app.use("/api/contacts", authMiddleware, contactsRoutes);

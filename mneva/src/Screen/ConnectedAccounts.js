@@ -164,6 +164,18 @@ const INTEGRATIONS = [
     connectMethod: 'oauth',
   },
   {
+    id: 'slack',
+    title: 'Slack',
+    subtitle: 'Get Mneva alerts in Slack',
+    icon: 'hash',
+    color: '#9B72FF',
+    bg: '#F3EFFE',
+    statusEndpoint: '/api/slack/status',
+    connectEndpoint: '/api/slack/connect',
+    disconnectEndpoint: '/api/slack/disconnect',
+    connectMethod: 'oauth',
+  },
+  {
     id: 'zerodha',
     title: 'Zerodha / Groww',
     subtitle: 'Portfolio & SIP tracking',
@@ -513,7 +525,7 @@ export default function ConnectedAccounts({ navigation }) {
                 <View style={styles.textWrap}>
                   <Text style={styles.rowTitle}>{intg.title}</Text>
                   <Text style={styles.rowSubtitle}>
-                    {isConnected && status?.email ? status.email : intg.subtitle}
+                    {isConnected && (status?.email || status?.team) ? (status.email || status.team) : intg.subtitle}
                   </Text>
                 </View>
 
