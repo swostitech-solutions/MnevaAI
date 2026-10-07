@@ -55,6 +55,14 @@ const WORKSPACE_APPS = [
     colors: ["#1A73E8", "#0D47A1"],
     screen: "GoogleDrive",
   },
+  {
+    id: "w6",
+    title: "Slack",
+    subtitle: "Messaging",
+    icon: "hash",
+    colors: ["#9B72FF", "#7C5CE8"],
+    screen: "Slack",
+  },
 ];
 
 export default function GoogleWorkspace({ navigation }) {

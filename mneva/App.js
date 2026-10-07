@@ -38,6 +38,7 @@ import Docs from "./src/Screen/Docs";
 import Sheets from "./src/Screen/Sheets";
 import Slides from "./src/Screen/Slides";
 import GoogleDrive from "./src/Screen/GoogleDrive";
+import Slack from "./src/Screen/Slack";
 import MediaDiscovery from "./src/Screen/MediaDiscovery";
 import MusicDiscovery from "./src/Screen/MusicDiscovery";
 import MovieDiscovery from "./src/Screen/MovieDiscovery";
@@ -526,6 +527,7 @@ function AppInner() {
           <Stack.Screen name="Sheets" component={Sheets} />
           <Stack.Screen name="Slides" component={Slides} />
           <Stack.Screen name="GoogleDrive" component={GoogleDrive} />
+          <Stack.Screen name="Slack" component={Slack} />
           <Stack.Screen name="MediaDiscovery" component={MediaDiscovery} />
           <Stack.Screen name="MusicDiscovery" component={MusicDiscovery} />
           <Stack.Screen name="MovieDiscovery" component={MovieDiscovery} />
