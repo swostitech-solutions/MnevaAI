@@ -82,7 +82,7 @@ export default function GoogleWorkspace({ navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
           <Feather name="arrow-left" size={20} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Google Workspace</Text>
+        <Text style={styles.topBarTitle}>Workspace</Text>
         <View style={{ width: 40 }} />
       </View>
 

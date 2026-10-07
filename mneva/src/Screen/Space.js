@@ -72,7 +72,7 @@ const MODULES = [
   },
   {
     id: "7",
-    title: "Google Workspace",
+    title: "Workspace",
     subtitle: "Tasks, Docs, Sheets & more",
     icon: "grid",
     iconColor: "#4285F4",
