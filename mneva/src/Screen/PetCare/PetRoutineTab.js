@@ -23,6 +23,17 @@ const FREQ_OPTIONS   = ['Daily', 'Every 2 days', 'Weekly', 'Bi-weekly', 'Monthly
 // doesn't get walked for 3000 minutes).
 const sanitizeDigitsOnly = (v) => v.replace(/[^0-9]/g, '');
 const MAX_DURATION_MIN = 180;
+// Stored as plain minutes, always displayed as a friendly duration: up to
+// an hour shows as "45min", past an hour it converts to hr+min ("1hr30min")
+// instead of making the user do that math themselves.
+const formatDuration = (mins) => {
+  const n = Number(mins);
+  if (!n || n <= 0) return '';
+  if (n <= 60) return `${n}min`;
+  const hrs = Math.floor(n / 60);
+  const rem = n % 60;
+  return rem > 0 ? `${hrs}hr${rem}min` : `${hrs}hr`;
+};
 
 const EMPTY_GROOM = { type: '', freq: '', lastDate: '', nextDate: '', notes: '' };
 const EMPTY_EX    = { type: '', duration: '', freq: '', time: '', notes: '' };
@@ -297,7 +308,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
               <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD' }]}><Feather name="zap" size={14} color={theme.info} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{e.type}</Text>
-                <Text style={styles.rowMeta}>{[e.duration ? `${e.duration} min` : null, e.freq, e.time].filter(Boolean).join(' · ')}</Text>
+                <Text style={styles.rowMeta}>{[formatDuration(e.duration), e.freq, e.time].filter(Boolean).join(' · ')}</Text>
               </View>
               <Feather name="chevron-right" size={16} color={theme.faint} />
             </TouchableOpacity>
@@ -416,6 +427,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
             <Text style={styles.fieldLabel}>Duration (minutes)</Text>
             <TextInput style={styles.input} placeholder="e.g. 30" placeholderTextColor={theme.placeholder} keyboardType="number-pad" maxLength={3}
               value={exForm.duration} onChangeText={v => setExForm(f => ({ ...f, duration: sanitizeDigitsOnly(v) }))} />
+            {!exDurationErr && formatDuration(exForm.duration) ? <Text style={styles.durationHint}>= {formatDuration(exForm.duration)}</Text> : null}
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
@@ -557,6 +569,7 @@ const createStyles = (theme) => StyleSheet.create({
   fieldLabel:     { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   req:            { color: theme.danger },
   errorText:      { fontSize: 12, color: theme.danger, marginBottom: 12 },
+  durationHint:   { fontSize: 11, color: theme.faint, marginTop: -10, marginBottom: 12 },
   input:          { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },
   rowFields:      { flexDirection: 'row' },
   chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
