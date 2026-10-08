@@ -131,22 +131,64 @@ function LiveDot({ styles }) {
 // matching the Twin Diary screen's visual language — this is the agent's
 // own analysis, not something the user typed in, so it reads differently
 // from a plain task card.
-function AutoTimelineRow({ item, isLast, styles }) {
+//
+// Same past-due Yes/No prompt as MeetingCard — a bill, EMI, medication
+// refill, pet reminder etc. whose date has already passed gets the same
+// proactive "did this happen?" treatment instead of just quietly sitting
+// there. These items come from many different backend modules (bills,
+// EMIs, family tasks, pet reminders...) with no one shared "mark complete"
+// endpoint, so the Yes/No answer here is tracked locally for this session
+// only, same tier as a meeting's "No, still pending" answer already is.
+function AutoTimelineRow({ item, isLast, done, confirmedPending, onCheck, onConfirmPending, styles, theme }) {
+  const isPast = !!item.date && new Date(item.date).getTime() < Date.now();
+  const awaitingConfirmation = isPast && !done && !confirmedPending;
   return (
     <View style={styles.timelineRow}>
       <View style={styles.timelineLeftCol}>
         <View style={[styles.timelineDot, { backgroundColor: item.color }]} />
         {!isLast && <View style={styles.timelineLine} />}
       </View>
-      <View style={[styles.autoItemCard, { borderLeftColor: item.color, flex: 1, marginLeft: 10 }]}>
-        <View style={[styles.autoItemIconWrap, { backgroundColor: `${item.color}1A` }]}>
-          <Feather name={item.icon} size={16} color={item.color} />
+      <View style={[
+        styles.autoItemCard, { borderLeftColor: item.color, flex: 1, marginLeft: 10 },
+        awaitingConfirmation && styles.autoItemCardOverdue, done && styles.cardDone,
+      ]}>
+        <View style={styles.autoItemTopRow}>
+          {awaitingConfirmation ? (
+            <View style={styles.autoConfirmIconWrap}>
+              <Feather name="help-circle" size={16} color={theme.warning} />
+            </View>
+          ) : (
+            <View style={[styles.autoItemIconWrap, { backgroundColor: `${item.color}1A` }]}>
+              <Feather name={item.icon} size={16} color={item.color} />
+            </View>
+          )}
+          <View style={styles.autoItemBody}>
+            <Text style={[styles.autoItemTitle, done && styles.cardTitleChecked]} numberOfLines={1}>{item.title}</Text>
+            {!!item.subtitle && <Text style={styles.autoItemSubtitle} numberOfLines={1}>{item.subtitle}</Text>}
+          </View>
+          {!!item.date && <Text style={styles.autoItemDate}>{fmtAutoDate(item.date)}</Text>}
         </View>
-        <View style={styles.autoItemBody}>
-          <Text style={styles.autoItemTitle} numberOfLines={1}>{item.title}</Text>
-          {!!item.subtitle && <Text style={styles.autoItemSubtitle} numberOfLines={1}>{item.subtitle}</Text>}
-        </View>
-        {!!item.date && <Text style={styles.autoItemDate}>{fmtAutoDate(item.date)}</Text>}
+
+        {awaitingConfirmation && (
+          <View style={styles.confirmRow}>
+            <Text style={styles.confirmPrompt}>Did you complete this?</Text>
+            <View style={styles.confirmBtnRow}>
+              <TouchableOpacity style={styles.confirmNoBtn} onPress={() => onConfirmPending(item)} activeOpacity={0.8}>
+                <Text style={styles.confirmNoText}>No, pending</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmYesBtn} onPress={() => onCheck(item)} activeOpacity={0.85}>
+                <Feather name="check" size={12} color="#FFFFFF" />
+                <Text style={styles.confirmYesText}>Yes, done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        {!awaitingConfirmation && confirmedPending && !done && (
+          <View style={styles.pendingTag}>
+            <Feather name="clock" size={10} color={theme.warning} />
+            <Text style={styles.pendingTagText}>Still pending · past due</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -257,6 +299,8 @@ export default function Priorities({ navigation }) {
   const [allCalendarItems, setAllCalendarItems] = useState([]);
   const [doneMeetingIds, setDoneMeetingIds] = useState(new Set());
   const [confirmedPendingIds, setConfirmedPendingIds] = useState(new Set());
+  const [doneAutoIds, setDoneAutoIds] = useState(new Set());
+  const [confirmedAutoPendingIds, setConfirmedAutoPendingIds] = useState(new Set());
   const [urgentEmails, setUrgentEmails] = useState([]);
   const [suggestedMeetings, setSuggestedMeetings] = useState([]);
   const [meetingActed, setMeetingActed] = useState({});
@@ -486,6 +530,15 @@ export default function Priorities({ navigation }) {
     setConfirmedPendingIds(prev => new Set([...prev, m.id]));
   };
 
+  // Same pair, for AI-detected items — see the comment on AutoTimelineRow
+  // for why this is local-only instead of calling a backend "mark done".
+  const handleCheckAutoItem = (item) => {
+    setDoneAutoIds(prev => new Set([...prev, item.id]));
+  };
+  const handleConfirmAutoPending = (item) => {
+    setConfirmedAutoPendingIds(prev => new Set([...prev, item.id]));
+  };
+
 
 
   const totalPending = pendingTasks.length + urgentEmails.length + suggestedMeetings.length;
@@ -700,7 +753,14 @@ export default function Priorities({ navigation }) {
                       styles={styles}
                     />
                     {autoToday.map((item, i) => (
-                      <AutoTimelineRow key={item.id} item={item} isLast={i === autoToday.length - 1} styles={styles} />
+                      <AutoTimelineRow
+                        key={item.id} item={item} isLast={i === autoToday.length - 1}
+                        done={doneAutoIds.has(item.id)}
+                        confirmedPending={confirmedAutoPendingIds.has(item.id)}
+                        onCheck={handleCheckAutoItem}
+                        onConfirmPending={handleConfirmAutoPending}
+                        styles={styles} theme={theme}
+                      />
                     ))}
                   </>
                 )}
@@ -737,7 +797,14 @@ export default function Priorities({ navigation }) {
                           styles={styles}
                         />
                         {autoUpcoming.map((item, i) => (
-                          <AutoTimelineRow key={item.id} item={item} isLast={i === autoUpcoming.length - 1} styles={styles} />
+                          <AutoTimelineRow
+                            key={item.id} item={item} isLast={i === autoUpcoming.length - 1}
+                            done={doneAutoIds.has(item.id)}
+                            confirmedPending={confirmedAutoPendingIds.has(item.id)}
+                            onCheck={handleCheckAutoItem}
+                            onConfirmPending={handleConfirmAutoPending}
+                            styles={styles} theme={theme}
+                          />
                         ))}
                       </>
                     )}
@@ -917,10 +984,18 @@ const createStyles = (theme) => StyleSheet.create({
 
   // Auto-detected item card (from the cross-module analysis)
   autoItemCard: {
-    flexDirection: "row", alignItems: "center", backgroundColor: theme.card, borderRadius: 20, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3,
+    backgroundColor: theme.card, borderRadius: 20, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12, borderLeftWidth: 3,
     shadowColor: "#0F1720", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2,
   },
+  // Same past-due highlight as meetCardOverdue — borderColor sets the other
+  // three sides; the item's own category color (set inline) keeps owning
+  // the left edge since borderLeftColor is a separate style key.
+  autoItemCardOverdue: { borderWidth: 1, borderColor: theme.isDark ? "rgba(255,184,77,0.5)" : "#F5CB7C" },
+  autoItemTopRow: { flexDirection: "row", alignItems: "center" },
   autoItemIconWrap: { width: 36, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
+  // Same size as autoItemIconWrap (not confirmIconWrap's smaller 24px) so
+  // swapping to the overdue help-circle icon doesn't visibly shrink the row.
+  autoConfirmIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: theme.isDark ? "rgba(255,184,77,0.16)" : "#FEF3C7", alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
   autoItemBody: { flex: 1 },
   autoItemTitle: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 2 },
   autoItemSubtitle: { fontSize: 12, color: theme.faint },
