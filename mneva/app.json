@@ -98,7 +98,25 @@
           "locationWhenInUsePermission": "Mneva uses your location to show the weather for where you actually are, instead of a manually set city."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Priorities",
+              "label": "Mneva — Today",
+              "description": "Today's priorities at a glance — tap to open",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 3,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "extra": {
       "eas": {

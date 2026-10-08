@@ -91,6 +91,9 @@ const DEEP_LINK_ROUTES = {
   calendar: "Priorities",
   googlefit: "Health",
   settings: "ConnectedAccounts",
+  // Target of the home-screen widget's tap (see
+  // src/widgets/PrioritiesWidget.js's OPEN_URI clickAction).
+  priorities: "Priorities",
 };
 
 // Maps drive OAuth callback query params → screen to return to

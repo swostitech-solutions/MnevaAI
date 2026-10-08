@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated,
+  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated, Platform,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { requestWidgetUpdate } from 'react-native-android-widget';
 import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
+import { PrioritiesWidget } from '../widgets/PrioritiesWidget';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const TABS = ["TODAY", "UPCOMING", "MEETINGS"];
 
@@ -466,6 +468,35 @@ export default function Priorities({ navigation }) {
   const upcomingItems = allCalendarItems
     .filter(m => new Date(m.start) > todayEnd)
     .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  // Keep the home-screen widget in sync with whatever's actually on screen.
+  // The 30-min background update (see src/widgets/widgetTaskHandler.js)
+  // covers the case where the app isn't open at all; this covers "I just
+  // completed something in-app, update the widget right now" instead of
+  // waiting for that timer. Deliberately depends on lengths/size, not the
+  // arrays themselves (recreated every render) — good enough to catch a
+  // real change without redrawing the widget on every render.
+  useEffect(() => {
+    if (Platform.OS !== 'android' || loading) return;
+    const undoneTodayReminders = todayReminders.filter(m => !doneMeetingIds.has(m.id));
+    const count = pendingTasks.length + undoneTodayReminders.length;
+    const hasOverdue = undoneTodayReminders.some(m => new Date(m.start).getTime() < Date.now());
+    const nextItem = undoneTodayReminders.find(m => new Date(m.start).getTime() >= Date.now()) || undoneTodayReminders[0];
+    let nextTitle = null, nextTime = null;
+    if (nextItem) {
+      nextTitle = nextItem.title;
+      nextTime = new Date(nextItem.start).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+    } else if (pendingTasks[0]) {
+      nextTitle = pendingTasks[0].title;
+    }
+    requestWidgetUpdate({
+      widgetName: 'Priorities',
+      renderWidget: () => (
+        <PrioritiesWidget signedIn count={count} nextTitle={nextTitle} nextTime={nextTime} hasOverdue={hasOverdue} />
+      ),
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTasks.length, todayReminders.length, doneMeetingIds.size, loading]);
 
   // Everything the cross-module analysis (get_full_summary) surfaced —
   // bills, EMIs, subscriptions, medication refills, pet reminders, family
