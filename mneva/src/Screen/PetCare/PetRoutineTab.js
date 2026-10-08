@@ -263,20 +263,14 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
           onAdd={openEditFeed} addLabel={feeding ? 'Edit' : 'Add'} addIcon={feeding ? 'edit-2' : 'plus'} styles={styles} />
         <View style={styles.card}>
           {!feeding ? <EmptyRow icon="coffee" text="No feeding schedule added" theme={theme} styles={styles} /> : (
-            [
-              { label: 'Food', value: feeding.foodName, icon: 'coffee' },
-              { label: 'Quantity', value: feeding.qty, icon: 'bar-chart-2' },
-              { label: 'Times/day', value: feeding.times, icon: 'clock' },
-              { label: 'Schedule', value: feeding.schedule, icon: 'calendar' },
-              { label: 'Treats', value: feeding.treats, icon: 'star' },
-              { label: 'Diet Restrictions', value: feeding.dietRestrictions, icon: 'alert-circle' },
-            ].filter(r => r.value).map((row, i, arr) => (
-              <View key={i} style={[styles.listRow, i < arr.length - 1 && styles.divider]}>
-                <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' }]}><Feather name={row.icon} size={13} color={theme.accent} /></View>
-                <Text style={styles.rowLabel}>{row.label}</Text>
-                <Text style={styles.rowValue}>{row.value}</Text>
+            <TouchableOpacity style={styles.listRow} onPress={openEditFeed} activeOpacity={0.7}>
+              <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' }]}><Feather name="coffee" size={14} color={theme.accent} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{feeding.foodName}</Text>
+                <Text style={styles.rowMeta}>{[feeding.qty, feeding.times ? `${feeding.times}x/day` : null, feeding.schedule].filter(Boolean).join(' · ')}</Text>
               </View>
-            ))
+              <Feather name="chevron-right" size={16} color={theme.faint} />
+            </TouchableOpacity>
           )}
         </View>
 
