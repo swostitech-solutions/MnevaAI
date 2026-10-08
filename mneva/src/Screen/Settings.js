@@ -19,9 +19,17 @@ import {
   isNotificationCaptureEnabled,
   notificationCaptureAvailable,
 } from '../services/notificationCapture';
+import {
+  enableCallLogSync,
+  disableCallLogSync,
+  isCallLogSyncEnabled,
+  callLogAccessAvailable,
+  hasCallLogPermission,
+} from '../services/callLogSync';
 import { useTheme } from '../context/ThemeContext';
 import { getPlanDisplayName, getNextPlan } from '../utils/plan';
 import NotificationAccessDisclosure from '../components/NotificationAccessDisclosure';
+import CallLogAccessDisclosure from '../components/CallLogAccessDisclosure';
 
 const TABS = ['Trust', 'Privacy', 'Notifications', 'Account'];
 
@@ -488,6 +496,9 @@ export default function Settings({ navigation, route }) {
   const [phoneCaptureEnabled, setPhoneCaptureEnabled] = useState(false);
   const [phoneCaptureBusy, setPhoneCaptureBusy] = useState(false);
   const [phoneCaptureDisclosure, setPhoneCaptureDisclosure] = useState(false);
+  const [callLogEnabled, setCallLogEnabled] = useState(false);
+  const [callLogBusy, setCallLogBusy] = useState(false);
+  const [callLogDisclosure, setCallLogDisclosure] = useState(false);
   // Device-local (not synced to the account, unlike PRIVACY_TOGGLES above) —
   // whether biometrics unlock the app itself, checked once on mount.
   const [appLockOn, setAppLockOn] = useState(true);
@@ -592,6 +603,24 @@ export default function Settings({ navigation, route }) {
     const unsub = navigation?.addListener?.('focus', () => {
       refresh();
     });
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state === 'active') refresh();
+    });
+    refresh();
+    return () => { unsub?.(); appStateSub.remove(); };
+  }, [navigation]);
+
+  // Same reasoning as the notification-access refresh above — the OS
+  // permission can be revoked from Android's own App Settings outside
+  // Mneva, so re-check whenever this screen becomes active again rather
+  // than trusting the AsyncStorage flag alone.
+  useEffect(() => {
+    const refresh = async () => {
+      const enabled = await isCallLogSyncEnabled().catch(() => false);
+      const stillGranted = enabled ? await hasCallLogPermission().catch(() => false) : false;
+      setCallLogEnabled(enabled && stillGranted);
+    };
+    const unsub = navigation?.addListener?.('focus', () => { refresh(); });
     const appStateSub = AppState.addEventListener('change', state => {
       if (state === 'active') refresh();
     });
@@ -738,6 +767,41 @@ export default function Settings({ navigation, route }) {
       Alert.alert('Could not enable', error.message || 'Please try again.');
     } finally {
       setPhoneCaptureBusy(false);
+    }
+  };
+
+  const toggleCallLog = async (enabled) => {
+    if (!enabled) {
+      setCallLogBusy(true);
+      await disableCallLogSync().catch(() => {});
+      setCallLogEnabled(false);
+      setCallLogBusy(false);
+      return;
+    }
+    if (Platform.OS !== 'android') {
+      Alert.alert('Android feature', 'Apple does not allow any app to read the call log. This feature is Android only.');
+      return;
+    }
+    if (!callLogAccessAvailable) {
+      Alert.alert('Android build required', 'Install the Mneva Android development or production build. Expo Go cannot use call log access.');
+      return;
+    }
+    // Nothing is requested until the user has seen the disclosure and
+    // tapped "Agree & continue" (Play User Data policy) — same gate as
+    // notification access above.
+    setCallLogDisclosure(true);
+  };
+
+  const acceptCallLogDisclosure = async () => {
+    setCallLogDisclosure(false);
+    setCallLogBusy(true);
+    try {
+      await enableCallLogSync();
+      setCallLogEnabled(true);
+    } catch (error) {
+      Alert.alert('Could not enable', error.message || 'Please try again.');
+    } finally {
+      setCallLogBusy(false);
     }
   };
 
@@ -1010,6 +1074,19 @@ export default function Settings({ navigation, route }) {
                   : <Switch value={phoneCaptureEnabled} onValueChange={togglePhoneCapture} trackColor={{ false: theme.borderStrong, true: theme.accent }} thumbColor="#FFFFFF" />}
               </View>
             </View>
+            <View style={[styles.card, { marginBottom: 12 }]}>
+              <View style={styles.captureRow}>
+                <View style={styles.captureIcon}><Feather name="phone-call" size={18} color={theme.accent} /></View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.captureTitle}>Stay-in-touch reminders</Text>
+                  <Text style={styles.captureDesc}>Mneva notices who you call most days, and nudges you if a day goes by without reaching them.</Text>
+                  {Platform.OS === 'ios' && <Text style={styles.captureUnavailable}>Available on Android only</Text>}
+                </View>
+                {callLogBusy
+                  ? <ActivityIndicator size="small" color={theme.accent} />
+                  : <Switch value={callLogEnabled} onValueChange={toggleCallLog} trackColor={{ false: theme.borderStrong, true: theme.accent }} thumbColor="#FFFFFF" />}
+              </View>
+            </View>
             <View style={styles.card}>
               {NOTIF_TOGGLES.map(({ key, label, icon }, i) => (
                 <View key={key} style={[styles.toggleRow, i !== NOTIF_TOGGLES.length - 1 && styles.divider]}>
@@ -1101,6 +1178,11 @@ export default function Settings({ navigation, route }) {
         visible={phoneCaptureDisclosure}
         onAccept={acceptPhoneCaptureDisclosure}
         onDecline={() => setPhoneCaptureDisclosure(false)}
+      />
+      <CallLogAccessDisclosure
+        visible={callLogDisclosure}
+        onAccept={acceptCallLogDisclosure}
+        onDecline={() => setCallLogDisclosure(false)}
       />
     </SafeAreaView>
   );

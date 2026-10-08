@@ -75,6 +75,7 @@ import {
 import { refreshAppData } from "./src/services/dataRefresh";
 import { registerForPushNotifications } from "./src/services/pushNotifications";
 import { requestLocationPermission } from "./src/services/location";
+import { syncCallLog } from "./src/services/callLogSync";
 import ReminderAlert from "./src/components/ReminderAlert";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import SessionExpiredBanner from "./src/components/SessionExpiredBanner";
@@ -356,6 +357,11 @@ function AppInner() {
       appStateRef.current = state;
       if (state === "active") {
         pingBackend().catch(() => {});
+        // No-op whenever the feature is off/unavailable/nothing's new —
+        // see syncCallLog's own guards. Foreground is "frequently enough":
+        // a missed call doesn't need sub-minute freshness, and this runs
+        // every time the user opens or returns to the app.
+        syncCallLog().catch(() => {});
       }
       if (!wasBackgrounded || state !== "active") return;
       if (lockApplicableRef.current) setAppLockActive(true);
@@ -422,6 +428,10 @@ function AppInner() {
           // can use where the device actually is instead of a manually set
           // city.
           requestLocationPermission().catch(() => {});
+          // No-op unless the user already enabled this in Settings — see
+          // syncCallLog's own guards. Covers the very first app-open of a
+          // session, before any foreground AppState transition has fired.
+          syncCallLog().catch(() => {});
 
           // App-open biometric lock — only meaningful for an already
           // signed-in session; Onboarding/Signin have nothing to protect

@@ -49,6 +49,7 @@ import { onboardingRouter as onboardingRoutes } from "./routes/onboarding.js";
 import { newsRouter } from "./routes/news.js";
 import { familyRouter } from "./routes/family.js";
 import { petRouter, startPetReminderPoller } from "./routes/pet.js";
+import { callLogRouter } from "./routes/callLog.js";
 import {
   familyItemsRouter,
   startFamilyReminderPoller,
@@ -66,6 +67,7 @@ import { startReminderWorker } from "./queues/reminder.queue.js";
 import { startDailyDigestWorker, scheduleDailyDigest } from "./queues/dailyDigest.queue.js";
 import { startAdvanceReminderWorker, scheduleAdvanceReminderScan } from "./queues/advanceReminder.queue.js";
 import { startProactiveSuggestionsWorker, scheduleProactiveSuggestionsScan } from "./queues/proactiveSuggestions.queue.js";
+import { startCallLogReminderWorker, scheduleCallLogReminderScan } from "./queues/callLogReminder.queue.js";
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
 import { applyModelCompat } from "./services/openaiCompat.js";
 import { backfillLedgerChain } from "./services/ledgerBackfill.js";
@@ -447,6 +449,7 @@ app.use("/api/notify", notifyRoutes);
 app.use("/api/onboarding", authMiddleware, onboardingRoutes);
 app.use("/api/family", authMiddleware, familyRouter);
 app.use("/api/pet", authMiddleware, petRouter);
+app.use("/api/call-log", authMiddleware, callLogRouter);
 app.use("/api/family-items", authMiddleware, familyItemsRouter);
 
 // Sentry's own error handler must sit between the routes and our custom
@@ -643,6 +646,8 @@ server.on("listening", () => {
         await scheduleAdvanceReminderScan();
         activeWorkers.push(startProactiveSuggestionsWorker());
         await scheduleProactiveSuggestionsScan();
+        activeWorkers.push(startCallLogReminderWorker());
+        await scheduleCallLogReminderScan();
         logger.info("✅ BullMQ workers started");
       } catch (error) {
         logger.warn(`⚠️ Could not start BullMQ workers: ${error.message}`);

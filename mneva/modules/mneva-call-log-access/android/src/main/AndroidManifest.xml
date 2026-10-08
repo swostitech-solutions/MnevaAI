@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- READ_CALL_LOG is a dangerous/runtime permission — declaring it here
+       only makes Android allow asking for it at all; the actual grant
+       prompt is requested from JS via PermissionsAndroid.request, same as
+       any other standard runtime permission. -->
+  <uses-permission android:name="android.permission.READ_CALL_LOG"/>
+</manifest>

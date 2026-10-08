@@ -1,0 +1,18 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.swostitech.mneva'
+version = '1.0.0'
+
+android {
+  namespace 'com.swostitech.mneva.calllogaccess'
+  defaultConfig {
+    minSdk 23
+    // Expo's autolinking plugin reads both values while creating the final
+    // Android library publication. They are required even for a local module.
+    versionCode 1
+    versionName '1.0.0'
+  }
+}

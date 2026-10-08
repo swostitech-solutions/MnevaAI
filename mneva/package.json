@@ -31,6 +31,7 @@
     "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.2",
+    "mneva-call-log-access": "file:./modules/mneva-call-log-access",
     "mneva-notification-access": "file:./modules/mneva-notification-access",
     "react": "19.2.3",
     "react-native": "0.86.2",

@@ -1,0 +1,8 @@
+{
+  "name": "mneva-call-log-access",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android call log reader for Mneva's stay-in-touch reminders",
+  "main": "index.js",
+  "keywords": ["expo-module", "android", "call-log"]
+}
