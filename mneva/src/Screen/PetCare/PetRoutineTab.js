@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback, ActivityIndicator,
+  TouchableWithoutFeedback, ActivityIndicator, Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +17,16 @@ const REMINDER_TYPES = ['Vaccination', 'Medication', 'Grooming', 'Vet Appointmen
 const GROOM_TYPES    = ['Bath', 'Hair Trimming', 'Nail Trimming', 'Dental Care', 'Ear Cleaning'];
 const EXERCISE_TYPES = ['Walk', 'Exercise', 'Playtime'];
 const FREQ_OPTIONS   = ['Daily', 'Every 2 days', 'Weekly', 'Bi-weekly', 'Monthly'];
+// Duration used to be free text ("30 mins", "3000", "Vhv" all got typed in
+// production) — strip anything that isn't a digit as the user types, and
+// cap it to a sane range (1-180 min covers even a long play session; a dog
+// doesn't get walked for 3000 minutes).
+const sanitizeDigitsOnly = (v) => v.replace(/[^0-9]/g, '');
+const MAX_DURATION_MIN = 180;
+
+const EMPTY_GROOM = { type: '', freq: '', lastDate: '', nextDate: '', notes: '' };
+const EMPTY_EX    = { type: '', duration: '', freq: '', time: '', notes: '' };
+const EMPTY_REM   = { type: '', title: '', date: '', time: '', notes: '' };
 
 export default function PetRoutineTab({ horizontalPad, insets }) {
   const { theme } = useTheme();
@@ -31,7 +41,8 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
 
   // Grooming modal
   const [groomModal, setGroomModal] = useState(false);
-  const [groomForm, setGroomForm]   = useState({ type: '', freq: '', lastDate: '', nextDate: '', notes: '' });
+  const [groomForm, setGroomForm]   = useState(EMPTY_GROOM);
+  const [editGroomId, setEditGroomId] = useState(null); // null = adding; otherwise the id being edited
   // Catches the edge case the picker's own minimumDate can't: Last Done
   // changed to something after an already-picked Next Due.
   const groomNextDueErr = (groomForm.lastDate && groomForm.nextDate && new Date(groomForm.nextDate) <= new Date(groomForm.lastDate))
@@ -39,13 +50,17 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
 
   // Exercise modal
   const [exModal, setExModal]       = useState(false);
-  const [exForm, setExForm]         = useState({ type: '', duration: '', freq: '', time: '', notes: '' });
+  const [exForm, setExForm]         = useState(EMPTY_EX);
+  const [editExId, setEditExId]     = useState(null); // null = adding; otherwise the id being edited
+  const exDurationErr = (exForm.duration && (Number(exForm.duration) < 1 || Number(exForm.duration) > MAX_DURATION_MIN))
+    ? `Duration must be between 1 and ${MAX_DURATION_MIN} minutes` : '';
 
   // Reminders
   const [reminders, setReminders]   = useState([]);
   const [remLoading, setRemLoading] = useState(false);
   const [remModal, setRemModal]     = useState(false);
-  const [remForm, setRemForm]       = useState({ type: '', title: '', date: '', time: '', notes: '' });
+  const [remForm, setRemForm]       = useState(EMPTY_REM);
+  const [editRem, setEditRem]       = useState(null); // null = adding; otherwise the reminder being edited
 
   // ── patch pet JSON fields ──────────────────────────────────────────────────
   const patch = async (field, value) => {
@@ -99,21 +114,70 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
     setFeedModal(true);
   };
 
+  const openAddGroom = () => { setGroomForm(EMPTY_GROOM); setEditGroomId(null); setGroomModal(true); };
+  const openEditGroom = (g) => { setGroomForm({ type: g.type || '', freq: g.freq || '', lastDate: g.lastDate || '', nextDate: g.nextDate || '', notes: g.notes || '' }); setEditGroomId(g.id); setGroomModal(true); };
+  const closeGroomModal = () => { setGroomModal(false); setGroomForm(EMPTY_GROOM); setEditGroomId(null); };
+
   const saveGroom = async () => {
     if (!groomForm.type || groomNextDueErr) return;
     const existing = activePet?.groomings || [];
-    await patch('groomings', [{ id: Date.now().toString(), ...groomForm }, ...existing]);
-    setGroomForm({ type: '', freq: '', lastDate: '', nextDate: '', notes: '' });
-    setGroomModal(false);
+    const next = editGroomId
+      ? existing.map(x => x.id === editGroomId ? { ...x, ...groomForm } : x)
+      : [{ id: Date.now().toString(), ...groomForm }, ...existing];
+    await patch('groomings', next);
+    closeGroomModal();
   };
 
-  const saveExercise = async () => {
-    if (!exForm.type) return;
-    const existing = activePet?.exercises || [];
-    await patch('exercises', [{ id: Date.now().toString(), ...exForm }, ...existing]);
-    setExForm({ type: '', duration: '', freq: '', time: '', notes: '' });
-    setExModal(false);
+  const deleteGrooming = () => {
+    Alert.alert('Delete Grooming', `Remove this ${groomForm.type || 'grooming'} entry? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        const existing = activePet?.groomings || [];
+        await patch('groomings', existing.filter(x => x.id !== editGroomId));
+        closeGroomModal();
+      } },
+    ]);
   };
+
+  const openAddEx = () => { setExForm(EMPTY_EX); setEditExId(null); setExModal(true); };
+  const openEditEx = (e) => { setExForm({ type: e.type || '', duration: e.duration || '', freq: e.freq || '', time: e.time || '', notes: e.notes || '' }); setEditExId(e.id); setExModal(true); };
+  const closeExModal = () => { setExModal(false); setExForm(EMPTY_EX); setEditExId(null); };
+
+  const saveExercise = async () => {
+    if (!exForm.type || exDurationErr) return;
+    const existing = activePet?.exercises || [];
+    const next = editExId
+      ? existing.map(x => x.id === editExId ? { ...x, ...exForm } : x)
+      : [{ id: Date.now().toString(), ...exForm }, ...existing];
+    await patch('exercises', next);
+    closeExModal();
+  };
+
+  const deleteExercise = () => {
+    Alert.alert('Delete Activity', `Remove this ${exForm.type || 'activity'} entry? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        const existing = activePet?.exercises || [];
+        await patch('exercises', existing.filter(x => x.id !== editExId));
+        closeExModal();
+      } },
+    ]);
+  };
+
+  const openAddRem = () => { setRemForm(EMPTY_REM); setEditRem(null); setRemModal(true); };
+  const openEditRem = (r) => {
+    const d = r.remindAt ? new Date(r.remindAt) : null;
+    const pad = (n) => String(n).padStart(2, '0');
+    setRemForm({
+      type: r.type || '', title: r.title || '',
+      date: d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` : '',
+      time: d ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : '',
+      notes: r.notes || '',
+    });
+    setEditRem(r);
+    setRemModal(true);
+  };
+  const closeRemModal = () => { setRemModal(false); setRemForm(EMPTY_REM); setEditRem(null); };
 
   const saveReminder = async () => {
     if (!remForm.title.trim() || !remForm.type || !activePet) return;
@@ -125,12 +189,18 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
     }
     setSaving(true);
     try {
-      await apiFetch(`/api/pet/${activePet.id}/reminders`, {
-        method: 'POST',
-        body: { type: remForm.type, title: remForm.title.trim(), remindAt, notes: remForm.notes.trim() || null },
-      });
-      setRemForm({ type: '', title: '', date: '', time: '', notes: '' });
-      setRemModal(false);
+      if (editRem) {
+        await apiFetch(`/api/pet/${activePet.id}/reminders/${editRem.id}`, {
+          method: 'PATCH',
+          body: { type: remForm.type, title: remForm.title.trim(), remindAt, notes: remForm.notes.trim() || null },
+        });
+      } else {
+        await apiFetch(`/api/pet/${activePet.id}/reminders`, {
+          method: 'POST',
+          body: { type: remForm.type, title: remForm.title.trim(), remindAt, notes: remForm.notes.trim() || null },
+        });
+      }
+      closeRemModal();
     } catch { /* silent */ }
     finally { setSaving(false); }
   };
@@ -142,11 +212,15 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
     } catch { /* socket updates */ }
   };
 
-  const deleteReminder = async (r) => {
-    if (!activePet) return;
-    try {
-      await apiFetch(`/api/pet/${activePet.id}/reminders/${r.id}`, { method: 'DELETE' });
-    } catch { /* socket updates */ }
+  const deleteReminder = () => {
+    if (!activePet || !editRem) return;
+    Alert.alert('Delete Reminder', `Remove "${editRem.title}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try { await apiFetch(`/api/pet/${activePet.id}/reminders/${editRem.id}`, { method: 'DELETE' }); } catch { /* socket updates */ }
+        closeRemModal();
+      } },
+    ]);
   };
 
   const feeding   = activePet?.feeding    || null;
@@ -195,41 +269,37 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         </View>
 
         {/* ── Grooming ── */}
-        <SectionHeader label="GROOMING" color={theme.accentAlt} bg={theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'} onAdd={() => setGroomModal(true)} styles={styles} />
+        <SectionHeader label="GROOMING" color={theme.accentAlt} bg={theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'} onAdd={openAddGroom} styles={styles} />
         <View style={styles.card}>
           {groomings.length === 0 ? <EmptyRow icon="scissors" text="No grooming schedule added" theme={theme} styles={styles} /> : groomings.map((g, i) => (
-            <View key={g.id} style={[styles.listRow, i < groomings.length - 1 && styles.divider]}>
+            <TouchableOpacity key={g.id} style={[styles.listRow, i < groomings.length - 1 && styles.divider]} onPress={() => openEditGroom(g)} activeOpacity={0.7}>
               <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE' }]}><Feather name="scissors" size={14} color={theme.accentAlt} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{g.type}</Text>
                 <Text style={styles.rowMeta}>{[g.freq, g.nextDate ? `Next: ${g.nextDate}` : null].filter(Boolean).join(' · ')}</Text>
               </View>
-              <TouchableOpacity onPress={() => patch('groomings', groomings.filter(x => x.id !== g.id))} style={{ padding: 4 }}>
-                <Feather name="x" size={14} color={theme.faint} />
-              </TouchableOpacity>
-            </View>
+              <Feather name="chevron-right" size={16} color={theme.faint} />
+            </TouchableOpacity>
           ))}
         </View>
 
         {/* ── Exercise ── */}
-        <SectionHeader label="ACTIVITY & EXERCISE" color={theme.info} bg={theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'} onAdd={() => setExModal(true)} styles={styles} />
+        <SectionHeader label="ACTIVITY & EXERCISE" color={theme.info} bg={theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'} onAdd={openAddEx} styles={styles} />
         <View style={styles.card}>
           {exercises.length === 0 ? <EmptyRow icon="zap" text="No activity schedule added" theme={theme} styles={styles} /> : exercises.map((e, i) => (
-            <View key={e.id} style={[styles.listRow, i < exercises.length - 1 && styles.divider]}>
+            <TouchableOpacity key={e.id} style={[styles.listRow, i < exercises.length - 1 && styles.divider]} onPress={() => openEditEx(e)} activeOpacity={0.7}>
               <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD' }]}><Feather name="zap" size={14} color={theme.info} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{e.type}</Text>
-                <Text style={styles.rowMeta}>{[e.duration, e.freq, e.time].filter(Boolean).join(' · ')}</Text>
+                <Text style={styles.rowMeta}>{[e.duration ? `${e.duration} min` : null, e.freq, e.time].filter(Boolean).join(' · ')}</Text>
               </View>
-              <TouchableOpacity onPress={() => patch('exercises', exercises.filter(x => x.id !== e.id))} style={{ padding: 4 }}>
-                <Feather name="x" size={14} color={theme.faint} />
-              </TouchableOpacity>
-            </View>
+              <Feather name="chevron-right" size={16} color={theme.faint} />
+            </TouchableOpacity>
           ))}
         </View>
 
         {/* ── Reminders ── */}
-        <SectionHeader label="REMINDERS" color={theme.danger} bg={theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'} onAdd={() => setRemModal(true)} styles={styles} />
+        <SectionHeader label="REMINDERS" color={theme.danger} bg={theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'} onAdd={openAddRem} styles={styles} />
         <View style={styles.card}>
           {remLoading ? (
             <View style={styles.emptyRow}><ActivityIndicator size="small" color={theme.warning} /></View>
@@ -238,12 +308,12 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
               <TouchableOpacity onPress={() => toggleReminder(r)} style={[styles.rowIcon, { backgroundColor: r.done ? (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') : (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]}>
                 <Feather name={r.done ? 'check-circle' : 'bell'} size={14} color={r.done ? theme.accent : theme.danger} />
               </TouchableOpacity>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, r.done && { textDecorationLine: 'line-through', color: theme.faint }]}>{r.title}</Text>
-                <Text style={styles.rowMeta}>{[r.type, r.remindAt ? new Date(r.remindAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : null].filter(Boolean).join(' · ')}</Text>
-              </View>
-              <TouchableOpacity onPress={() => deleteReminder(r)} style={{ padding: 4 }}>
-                <Feather name="x" size={14} color={theme.faint} />
+              <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }} onPress={() => openEditRem(r)} activeOpacity={0.7}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, r.done && { textDecorationLine: 'line-through', color: theme.faint }]}>{r.title}</Text>
+                  <Text style={styles.rowMeta}>{[r.type, r.remindAt ? new Date(r.remindAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : null].filter(Boolean).join(' · ')}</Text>
+                </View>
+                <Feather name="chevron-right" size={16} color={theme.faint} />
               </TouchableOpacity>
             </View>
           ))}
@@ -283,8 +353,9 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
       </SheetModal>
 
       {/* ── Grooming Modal ── */}
-      <SheetModal visible={groomModal} onClose={() => setGroomModal(false)} insets={insets}
-        title="Add Grooming" gradColors={['#9B72FF', '#7C5CE8']} icon="scissors" styles={styles}>
+      <SheetModal visible={groomModal} onClose={closeGroomModal} insets={insets}
+        title={editGroomId ? 'Edit Grooming' : 'Add Grooming'} gradColors={['#9B72FF', '#7C5CE8']} icon="scissors" styles={styles}
+        onDelete={editGroomId ? deleteGrooming : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Grooming Type <Text style={styles.req}>*</Text></Text>
         <View style={styles.chipRow}>
           {GROOM_TYPES.map(g => (
@@ -318,12 +389,13 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         <Text style={styles.fieldLabel}>Notes</Text>
         <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder}
           value={groomForm.notes} onChangeText={v => setGroomForm(f => ({ ...f, notes: v }))} />
-        <SaveBtn onPress={saveGroom} disabled={!groomForm.type || !!groomNextDueErr} colors={['#9B72FF', '#7C5CE8']} label="Save Grooming" styles={styles} />
+        <SaveBtn onPress={saveGroom} disabled={!groomForm.type || !!groomNextDueErr} colors={['#9B72FF', '#7C5CE8']} label={editGroomId ? 'Update Grooming' : 'Save Grooming'} styles={styles} />
       </SheetModal>
 
       {/* ── Exercise Modal ── */}
-      <SheetModal visible={exModal} onClose={() => setExModal(false)} insets={insets}
-        title="Add Activity" gradColors={['#4FA6E8', '#2E86C8']} icon="zap" styles={styles}>
+      <SheetModal visible={exModal} onClose={closeExModal} insets={insets}
+        title={editExId ? 'Edit Activity' : 'Add Activity'} gradColors={['#4FA6E8', '#2E86C8']} icon="zap" styles={styles}
+        onDelete={editExId ? deleteExercise : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Activity Type <Text style={styles.req}>*</Text></Text>
         <View style={styles.chipRow}>
           {EXERCISE_TYPES.map(e => (
@@ -334,9 +406,9 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         </View>
         <View style={styles.rowFields}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Duration</Text>
-            <TextInput style={styles.input} placeholder="e.g. 30 mins" placeholderTextColor={theme.placeholder}
-              value={exForm.duration} onChangeText={v => setExForm(f => ({ ...f, duration: v }))} />
+            <Text style={styles.fieldLabel}>Duration (minutes)</Text>
+            <TextInput style={styles.input} placeholder="e.g. 30" placeholderTextColor={theme.placeholder} keyboardType="number-pad" maxLength={3}
+              value={exForm.duration} onChangeText={v => setExForm(f => ({ ...f, duration: sanitizeDigitsOnly(v) }))} />
           </View>
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}>
@@ -345,6 +417,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
               value={exForm.time} onChangeText={v => setExForm(f => ({ ...f, time: v }))} />
           </View>
         </View>
+        {exDurationErr ? <Text style={styles.errorText}>{exDurationErr}</Text> : null}
         <Text style={styles.fieldLabel}>Frequency</Text>
         <View style={styles.chipRow}>
           {FREQ_OPTIONS.map(fr => (
@@ -353,12 +426,13 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
             </TouchableOpacity>
           ))}
         </View>
-        <SaveBtn onPress={saveExercise} disabled={!exForm.type} colors={['#4FA6E8', '#2E86C8']} label="Save Activity" styles={styles} />
+        <SaveBtn onPress={saveExercise} disabled={!exForm.type || !!exDurationErr} colors={['#4FA6E8', '#2E86C8']} label={editExId ? 'Update Activity' : 'Save Activity'} styles={styles} />
       </SheetModal>
 
       {/* ── Reminder Modal ── */}
-      <SheetModal visible={remModal} onClose={() => setRemModal(false)} insets={insets}
-        title="Add Reminder" gradColors={['#E0546E', '#C8405A']} icon="bell" styles={styles}>
+      <SheetModal visible={remModal} onClose={closeRemModal} insets={insets}
+        title={editRem ? 'Edit Reminder' : 'Add Reminder'} gradColors={['#E0546E', '#C8405A']} icon="bell" styles={styles}
+        onDelete={editRem ? deleteReminder : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Reminder Type <Text style={styles.req}>*</Text></Text>
         <View style={styles.chipRow}>
           {REMINDER_TYPES.map(t => (
@@ -382,7 +456,7 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
         <Text style={styles.fieldLabel}>Notes</Text>
         <TextInput style={styles.input} placeholder="Any notes..." placeholderTextColor={theme.placeholder}
           value={remForm.notes} onChangeText={v => setRemForm(f => ({ ...f, notes: v }))} />
-        <SaveBtn onPress={saveReminder} disabled={!remForm.title.trim() || !remForm.type} colors={['#E0546E', '#C8405A']} label="Save Reminder" styles={styles} />
+        <SaveBtn onPress={saveReminder} disabled={!remForm.title.trim() || !remForm.type} colors={['#E0546E', '#C8405A']} label={editRem ? 'Update Reminder' : 'Save Reminder'} styles={styles} />
       </SheetModal>
     </>
   );
@@ -409,7 +483,7 @@ function EmptyRow({ icon, text, theme, styles }) {
   );
 }
 
-function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles }) {
+function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles, onDelete, deleteColor }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -420,7 +494,12 @@ function SheetModal({ visible, onClose, insets, title, gradColors, icon, childre
             <LinearGradient colors={gradColors} style={styles.sheetIcon}>
               <Feather name={icon} size={20} color="#FFFFFF" />
             </LinearGradient>
-            <Text style={styles.sheetTitle}>{title}</Text>
+            <Text style={[styles.sheetTitle, { flex: 1 }]}>{title}</Text>
+            {onDelete && (
+              <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
+                <Feather name="trash-2" size={18} color={deleteColor} />
+              </TouchableOpacity>
+            )}
           </View>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {children}
@@ -467,6 +546,7 @@ const createStyles = (theme) => StyleSheet.create({
   sheetHeader:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   sheetIcon:      { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sheetTitle:     { fontSize: 20, fontWeight: '800', color: theme.text },
+  deleteBtn:      { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
   fieldLabel:     { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   req:            { color: theme.danger },
   errorText:      { fontSize: 12, color: theme.danger, marginBottom: 12 },
