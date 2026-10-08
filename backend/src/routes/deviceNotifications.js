@@ -49,6 +49,17 @@ function analyseByKeywords(title = '', body = '', appName = '') {
 const VALID_REASONS = new Set(['security_or_payment', 'time_sensitive', 'action_needed', 'personal', 'promotional', 'low_signal', 'recharge'])
 const VALID_CATEGORIES = new Set(['payments', 'time_sensitive', 'action_needed', 'personal', 'other', 'recharge'])
 
+// Only genuinely high-priority phone alerts are kept — security/payment
+// issues (100), time-sensitive events (85), recharge/plan-expiry (80).
+// "action_needed" (65, e.g. a generic bill/task/order-status alert) and
+// anything below is dropped entirely: not stored, not pushed, not shown in
+// the notification feed or Priorities' AI Detected section (both read from
+// the same Notification rows this route creates — see unreadAlerts in
+// fullSummary.js). The Notification table's own priority default is 0 and
+// no other notification creator in the codebase sets this field, so
+// raising the bar here is the single place this actually needs to change.
+const HIGH_PRIORITY_THRESHOLD = 70
+
 // Real judgment of whether a captured notification — from any app, not just
 // the ones with obvious finance/action keywords — actually needs the user's
 // attention. A plain keyword scan only catches notifications phrased with
@@ -152,6 +163,9 @@ router.post('/ingest', async (req, res) => {
       return res.json({ accepted: false, reason: 'payments_disabled', priority: analysis.priority })
     }
     if (!analysis.relevant) return res.json({ accepted: false, reason: analysis.reason, priority: analysis.priority })
+    if (analysis.priority < HIGH_PRIORITY_THRESHOLD) {
+      return res.json({ accepted: false, reason: 'below_priority_threshold', priority: analysis.priority })
+    }
 
     const sourceId = `android:${notificationKey || createHash('sha256').update(`${packageName}|${title}|${body}|${postedAt || ''}`).digest('hex')}`
     const existing = await prisma.notification.findUnique({ where: { userId_sourceId: { userId: device.userId, sourceId } } })
@@ -176,8 +190,12 @@ router.post('/ingest', async (req, res) => {
       io.to(`u:${device.userId}`).emit('notification:created', payload)
     }
     sendPushToUser(device.userId, { title: payload.title, body: payload.body, data: { type: payload.type } })
-    // Phone alerts are intentionally kept in the notification feed. They are
-    // not converted to Tasks, so they never appear under Today's Priorities.
+    // Phone alerts are kept in the notification feed, never converted to a
+    // Task — but they DO surface under Priorities' "AI Detected" section via
+    // unreadAlerts (fullSummary.js), since that reads unread Notification
+    // rows by priority, not by source. HIGH_PRIORITY_THRESHOLD above is what
+    // keeps that section to genuinely important alerts instead of everything
+    // that gets captured.
     res.status(201).json({ accepted: true, priority: analysis.priority, notification: payload })
   } catch (error) {
     res.status(500).json({ error: error.message })
