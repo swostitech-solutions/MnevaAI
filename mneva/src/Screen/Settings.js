@@ -969,11 +969,6 @@ export default function Settings({ navigation, route }) {
               <Text style={styles.appLockHint}>
                 End-to-end encryption and the signed action ledger are core security guarantees — always on, can't be turned off.
               </Text>
-              {!appLockSupported && (
-                <Text style={styles.appLockHint}>
-                  Set up Face ID, fingerprint, or a screen lock on this device to use the biometric payment gate.
-                </Text>
-              )}
             </View>
 
             <Text style={styles.sectionLabel}>App Lock</Text>
