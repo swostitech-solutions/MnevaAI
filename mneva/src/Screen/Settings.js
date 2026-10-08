@@ -42,10 +42,16 @@ const DOMAIN_TABS = [
   { key: 'family',         label: 'Family',        icon: 'users' },
 ];
 
+// e2eEncryption and signedLedger are core security guarantees, not
+// user preferences — Vault's own encryption gate reads e2eEncryption
+// (see VaultScreen), so letting it be switched off would actually lock
+// the user out of their own encrypted files. `locked: true` keeps both
+// permanently on and un-toggleable; the backend enforces the same thing
+// (see trustRouter.patch("/settings")) so a modified client can't bypass it.
 const PRIVACY_TOGGLES = [
   { key: 'biometricGate',   label: 'Biometric gate for payments ≥ ₹1,000', icon: 'shield' },
-  { key: 'e2eEncryption',   label: 'End-to-end encryption',                 icon: 'lock' },
-  { key: 'signedLedger',    label: 'Signed action ledger (SHA-256)',         icon: 'file-text' },
+  { key: 'e2eEncryption',   label: 'End-to-end encryption',                 icon: 'lock', locked: true },
+  { key: 'signedLedger',    label: 'Signed action ledger (SHA-256)',         icon: 'file-text', locked: true },
   { key: 'dataSharing',     label: 'Share anonymised data for AI training',  icon: 'share-2' },
 ];
 
@@ -493,7 +499,7 @@ export default function Settings({ navigation, route }) {
     if (data) {
       if (data.domains) setDomainTrust(data.domains);
       const prefs = data.preferences || {};
-      if (prefs.privacy)       setPrivacy(p => ({ ...p, ...prefs.privacy }));
+      if (prefs.privacy)       setPrivacy(p => ({ ...p, ...prefs.privacy, e2eEncryption: true, signedLedger: true }));
       if (prefs.notifications) setNotifications(n => ({ ...n, ...prefs.notifications }));
       if (Array.isArray(prefs.notificationLeadTimes) && prefs.notificationLeadTimes.length) {
         setLeadTimes(prefs.notificationLeadTimes);
@@ -670,6 +676,9 @@ export default function Settings({ navigation, route }) {
   };
 
   const togglePrivacy = (key, val) => {
+    // Belt-and-suspenders: the Switch for these two is already disabled so
+    // this shouldn't fire from a real tap, but never let either flip off.
+    if (key === 'e2eEncryption' || key === 'signedLedger') return;
     const next = { ...privacy, [key]: val };
     setPrivacy(next);
     save({ privacy: next });
@@ -937,15 +946,15 @@ export default function Settings({ navigation, route }) {
           <>
             <Text style={styles.sectionLabel}>Privacy & Security</Text>
             <View style={styles.card}>
-              {PRIVACY_TOGGLES.map(({ key, label, icon }, i) => {
+              {PRIVACY_TOGGLES.map(({ key, label, icon, locked }, i) => {
                 const isBiometricGate = key === 'biometricGate';
-                const disabled = isBiometricGate && !appLockSupported;
+                const disabled = locked || (isBiometricGate && !appLockSupported);
                 return (
                   <View key={key} style={[styles.toggleRow, i !== PRIVACY_TOGGLES.length - 1 && styles.divider]}>
                     <Feather name={icon} size={16} color={theme.textSecondary} />
                     <Text style={styles.toggleLabel}>{label}</Text>
                     <Switch
-                      value={!!privacy[key] && !disabled}
+                      value={locked ? true : (!!privacy[key] && !disabled)}
                       onValueChange={v => togglePrivacy(key, v)}
                       disabled={disabled}
                       trackColor={{ false: theme.borderStrong, true: theme.accent }}
@@ -954,6 +963,9 @@ export default function Settings({ navigation, route }) {
                   </View>
                 );
               })}
+              <Text style={styles.appLockHint}>
+                End-to-end encryption and the signed action ledger are core security guarantees — always on, can't be turned off.
+              </Text>
               {!appLockSupported && (
                 <Text style={styles.appLockHint}>
                   Set up Face ID, fingerprint, or a screen lock on this device to use the biometric payment gate.

@@ -3463,11 +3463,18 @@ trustRouter.get("/settings", async (req, res) => {
       pendingL4Confirm: row.pendingL4Confirm,
     }];
   }));
-  res.json({ domains, plan: user?.plan || "Free", preferences: user?.preferences || {} });
+  // Defensive clamp, same as the PATCH below — e2eEncryption/signedLedger
+  // must never read back false, even from preferences written before this
+  // guard existed or by any other path that touches user.preferences.
+  const preferences = user?.preferences || {};
+  if (preferences.privacy) {
+    preferences.privacy = { ...preferences.privacy, e2eEncryption: true, signedLedger: true };
+  }
+  res.json({ domains, plan: user?.plan || "Free", preferences });
 });
 
 trustRouter.patch("/settings", async (req, res) => {
-  const { domain, enabled, notifications: notifPrefs, notificationLeadTimes } = req.body;
+  const { domain, enabled, notifications: notifPrefs, notificationLeadTimes, privacy: privacyPrefs } = req.body;
 
   if (domain !== undefined) {
     if (!DOMAINS.includes(domain)) return res.status(400).json({ error: `domain must be one of: ${DOMAINS.join(", ")}` });
@@ -3479,6 +3486,15 @@ trustRouter.patch("/settings", async (req, res) => {
   const prefs = user?.preferences || {};
   if (notifPrefs)
     prefs.notifications = { ...(prefs.notifications || {}), ...notifPrefs };
+  if (privacyPrefs && typeof privacyPrefs === 'object') {
+    // End-to-end encryption and the signed action ledger are core security
+    // guarantees, not user preferences — Vault's own encryption gate reads
+    // e2eEncryption (see mneva/src/Screen/Vault.js), so honoring a client
+    // that sent false here would actually lock the user out of their own
+    // encrypted files. Forced true unconditionally, regardless of what the
+    // client sends, so this can't be bypassed even by a modified client.
+    prefs.privacy = { ...(prefs.privacy || {}), ...privacyPrefs, e2eEncryption: true, signedLedger: true };
+  }
   if (Array.isArray(notificationLeadTimes)) {
     // How many advance-reminder pushes fire before an important item is due,
     // and how many minutes ahead each one fires — user-configurable, capped
@@ -3490,7 +3506,7 @@ trustRouter.patch("/settings", async (req, res) => {
     )].sort((a, b) => b - a).slice(0, 5);
     prefs.notificationLeadTimes = cleaned;
   }
-  if (notifPrefs || Array.isArray(notificationLeadTimes)) {
+  if (notifPrefs || privacyPrefs || Array.isArray(notificationLeadTimes)) {
     await prisma.user.update({ where: { id: req.user.id }, data: { preferences: prefs } });
   }
   res.json({ success: true, preferences: prefs });
