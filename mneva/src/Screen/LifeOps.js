@@ -93,12 +93,6 @@ export default function LifeOps({ navigation }) {
   const [hotelSearchLoading, setHotelSearchLoading] = useState(false);
   const [hotelSearchError, setHotelSearchError] = useState(null);
 
-  // Track Orders modal
-  const [trackModal, setTrackModal] = useState(false);
-  const [trackId, setTrackId] = useState('');
-  const [tracking, setTracking] = useState(false);
-  const [trackResult, setTrackResult] = useState(null);
-
   const hasRealDataRef = useRef(false);
 
   const loadData = async (isRefresh = false) => {
@@ -195,24 +189,12 @@ export default function LifeOps({ navigation }) {
     finally { setOrderingFood(false); }
   };
 
-  const trackOrder = async () => {
-    if (!trackId.trim()) return;
-    setTracking(true);
-    try {
-      const res = await apiFetch(`/api/lifeops/track?id=${encodeURIComponent(trackId.trim())}`);
-      setTrackResult(res);
-    } catch { setTrackResult({ status: 'In Transit', location: 'Update unavailable' }); }
-    finally { setTracking(false); }
-  };
-
   const QUICK_ACTIONS = [
     { icon: 'truck', label: 'Book Cab', color: theme.accent, bg: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), onPress: () => { setCabResult(null); setCabStep('input'); setCabEstimate(null); setSelectedCab(null); setPickup(''); setDestination(''); setCabModal(true); } },
     { icon: 'shopping-bag', label: 'Order Food', color: theme.warning, bg: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), onPress: () => { setFoodResult(null); setFoodStep('input'); setFoodQuery(''); setFoodSuggestions([]); setSelectedRestaurant(null); setFoodModal(true); } },
     { icon: 'film', label: 'Book Movie', color: theme.accentAlt, bg: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), onPress: () => { setMovieResult(null); setMovieCity(''); setMovieTitle(''); setMovieModal(true); } },
-    { icon: 'package', label: 'Deliveries', color: theme.info, bg: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'), onPress: () => {} },
     { icon: 'send', label: 'Book Flight', color: theme.accentAlt, bg: (theme.isDark ? 'rgba(129,128,255,0.16)' : '#F3EFFE'), onPress: () => { setFlightResult(null); setFlightStep('input'); setFlightFrom(''); setFlightTo(''); setFlightDate(''); setFlightClass('Economy'); setSelectedFlight(null); setSelectedSeat(null); setFlightModal(true); } },
     { icon: 'coffee', label: 'Book Hotel', color: theme.danger, bg: (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'), onPress: () => { setHotelResult(null); setHotelStep('input'); setHotelCity(''); setHotelCheckin(''); setHotelCheckout(''); setSelectedHotel(null); setSelectedRoom(null); setHotelSearchResults([]); setHotelSearchError(null); setHotelModal(true); } },
-    { icon: 'map-pin', label: 'Track Orders', color: theme.warning, bg: (theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'), onPress: () => { setTrackResult(null); setTrackModal(true); } },
   ];
 
   return (
@@ -1033,81 +1015,6 @@ export default function LifeOps({ navigation }) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Track Orders Modal */}
-      <Modal visible={trackModal} transparent animationType="slide" onRequestClose={() => setTrackModal(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableWithoutFeedback onPress={() => setTrackModal(false)}>
-            <View style={StyleSheet.absoluteFill} />
-          </TouchableWithoutFeedback>
-          <View style={[styles.modalSheet, { paddingBottom: 20 + insets.bottom }]}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.agentHeader}>
-              <LinearGradient colors={[theme.info, '#2E86C8']} style={styles.agentIconGrad}>
-                <Feather name="map-pin" size={20} color="#FFFFFF" />
-              </LinearGradient>
-              <View style={styles.agentHeaderText}>
-                <Text style={styles.agentTitle}>Track Order</Text>
-                <Text style={styles.agentSubtitle}>Amazon · Flipkart · Meesho</Text>
-              </View>
-              <View style={[styles.agentPill, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD') }]}>
-                <View style={[styles.agentPillDot, { backgroundColor: theme.info }]} />
-                <Text style={[styles.agentPillText, { color: theme.info }]}>AI Ready</Text>
-              </View>
-            </View>
-            {trackResult ? (
-              <View style={styles.resultWrap}>
-                <LinearGradient colors={theme.isDark ? ['rgba(107,184,240,0.22)', 'rgba(107,184,240,0.34)'] : [(theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'), '#C8E4F8']} style={styles.resultIconWrap}>
-                  <Feather name="package" size={28} color={theme.info} />
-                </LinearGradient>
-                <Text style={styles.resultTitle}>{trackResult.status || 'In Transit'}</Text>
-                <Text style={styles.resultSub}>Your AI twin fetched the latest update</Text>
-                {trackResult.location ? (
-                  <View style={[styles.resultInfoChip, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD'), marginTop: 12 }]}>
-                    <Feather name="map-pin" size={13} color={theme.info} />
-                    <Text style={[styles.resultInfoChipText, { color: theme.info }]}>{trackResult.location}</Text>
-                  </View>
-                ) : null}
-                {trackResult.eta ? (
-                  <View style={[styles.resultInfoChip, { backgroundColor: theme.surfaceAlt, marginTop: 8 }]}>
-                    <Feather name="clock" size={13} color={theme.muted} />
-                    <Text style={[styles.resultInfoChipText, { color: theme.textSecondary }]}>ETA: {trackResult.eta}</Text>
-                  </View>
-                ) : null}
-                <TouchableOpacity style={[styles.resultDoneBtn, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD') }]} onPress={() => { setTrackModal(false); setTrackId(''); setTrackResult(null); }}>
-                  <Text style={[styles.resultDoneBtnText, { color: theme.info }]}>Done</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <>
-                <Text style={styles.inputLabel}>Order ID / AWB Number</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. 408-1234567-8901234"
-                  placeholderTextColor={theme.placeholder}
-                  value={trackId}
-                  onChangeText={setTrackId}
-                  autoCapitalize="characters"
-                />
-                <View style={[styles.aiContextRow, { backgroundColor: (theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD') }]}>
-                  <Feather name="zap" size={12} color={theme.info} />
-                  <Text style={[styles.aiContextText, { color: theme.info }]}>AI will pull real-time status from Amazon, Flipkart, Delhivery & more</Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.actionBtn, !trackId.trim() && styles.actionBtnDisabled]}
-                  onPress={trackOrder}
-                  disabled={!trackId.trim() || tracking}
-                >
-                  <LinearGradient colors={[theme.info, '#2E86C8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtnGrad}>
-                    <Feather name="map-pin" size={16} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>{tracking ? 'Fetching status…' : 'Track via AI'}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
       {/* Movie Booking Modal */}
       <Modal visible={movieModal} transparent animationType="slide" onRequestClose={() => setMovieModal(false)}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -1495,7 +1402,7 @@ const createStyles = (theme) => StyleSheet.create({
   resultInfoChipText: { fontSize: 13, fontWeight: '700' },
   resultDoneBtn: { marginTop: 20, backgroundColor: (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'), borderRadius: 14, paddingVertical: 14, paddingHorizontal: 48 },
   resultDoneBtnText: { fontSize: 15, fontWeight: '700', color: theme.accent },
-  // Shared input styles (used by Flight, Hotel, Track modals)
+  // Shared input styles (used by Flight, Hotel modals)
   modalTitle: { fontSize: 22, fontWeight: '800', color: theme.text, marginBottom: 4 },
   modalSubtitle: { fontSize: 13, color: theme.faint, marginBottom: 20 },
   inputLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },

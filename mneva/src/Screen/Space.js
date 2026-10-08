@@ -46,7 +46,7 @@ const MODULES = [
   {
     id: "4",
     title: "Life Ops",
-    subtitle: "Cabs, food & deliveries",
+    subtitle: "Cabs, food & travel",
     icon: "zap",
     iconColor: "#F5A623",
     iconBg: "#FEF3C7",
