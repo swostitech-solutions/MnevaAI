@@ -48,11 +48,14 @@ const DOMAIN_TABS = [
 // the user out of their own encrypted files. `locked: true` keeps both
 // permanently on and un-toggleable; the backend enforces the same thing
 // (see trustRouter.patch("/settings")) so a modified client can't bypass it.
+// Removed 'dataSharing' ("Share anonymised data for AI training") -- it
+// was never read anywhere (no backend pipeline, no anonymization, nothing
+// used it), purely a dead switch that looked like it did something and
+// didn't.
 const PRIVACY_TOGGLES = [
   { key: 'biometricGate',   label: 'Biometric gate for payments ≥ ₹1,000', icon: 'shield' },
   { key: 'e2eEncryption',   label: 'End-to-end encryption',                 icon: 'lock', locked: true },
   { key: 'signedLedger',    label: 'Signed action ledger (SHA-256)',         icon: 'file-text', locked: true },
-  { key: 'dataSharing',     label: 'Share anonymised data for AI training',  icon: 'share-2' },
 ];
 
 const NOTIF_TOGGLES = [
@@ -477,7 +480,7 @@ export default function Settings({ navigation, route }) {
   const [domainTrust, setDomainTrust] = useState({});
   const [selectedDomain, setSelectedDomain] = useState('finance');
   const [confirmingLevel, setConfirmingLevel] = useState(false);
-  const [privacy, setPrivacy] = useState({ biometricGate: true, e2eEncryption: true, signedLedger: true, dataSharing: false });
+  const [privacy, setPrivacy] = useState({ biometricGate: true, e2eEncryption: true, signedLedger: true });
   const [notifications, setNotifications] = useState({ email: true, payments: true, rides: true, aiInsights: true, system: true });
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
   const [newLeadTime, setNewLeadTime] = useState('');
