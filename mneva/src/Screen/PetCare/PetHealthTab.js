@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback, ActivityIndicator,
+  TouchableWithoutFeedback, ActivityIndicator, Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,11 @@ import { apiFetch } from '../../api/client';
 import { useTheme } from '../../context/ThemeContext';
 import { usePet } from './PetContext';
 import DateField from '../finance/DateField';
+
+const EMPTY_VACCINE = { name: '', date: '', next: '', status: '', notes: '' };
+const EMPTY_MED     = { name: '', dosage: '', freq: '', start: '', end: '', notes: '' };
+const EMPTY_VET      = { name: '', clinic: '', phone: '', address: '', lastVisit: '', nextVisit: '' };
+const EMPTY_ALLERGY = { name: '', reaction: '' };
 
 const VACCINE_STATUS = ['Up to date', 'Due soon', 'Overdue'];
 const statusColor = (s, theme) => s === 'Up to date' ? theme.accent : s === 'Due soon' ? theme.warning : theme.danger;
@@ -26,16 +31,19 @@ export default function PetHealthTab({ horizontalPad, insets }) {
   const [saving, setSaving] = useState(false);
 
   const [vaccineModal, setVaccineModal] = useState(false);
-  const [vForm, setVForm] = useState({ name: '', date: '', next: '', status: '', notes: '' });
+  const [vForm, setVForm] = useState(EMPTY_VACCINE);
+  const [editVaccineId, setEditVaccineId] = useState(null); // null = adding; otherwise the id being edited
 
   const [medModal, setMedModal] = useState(false);
-  const [mForm, setMForm] = useState({ name: '', dosage: '', freq: '', start: '', end: '', notes: '' });
+  const [mForm, setMForm] = useState(EMPTY_MED);
+  const [editMedId, setEditMedId] = useState(null);
 
   const [vetModal, setVetModal] = useState(false);
-  const [vetForm, setVetForm] = useState({ name: '', clinic: '', phone: '', address: '', lastVisit: '', nextVisit: '' });
+  const [vetForm, setVetForm] = useState(EMPTY_VET);
 
   const [allergyModal, setAllergyModal] = useState(false);
-  const [aForm, setAForm] = useState({ name: '', reaction: '' });
+  const [aForm, setAForm] = useState(EMPTY_ALLERGY);
+  const [editAllergyId, setEditAllergyId] = useState(null);
 
   const patch = async (field, value) => {
     if (!activePet) return;
@@ -45,18 +53,52 @@ export default function PetHealthTab({ horizontalPad, insets }) {
     finally { setSaving(false); }
   };
 
+  const openAddVaccine = () => { setVForm(EMPTY_VACCINE); setEditVaccineId(null); setVaccineModal(true); };
+  const openEditVaccine = (v) => { setVForm({ name: v.name || '', date: v.date || '', next: v.next || '', status: v.status || '', notes: v.notes || '' }); setEditVaccineId(v.id); setVaccineModal(true); };
+  const closeVaccineModal = () => { setVaccineModal(false); setVForm(EMPTY_VACCINE); setEditVaccineId(null); };
+
   const addVaccine = async () => {
     if (!vForm.name.trim() || !activePet) return;
-    await patch('vaccines', [{ id: Date.now().toString(), ...vForm }, ...(activePet.vaccines || [])]);
-    setVForm({ name: '', date: '', next: '', status: '', notes: '' });
-    setVaccineModal(false);
+    const existing = activePet.vaccines || [];
+    const next = editVaccineId
+      ? existing.map(x => x.id === editVaccineId ? { ...x, ...vForm } : x)
+      : [{ id: Date.now().toString(), ...vForm }, ...existing];
+    await patch('vaccines', next);
+    closeVaccineModal();
   };
+
+  const deleteVaccine = () => {
+    Alert.alert('Delete Vaccination', `Remove "${vForm.name}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await patch('vaccines', (activePet?.vaccines || []).filter(x => x.id !== editVaccineId));
+        closeVaccineModal();
+      } },
+    ]);
+  };
+
+  const openAddMed = () => { setMForm(EMPTY_MED); setEditMedId(null); setMedModal(true); };
+  const openEditMed = (m) => { setMForm({ name: m.name || '', dosage: m.dosage || '', freq: m.freq || '', start: m.start || '', end: m.end || '', notes: m.notes || '' }); setEditMedId(m.id); setMedModal(true); };
+  const closeMedModal = () => { setMedModal(false); setMForm(EMPTY_MED); setEditMedId(null); };
 
   const addMed = async () => {
     if (!mForm.name.trim() || !activePet) return;
-    await patch('medications', [{ id: Date.now().toString(), ...mForm }, ...(activePet.medications || [])]);
-    setMForm({ name: '', dosage: '', freq: '', start: '', end: '', notes: '' });
-    setMedModal(false);
+    const existing = activePet.medications || [];
+    const next = editMedId
+      ? existing.map(x => x.id === editMedId ? { ...x, ...mForm } : x)
+      : [{ id: Date.now().toString(), ...mForm }, ...existing];
+    await patch('medications', next);
+    closeMedModal();
+  };
+
+  const deleteMed = () => {
+    Alert.alert('Delete Medication', `Remove "${mForm.name}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await patch('medications', (activePet?.medications || []).filter(x => x.id !== editMedId));
+        closeMedModal();
+      } },
+    ]);
   };
 
   const saveVet = async () => {
@@ -65,15 +107,45 @@ export default function PetHealthTab({ horizontalPad, insets }) {
     setVetModal(false);
   };
 
+  const deleteVet = () => {
+    Alert.alert('Delete Vet Information', `Remove this vet's information? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await patch('vet', null);
+        setVetModal(false);
+      } },
+    ]);
+  };
+
+  const openAddAllergy = () => { setAForm(EMPTY_ALLERGY); setEditAllergyId(null); setAllergyModal(true); };
+  const openEditAllergy = (a) => { setAForm({ name: a.name || '', reaction: a.reaction || '' }); setEditAllergyId(a.id); setAllergyModal(true); };
+  const closeAllergyModal = () => { setAllergyModal(false); setAForm(EMPTY_ALLERGY); setEditAllergyId(null); };
+
   const addAllergy = async () => {
     if (!aForm.name.trim() || !activePet) return;
-    await patch('allergies', [{ id: Date.now().toString(), ...aForm }, ...(activePet.allergies || [])]);
-    setAForm({ name: '', reaction: '' });
-    setAllergyModal(false);
+    const existing = activePet.allergies || [];
+    const next = editAllergyId
+      ? existing.map(x => x.id === editAllergyId ? { ...x, ...aForm } : x)
+      : [{ id: Date.now().toString(), ...aForm }, ...existing];
+    await patch('allergies', next);
+    closeAllergyModal();
+  };
+
+  const deleteAllergy = () => {
+    Alert.alert('Delete Allergy', `Remove "${aForm.name}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await patch('allergies', (activePet?.allergies || []).filter(x => x.id !== editAllergyId));
+        closeAllergyModal();
+      } },
+    ]);
   };
 
   const openVetEdit = () => {
-    if (activePet?.vet) setVetForm({ name: activePet.vet.name || '', clinic: activePet.vet.clinic || '', phone: activePet.vet.phone || '', address: activePet.vet.address || '', lastVisit: activePet.vet.lastVisit || '', nextVisit: activePet.vet.nextVisit || '' });
+    const v = activePet?.vet;
+    // Always reset -- otherwise deleting vet info and reopening "Add" would
+    // still show the just-deleted values (same bug Feeding had).
+    setVetForm({ name: v?.name || '', clinic: v?.clinic || '', phone: v?.phone || '', address: v?.address || '', lastVisit: v?.lastVisit || '', nextVisit: v?.nextVisit || '' });
     setVetModal(true);
   };
 
@@ -89,10 +161,10 @@ export default function PetHealthTab({ horizontalPad, insets }) {
         {saving && <View style={styles.savingBar}><ActivityIndicator size="small" color={theme.warning} /><Text style={styles.savingText}>Saving & updating Mneva AI memory...</Text></View>}
 
         {/* Vaccinations */}
-        <SectionHeader label="VACCINATIONS" color={theme.accent} bg={theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'} onAdd={() => setVaccineModal(true)} styles={styles} />
+        <SectionHeader label="VACCINATIONS" color={theme.accent} bg={theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6'} onAdd={openAddVaccine} styles={styles} />
         <View style={styles.card}>
           {vaccines.length === 0 ? <EmptyRow icon="shield" text="No vaccinations added" theme={theme} styles={styles} /> : vaccines.map((v, i) => (
-            <View key={v.id} style={[styles.listRow, i < vaccines.length - 1 && styles.divider]}>
+            <TouchableOpacity key={v.id} style={[styles.listRow, i < vaccines.length - 1 && styles.divider]} onPress={() => openEditVaccine(v)} activeOpacity={0.7}>
               <View style={[styles.rowIcon, { backgroundColor: statusBg(v.status, theme) }]}><Feather name="shield" size={14} color={statusColor(v.status, theme)} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{v.name}</Text>
@@ -100,24 +172,24 @@ export default function PetHealthTab({ horizontalPad, insets }) {
                 {v.next ? <Text style={styles.rowMeta}>Next due: {v.next}</Text> : null}
               </View>
               {v.status ? <View style={[styles.statusTag, { backgroundColor: statusBg(v.status, theme) }]}><Text style={[styles.statusTagText, { color: statusColor(v.status, theme) }]}>{v.status}</Text></View> : null}
-              <TouchableOpacity onPress={() => patch('vaccines', vaccines.filter(x => x.id !== v.id))} style={{ padding: 4, marginLeft: 6 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-            </View>
+              <Feather name="chevron-right" size={16} color={theme.faint} style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
           ))}
         </View>
 
         {/* Medications */}
-        <SectionHeader label="MEDICATIONS" color={theme.danger} bg={theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'} onAdd={() => setMedModal(true)} styles={styles} />
+        <SectionHeader label="MEDICATIONS" color={theme.danger} bg={theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED'} onAdd={openAddMed} styles={styles} />
         <View style={styles.card}>
           {meds.length === 0 ? <EmptyRow icon="activity" text="No medications added" theme={theme} styles={styles} /> : meds.map((m, i) => (
-            <View key={m.id} style={[styles.listRow, i < meds.length - 1 && styles.divider]}>
+            <TouchableOpacity key={m.id} style={[styles.listRow, i < meds.length - 1 && styles.divider]} onPress={() => openEditMed(m)} activeOpacity={0.7}>
               <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED' }]}><Feather name="activity" size={14} color={theme.danger} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{m.name}</Text>
                 <Text style={styles.rowMeta}>{[m.dosage, m.freq].filter(Boolean).join(' · ')}</Text>
                 {(m.start || m.end) ? <Text style={styles.rowMeta}>{m.start}{m.end ? ` → ${m.end}` : ''}</Text> : null}
               </View>
-              <TouchableOpacity onPress={() => patch('medications', meds.filter(x => x.id !== m.id))} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-            </View>
+              <Feather name="chevron-right" size={16} color={theme.faint} />
+            </TouchableOpacity>
           ))}
         </View>
 
@@ -137,23 +209,25 @@ export default function PetHealthTab({ horizontalPad, insets }) {
         </View>
 
         {/* Allergies */}
-        <SectionHeader label="ALLERGIES" color={theme.warning} bg={theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'} onAdd={() => setAllergyModal(true)} styles={styles} />
+        <SectionHeader label="ALLERGIES" color={theme.warning} bg={theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7'} onAdd={openAddAllergy} styles={styles} />
         <View style={styles.card}>
           {allergies.length === 0 ? <EmptyRow icon="alert-triangle" text="No allergies recorded" theme={theme} styles={styles} /> : allergies.map((a, i) => (
-            <View key={a.id} style={[styles.listRow, i < allergies.length - 1 && styles.divider]}>
+            <TouchableOpacity key={a.id} style={[styles.listRow, i < allergies.length - 1 && styles.divider]} onPress={() => openEditAllergy(a)} activeOpacity={0.7}>
               <View style={[styles.rowIcon, { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7' }]}><Feather name="alert-triangle" size={14} color={theme.warning} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{a.name}</Text>
                 {a.reaction ? <Text style={styles.rowMeta}>{a.reaction}</Text> : null}
               </View>
-              <TouchableOpacity onPress={() => patch('allergies', allergies.filter(x => x.id !== a.id))} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-            </View>
+              <Feather name="chevron-right" size={16} color={theme.faint} />
+            </TouchableOpacity>
           ))}
         </View>
       </ScrollView>
 
       {/* Vaccine Modal */}
-      <SheetModal visible={vaccineModal} onClose={() => setVaccineModal(false)} insets={insets} title="Add Vaccination" gradColors={['#1F9A5A', '#3CB37A']} icon="shield" styles={styles}>
+      <SheetModal visible={vaccineModal} onClose={closeVaccineModal} insets={insets}
+        title={editVaccineId ? 'Edit Vaccination' : 'Add Vaccination'} gradColors={['#1F9A5A', '#3CB37A']} icon="shield" styles={styles}
+        onDelete={editVaccineId ? deleteVaccine : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Vaccine Name <Text style={styles.req}>*</Text></Text>
         <TextInput style={styles.input} placeholder="e.g. Rabies, Parvovirus" placeholderTextColor={theme.placeholder} value={vForm.name} onChangeText={v => setVForm(f => ({ ...f, name: v }))} />
         <View style={styles.rowFields}>
@@ -188,11 +262,13 @@ export default function PetHealthTab({ horizontalPad, insets }) {
             </TouchableOpacity>
           ))}
         </View>
-        <SaveBtn onPress={addVaccine} disabled={!vForm.name.trim()} colors={['#1F9A5A', '#3CB37A']} label="Save Vaccination" styles={styles} />
+        <SaveBtn onPress={addVaccine} disabled={!vForm.name.trim()} colors={['#1F9A5A', '#3CB37A']} label={editVaccineId ? 'Update Vaccination' : 'Save Vaccination'} styles={styles} />
       </SheetModal>
 
       {/* Med Modal */}
-      <SheetModal visible={medModal} onClose={() => setMedModal(false)} insets={insets} title="Add Medication" gradColors={['#E0546E', '#C8405A']} icon="activity" styles={styles}>
+      <SheetModal visible={medModal} onClose={closeMedModal} insets={insets}
+        title={editMedId ? 'Edit Medication' : 'Add Medication'} gradColors={['#E0546E', '#C8405A']} icon="activity" styles={styles}
+        onDelete={editMedId ? deleteMed : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Medicine Name <Text style={styles.req}>*</Text></Text>
         <TextInput style={styles.input} placeholder="e.g. Deworming tablet" placeholderTextColor={theme.placeholder} value={mForm.name} onChangeText={v => setMForm(f => ({ ...f, name: v }))} />
         <View style={styles.rowFields}>
@@ -205,11 +281,12 @@ export default function PetHealthTab({ horizontalPad, insets }) {
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><DateField label="End Date" value={mForm.end} onChange={v => setMForm(f => ({ ...f, end: v.slice(0, 10) }))} /></View>
         </View>
-        <SaveBtn onPress={addMed} disabled={!mForm.name.trim()} colors={['#E0546E', '#C8405A']} label="Save Medication" styles={styles} />
+        <SaveBtn onPress={addMed} disabled={!mForm.name.trim()} colors={['#E0546E', '#C8405A']} label={editMedId ? 'Update Medication' : 'Save Medication'} styles={styles} />
       </SheetModal>
 
       {/* Vet Modal */}
-      <SheetModal visible={vetModal} onClose={() => setVetModal(false)} insets={insets} title="Vet Information" gradColors={['#4FA6E8', '#2E86C8']} icon="user" styles={styles}>
+      <SheetModal visible={vetModal} onClose={() => setVetModal(false)} insets={insets} title="Vet Information" gradColors={['#4FA6E8', '#2E86C8']} icon="user" styles={styles}
+        onDelete={vet ? deleteVet : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Doctor Name <Text style={styles.req}>*</Text></Text>
         <TextInput style={styles.input} placeholder="e.g. Dr. Mehta" placeholderTextColor={theme.placeholder} value={vetForm.name} onChangeText={v => setVetForm(f => ({ ...f, name: v }))} />
         <Text style={styles.fieldLabel}>Clinic / Hospital</Text>
@@ -225,12 +302,14 @@ export default function PetHealthTab({ horizontalPad, insets }) {
       </SheetModal>
 
       {/* Allergy Modal */}
-      <SheetModal visible={allergyModal} onClose={() => setAllergyModal(false)} insets={insets} title="Add Allergy" gradColors={['#F5A623', '#E8943A']} icon="alert-triangle" styles={styles}>
+      <SheetModal visible={allergyModal} onClose={closeAllergyModal} insets={insets}
+        title={editAllergyId ? 'Edit Allergy' : 'Add Allergy'} gradColors={['#F5A623', '#E8943A']} icon="alert-triangle" styles={styles}
+        onDelete={editAllergyId ? deleteAllergy : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Allergy / Trigger <Text style={styles.req}>*</Text></Text>
         <TextInput style={styles.input} placeholder="e.g. Chicken, Pollen, Dust" placeholderTextColor={theme.placeholder} value={aForm.name} onChangeText={v => setAForm(f => ({ ...f, name: v }))} />
         <Text style={styles.fieldLabel}>Reaction / Symptoms</Text>
         <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]} placeholder="e.g. Skin rash, vomiting..." placeholderTextColor={theme.placeholder} value={aForm.reaction} onChangeText={v => setAForm(f => ({ ...f, reaction: v }))} multiline />
-        <SaveBtn onPress={addAllergy} disabled={!aForm.name.trim()} colors={['#F5A623', '#E8943A']} label="Save Allergy" styles={styles} />
+        <SaveBtn onPress={addAllergy} disabled={!aForm.name.trim()} colors={['#F5A623', '#E8943A']} label={editAllergyId ? 'Update Allergy' : 'Save Allergy'} styles={styles} />
       </SheetModal>
     </>
   );
@@ -252,7 +331,7 @@ function EmptyRow({ icon, text, theme, styles }) {
   return <View style={styles.emptyRow}><Feather name={icon} size={18} color={theme.disabled} /><Text style={styles.emptyRowText}>{text}</Text></View>;
 }
 
-function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles }) {
+function SheetModal({ visible, onClose, insets, title, gradColors, icon, children, styles, onDelete, deleteColor }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -261,7 +340,12 @@ function SheetModal({ visible, onClose, insets, title, gradColors, icon, childre
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <LinearGradient colors={gradColors} style={styles.sheetIcon}><Feather name={icon} size={20} color="#FFFFFF" /></LinearGradient>
-            <Text style={styles.sheetTitle}>{title}</Text>
+            <Text style={[styles.sheetTitle, { flex: 1 }]}>{title}</Text>
+            {onDelete && (
+              <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
+                <Feather name="trash-2" size={18} color={deleteColor} />
+              </TouchableOpacity>
+            )}
           </View>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>
@@ -308,6 +392,7 @@ const createStyles = (theme) => StyleSheet.create({
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   sheetIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   req: { color: theme.danger },
   input: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, fontSize: 14, color: theme.text, marginBottom: 16 },

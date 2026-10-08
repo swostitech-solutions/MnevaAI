@@ -110,8 +110,20 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
 
   const openEditFeed = () => {
     const f = activePet?.feeding;
-    if (f) setFeedForm({ foodName: f.foodName || '', qty: f.qty || '', times: f.times || '', schedule: f.schedule || '', treats: f.treats || '', dietRestrictions: f.dietRestrictions || '' });
+    // Always reset (not just when feeding exists) -- otherwise deleting the
+    // schedule and reopening "Add" would still show the just-deleted values.
+    setFeedForm({ foodName: f?.foodName || '', qty: f?.qty || '', times: f?.times || '', schedule: f?.schedule || '', treats: f?.treats || '', dietRestrictions: f?.dietRestrictions || '' });
     setFeedModal(true);
+  };
+
+  const deleteFeeding = () => {
+    Alert.alert('Delete Feeding Schedule', `Remove this feeding schedule? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await patch('feeding', null);
+        setFeedModal(false);
+      } },
+    ]);
   };
 
   const openAddGroom = () => { setGroomForm(EMPTY_GROOM); setEditGroomId(null); setGroomModal(true); };
@@ -322,7 +334,8 @@ export default function PetRoutineTab({ horizontalPad, insets }) {
 
       {/* ── Feeding Modal ── */}
       <SheetModal visible={feedModal} onClose={() => setFeedModal(false)} insets={insets}
-        title="Nutrition & Feeding" gradColors={['#1F9A5A', '#3CB37A']} icon="coffee" styles={styles}>
+        title="Nutrition & Feeding" gradColors={['#1F9A5A', '#3CB37A']} icon="coffee" styles={styles}
+        onDelete={feeding ? deleteFeeding : null} deleteColor={theme.danger}>
         <Text style={styles.fieldLabel}>Food Name / Brand <Text style={styles.req}>*</Text></Text>
         <TextInput style={styles.input} placeholder="e.g. Royal Canin" placeholderTextColor={theme.placeholder}
           value={feedForm.foodName} onChangeText={v => setFeedForm(f => ({ ...f, foodName: v }))} />
