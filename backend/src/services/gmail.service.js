@@ -515,6 +515,26 @@ async function classifyUrgencyWithAI(emails) {
   }
 }
 
+// Shared by getUrgentEmails (the "Urgent Emails Today" card/digest) and
+// gmailPoller.js (gates which new emails actually push a phone
+// notification) — one definition of "urgent" for both, instead of each
+// maintaining its own criteria that quietly drift apart over time. Takes
+// [{id, from, subject, snippet}], returns a Map id -> {urgent, score, reason}.
+export async function classifyEmailsUrgency(emails) {
+  if (!Array.isArray(emails) || !emails.length) return new Map()
+  const aiResults = await classifyUrgencyWithAI(emails)
+  if (aiResults) {
+    return new Map(emails.map(e => {
+      const ai = aiResults.get(e.id)
+      return [e.id, { urgent: ai?.urgent ?? false, score: ai?.score ?? 0, reason: ai?.reason || null }]
+    }))
+  }
+  return new Map(emails.map(e => {
+    const score = scoreEmailByKeywords(e.subject, e.snippet, e.from)
+    return [e.id, { urgent: score >= 2, score, reason: null }]
+  }))
+}
+
 // Fetch today's unread primary emails and return only the genuinely urgent
 // ones, ranked by urgency.
 // The actual Gmail-list + N-gets + OpenAI-classification work, pulled out of
@@ -555,24 +575,15 @@ async function fetchUrgentEmailsFresh(user, maxResults) {
     return { id: msg.id, subject, from, snippet, time }
   }))
 
-  // Prefer real AI classification — falls back to the keyword heuristic
-  // only if OpenAI isn't configured or the call fails, so a misconfigured
-  // key never silently means "flag everything" again.
-  const aiResults = await classifyUrgencyWithAI(emails)
-  return aiResults
-    ? emails
-        .map(e => {
-          const ai = aiResults.get(e.id)
-          return { ...e, urgencyScore: ai?.score ?? 0, urgent: ai?.urgent ?? false, reason: ai?.reason || null }
-        })
-        .filter(e => e.urgent)
-        .sort((a, b) => b.urgencyScore - a.urgencyScore)
-        .slice(0, 5)
-    : emails
-        .map(e => ({ ...e, urgencyScore: scoreEmailByKeywords(e.subject, e.snippet, e.from) }))
-        .filter(e => e.urgencyScore >= 2)
-        .sort((a, b) => b.urgencyScore - a.urgencyScore)
-        .slice(0, 5)
+  const classified = await classifyEmailsUrgency(emails)
+  return emails
+    .map(e => {
+      const c = classified.get(e.id) || { urgent: false, score: 0, reason: null }
+      return { ...e, urgencyScore: c.score, urgent: c.urgent, reason: c.reason }
+    })
+    .filter(e => e.urgent)
+    .sort((a, b) => b.urgencyScore - a.urgencyScore)
+    .slice(0, 5)
 }
 
 export async function getUrgentEmails(user, maxResults = 20) {

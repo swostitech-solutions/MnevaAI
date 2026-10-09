@@ -1,4 +1,4 @@
-import { listEmails, getEmailBody } from './gmail.service.js'
+import { listEmails, getEmailBody, classifyEmailsUrgency } from './gmail.service.js'
 import { userStore } from '../models/userStore.js'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
@@ -88,6 +88,16 @@ async function pollOnce(userId, io) {
 
     emails.forEach(e => state.lastSeenIds.add(e.id))
 
+    // Every new email still gets a Notification row (so the in-app Gmail
+    // panel/feed shows all of them, same as before) — but the phone's OS
+    // push notification is gated to genuinely urgent ones, using the same
+    // classifier "Urgent Emails Today" already uses, so a newsletter or a
+    // routine automated email no longer buzzes the phone just because it's
+    // unread. One batched call for the whole poll tick, not one per email.
+    const urgency = await classifyEmailsUrgency(
+      newEmails.map(e => ({ id: e.id, from: e.from, subject: e.subject, snippet: e.preview })),
+    ).catch(() => new Map())
+
     for (const email of newEmails) {
       // fetch full body for better draft quality
       let fullEmail = email
@@ -122,7 +132,9 @@ async function pollOnce(userId, io) {
         suggestedReply: draft,
         ts: notif.createdAt.toISOString(),
       })
-      sendPushToUser(userId, { title: notif.title, body: `From ${email.from || 'unknown'}`, data: { type: 'gmail', emailId: email.id } })
+      if (urgency.get(email.id)?.urgent) {
+        sendPushToUser(userId, { title: notif.title, body: `From ${email.from || 'unknown'}`, data: { type: 'gmail', emailId: email.id } })
+      }
     }
 
     logger.info(`Gmail poller: ${newEmails.length} new email(s) for user ${userId}`)
