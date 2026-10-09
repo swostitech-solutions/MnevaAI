@@ -54,6 +54,20 @@ function daysSince(date) {
   return (Date.now() - new Date(date).getTime()) / (24 * 60 * 60 * 1000)
 }
 
+// Global QA test window — bypasses the staged L1-L4 check for EVERY user at
+// once, without ever reading or writing anyone's real DomainTrust row. Turn
+// on with GLOBAL_TEST_MODE_FULL_TRUST=true in the environment; turning it
+// back off needs no cleanup at all — every user's actual
+// level/actionsAtLevel/acceptedAtLevel/rejectedAtLevel was never touched
+// while this was on, so the real staged system just resumes exactly where
+// it already was. Large payments (initiate_payment >= 1000, see
+// isLargePayment below) are NOT bypassed by this — that's a hard safety
+// floor independent of trust level, not something a QA window should be
+// able to skip.
+export function isGlobalTestModeActive() {
+  return process.env.GLOBAL_TEST_MODE_FULL_TRUST === 'true'
+}
+
 // Lazily creates a domain's row at L1 the first time it's ever read — every
 // user who existed before this feature shipped already has all 4 rows from
 // the migration backfill (seeded at their prior global trustLevel); this
@@ -99,6 +113,9 @@ export function decideGate(tool, domainTrust, amount = 0, domainOverride = null,
   if (isLargePayment) return { mode: 'pending', domain }
 
   if (!autonomous && tool !== 'send_email') return { mode: 'execute', domain }
+
+  // QA test window — see isGlobalTestModeActive above.
+  if (isGlobalTestModeActive()) return { mode: 'execute', domain }
 
   if (domainTrust.level <= 1) return { mode: 'blocked', domain, reason: 'observe_mode' }
   if (domainTrust.level >= 4) return { mode: 'execute', domain }
