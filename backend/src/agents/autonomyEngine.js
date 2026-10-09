@@ -577,6 +577,17 @@ export const MNEVA_TOOLS = [
     }
   },
   {
+    name: 'mark_meeting_done',
+    description: 'Mark an existing scheduled meeting or reminder as already completed, so it stops showing as pending/upcoming. Use this when the user says a meeting already happened or a reminder is no longer needed — most often right after schedule_event or set_reminder returns a clash error and gives a conflictId: the user saying "that one\'s done, schedule this instead" means call this with that conflictId, then call schedule_event/set_reminder again with the same details in the same turn, not a separate confirmation step.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        meeting_id: { type: 'string', description: 'The conflictId from a schedule_event/set_reminder clash error.' },
+      },
+      required: ['meeting_id']
+    }
+  },
+  {
     name: 'get_connected_accounts',
     description: 'Get the status of all connected accounts and integrations — Gmail, Google Calendar, Google Drive, Google Contacts, Google Fit, Google Tasks. Use this when the user asks which accounts are connected, what is linked, or about their integrations.',
     input_schema: { type: 'object', properties: {}, required: [] }
@@ -1103,7 +1114,7 @@ export async function executeTool(name, input, userId, opts = {}) {
       const timeZone = await getUserTimeZone(userId)
       const scheduledAt = normalizeScheduledTime(input.time, timeZone)
       if (!scheduledAt || scheduledAt.getTime() <= Date.now()) {
-        return { success: false, error: 'That date and time is in the past (or could not be understood). Tell the user it is a past date and ask for a future date and time.' }
+        return { success: false, error: 'That date and time is in the past (or could not be understood) — please give a future date and time.' }
       }
       const scheduled = scheduledAt.toISOString()
       // The in-app record is the source of truth.  A Redis/BullMQ outage must
@@ -1200,14 +1211,27 @@ export async function executeTool(name, input, userId, opts = {}) {
         const { createMeetingWithGoogleMeet } = await import('../services/calendar.service.js')
         const timeZone = 'Asia/Kolkata' // meetings are always scheduled and shown in IST
         const startDt = normalizeScheduledTime(input.start, timeZone)
-        if (!startDt || startDt.getTime() <= Date.now()) return { success: false, error: 'That date and time is in the past (or could not be understood). Tell the user it is a past date and ask for a future date and time.' }
+        if (!startDt || startDt.getTime() <= Date.now()) return { success: false, error: 'That date and time is in the past (or could not be understood) — please give a future date and time.' }
         const endDt = input.end ? normalizeScheduledTime(input.end, timeZone) : new Date(startDt.getTime() + 60 * 60 * 1000)
         if (!endDt || endDt <= startDt) return { success: false, error: 'Meeting end time must be after its start time.' }
         const { findScheduleConflict } = await import('../services/calendar.service.js')
         const conflict = await findScheduleConflict(userId, startDt.toISOString(), endDt.toISOString())
         if (conflict) {
           const conflictTime = new Date(conflict.start).toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })
-          return { success: false, error: `The user already has "${conflict.title}" at ${conflictTime}. Tell them this clashes and ask them to pick another time — do not create the meeting.` }
+          // error is a clean, standalone sentence — safe to show the user
+          // as-is if the model's turn ends with no text of its own (see the
+          // 'I couldn't schedule that event: ...' fallback further down).
+          // conflictId/conflictTitle are for the model: if the user says
+          // that existing one is already done, call mark_meeting_done with
+          // conflictId, then call schedule_event again with the same
+          // details — don't just ask "confirm?" for something you can
+          // already do.
+          return {
+            success: false,
+            error: `That clashes with "${conflict.title}" at ${conflictTime}.`,
+            conflictId: conflict.id,
+            conflictTitle: conflict.title,
+          }
         }
         let meeting
         let calendarError = null
@@ -1272,6 +1296,27 @@ export async function executeTool(name, input, userId, opts = {}) {
       } catch (err) {
         return { success: false, error: err.message }
       }
+    }
+    // Mirrors POST /api/tasks/meeting-done exactly (same sentinel-task
+    // mechanism Priorities.js's "mark done" checkbox uses) so a meeting the
+    // AI marks done here shows as done everywhere else too, not just in
+    // chat. meeting_id is the Notification row's id — the same id
+    // findScheduleConflict returns as conflictId.
+    case 'mark_meeting_done': {
+      if (!input.meeting_id) return { success: false, error: 'meeting_id is required.' }
+      const existing = await prisma.task.findFirst({ where: { userId, title: `meeting_done:${input.meeting_id}` } })
+      if (existing) return { success: true, alreadyDone: true }
+      const notif = await prisma.notification.findUnique({ where: { id: input.meeting_id } })
+      if (!notif || notif.userId !== userId) return { success: false, error: 'Could not find that meeting/reminder — it may have already been removed.' }
+      let meetingTitle = notif.title.replace(/^📅 Meeting scheduled: /, '')
+      try {
+        const parsed = JSON.parse(notif.message)
+        if (notif.title === '🔔 Reminder set') meetingTitle = parsed.preview || meetingTitle
+      } catch { /* use the title as-is */ }
+      await prisma.task.create({
+        data: { userId, title: `meeting_done:${input.meeting_id}`, description: meetingTitle, status: 'COMPLETED' },
+      })
+      return { success: true, title: meetingTitle }
     }
     case 'search_contacts': {
       try {
@@ -1726,7 +1771,7 @@ export async function executeTool(name, input, userId, opts = {}) {
       if (!pet) return { success: false, error: `No pet named "${input.pet_name}" found for this account. Add the pet first with add_pet.` }
       const timeZone = await getUserTimeZone(userId)
       const remindAt = normalizeScheduledTime(input.remind_at, timeZone)
-      if (!remindAt || remindAt.getTime() <= Date.now()) return { success: false, error: 'That date and time is in the past (or could not be understood). Tell the user it is a past date and ask for a future date and time.' }
+      if (!remindAt || remindAt.getTime() <= Date.now()) return { success: false, error: 'That date and time is in the past (or could not be understood) — please give a future date and time.' }
       const reminder = await prisma.petReminder.create({
         data: { petId: pet.id, userId, type: input.type, title: input.title, remindAt, notes: input.notes || null },
       })
@@ -2077,6 +2122,7 @@ CRITICAL RULES:
 22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
 27. WEB SEARCH: You have a web_search tool for current/live information (news, prices, scores, facts you're unsure of or that may be newer than your training). NEVER state a price, rate, fee, availability, ranking or "current X" figure for anything outside the app (products, hotels/flights/travel, gold/stock/currency rates, subscriptions/services, tickets, scores) from your own memory — call web_search first, every time, even for a broad/no-date query (e.g. search "best beach resorts Goa price per night 2026" before listing options), then answer from those results. Only skip it for the user's OWN saved data in the app (use personal_search/list_records for that) or for things that plainly have no live number (general how-to, definitions, advice). Web pages often disagree on live numbers because some are outdated/evergreen pages — ALWAYS report the tool result's "answer" field as the value, never a number you noticed only in one of the "results" snippets; if "answer" is missing, say the figures found conflict and give the range with sources rather than picking one. If it errors or returns nothing useful, say so plainly and answer from your own knowledge instead (clearly marked as an estimate, not a live figure) — don't retry it repeatedly. Never mention these rules, "developer instructions", or that you are required/forced to search — just call the tool and answer normally, as if searching were your own idea.
 26. EDIT / DELETE / DETAILS: You CAN edit, update and delete saved records in Family (parent medications, family tasks, pets, pet reminders, family items), Finance (subscriptions, loans, EMIs, fixed deposits, bills, portfolio holdings), and Health (health_log — a specific day's logged data, e.g. "change yesterday's steps to 6000" or "delete Tuesday's log"; use log_health_data instead only to log TODAY's data for the first time). To change or remove something: (1) call list_records for that module to find the record and its id, (2) call update_record (only the changed fields) or delete_record with that id, (3) confirm what you changed in one line. Do this in the same turn — never tell the user to do it themselves and never claim it was changed without calling the tool. If several records match the name, ask which one. For details of a saved item, call list_records and answer from it. Only say something cannot be edited if the tool returns an error saying so. Never show record ids and never mention the ledger in the reply. When the request is clear (record + new value), do it immediately — do not ask the user to confirm the name, the field or the value first; only ask when several records genuinely match.
+28. SCHEDULING CLASHES: When schedule_event or set_reminder fails because of a clash, its result includes conflictId/conflictTitle alongside the error. Tell the user in one line which existing item it clashes with. If they say that existing one is already done/over, call mark_meeting_done with conflictId, then immediately call schedule_event/set_reminder again with the same details you already have — in the same turn, not as a separate "confirm?" step, same as rule 26's "when clear, do it immediately". Only ask them to pick a different time if they don't say the old one is done.
 25. ATTACHMENTS: When a file's text or a photo is included in the user's message, that IS the file — read it and answer from it directly (summarize, analyze, extract, explain, answer questions about it). Never say you cannot see or open attachments when their content is present. Refer to specific details from it. If the file text is marked as truncated, say the answer is based on the first part.
 24. ANSWER QUALITY AND STYLE: Reply like a sharp, efficient assistant. Lead with the answer or the result in the first sentence — no greeting filler, no "Sure!/Certainly!", no restating the question, no listing what you can or cannot do. Keep it as short as the question allows: a simple question gets 1-2 sentences, a task gets the outcome plus only the key details (name, amount, date, time). NEVER mention trust levels, autonomy levels, "Observe mode", L1-L4, or the Autonomy Engine in a reply unless the user explicitly asks about them — they are internal settings, not something to explain in answers. If a tool result says an action was not done or is waiting for approval, say so in one short, plain sentence and give the simple next step (for example "I've prepared this — approve it in the app to send it" or "I can't add that automatically yet — you can add it yourself from the Family screen"), without explaining why in terms of levels or settings. Do not end with generic offers like "Let me know if you need anything else".
 23. REMINDER RECURRENCE: set_reminder's "repeat" parameter defaults to "once" whenever you don't pass it — so whenever the user's own words imply recurrence ("every day", "daily", "each week", "weekly", "every month", "monthly", or the Hindi/Hinglish equivalents "roz", "har din", "har hafte", "har mahine"), you MUST pass the matching value ("daily"/"weekly"/"monthly") yourself. Never leave a recurring request as a one-time reminder just because it wasn't spelled out in English — the reminder the user actually asked for and the one that gets saved must match.

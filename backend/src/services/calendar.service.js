@@ -140,6 +140,11 @@ export async function findScheduleConflict(userId, startISO, endISO) {
         })()
     if (overlaps) {
       return {
+        // Same id Priorities.js's "mark done" flow uses (POST
+        // /api/tasks/meeting-done) and what the mark_meeting_done AI tool
+        // takes — lets the AI actually resolve "that one's already done,
+        // replace it" instead of just being told about the clash.
+        id: n.id,
         title: isReminder ? (parsed.preview || 'Reminder') : n.title.replace(/^📅 Meeting scheduled: /, ''),
         kind: isReminder ? 'reminder' : 'meeting',
         start: parsed.start,
