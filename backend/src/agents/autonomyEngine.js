@@ -262,6 +262,39 @@ export function formatLeadMinutes(minutes) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
+// When an item is created with less notice than one of the user's own
+// configured lead times (e.g. a meeting set for 10 minutes from now, with
+// lead times 30/5/2), that lead time's fire-moment ("30 min before") has
+// already passed by the time this even runs. Previously it still fired —
+// immediately, mislabeled "in 30 min" even though the meeting was really
+// only 10 minutes out. Every lead time that still fits ahead of the event
+// fires normally, correctly labeled; every lead time that doesn't fit
+// collapses into a single immediate alert labeled with the real remaining
+// time instead of a number that was never actually honored.
+function buildLeadTimeAlerts(targetDate, leadTimes) {
+  const now = Date.now()
+  const timeUntilMs = targetDate.getTime() - now
+  const alerts = []
+  let needsImmediate = false
+  for (const leadMinutes of leadTimes) {
+    if (leadMinutes * 60 * 1000 < timeUntilMs) {
+      alerts.push({ fireAt: new Date(targetDate.getTime() - leadMinutes * 60 * 1000), leadMinutes })
+    } else {
+      needsImmediate = true
+    }
+  }
+  if (needsImmediate) {
+    const realMinutes = Math.max(1, Math.round(timeUntilMs / 60000))
+    // Skip the extra alert if a fitting lead time already lands within a
+    // minute of right now (e.g. leadTimes itself includes a 1 or 2) — no
+    // need for two near-simultaneous pushes.
+    if (!alerts.some(a => Math.abs(a.fireAt.getTime() - now) < 60 * 1000)) {
+      alerts.push({ fireAt: new Date(now), leadMinutes: realMinutes })
+    }
+  }
+  return alerts.sort((a, b) => a.fireAt - b.fireAt)
+}
+
 function formatTodaySchedule(schedule = [], timeZone = 'Asia/Kolkata') {
   const todayKey = calendarDayKey(new Date(), timeZone)
   const title = `Today's schedule`
@@ -1154,8 +1187,7 @@ export async function executeTool(name, input, userId, opts = {}) {
       let queueError = null
       try {
         const { enqueueReminder } = await import('../queues/reminder.queue.js')
-        jobs = await Promise.all(leadTimes.map((leadMinutes) => {
-          const fireAt = new Date(scheduledAt.getTime() - leadMinutes * 60 * 1000)
+        jobs = await Promise.all(buildLeadTimeAlerts(scheduledAt, leadTimes).map(({ fireAt, leadMinutes }) => {
           const body = leadMinutes > 0 ? `${input.message} — in ${formatLeadMinutes(leadMinutes)}` : input.message
           return enqueueReminder({
             userId,
@@ -1283,8 +1315,7 @@ export async function executeTool(name, input, userId, opts = {}) {
           : [30]
         try {
           const { enqueueReminder } = await import('../queues/reminder.queue.js')
-          await Promise.all(leadTimes.map((leadMinutes) => {
-            const fireAt = new Date(startDt.getTime() - leadMinutes * 60 * 1000)
+          await Promise.all(buildLeadTimeAlerts(startDt, leadTimes).map(({ fireAt, leadMinutes }) => {
             const body = leadMinutes > 0 ? `${input.title} — in ${formatLeadMinutes(leadMinutes)}` : input.title
             return enqueueReminder({ userId, message: body, time: fireAt.toISOString(), domain: 'meeting' })
           }))
