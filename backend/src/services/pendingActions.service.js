@@ -109,7 +109,16 @@ export async function getAllDomainTrust(userId) {
 // this rewrite. No caller passes this yet (see executeTool's two real
 // callers) — it exists so a proactive-suggestion feature can opt into real
 // trust-gating later without this function needing to change again.
-export function decideGate(tool, domainTrust, amount = 0, domainOverride = null, { autonomous = false } = {}) {
+// testLevelOverride is one tester's OWN personal pick (Settings > Trust >
+// "Test this level", only ever shown/settable while getGlobalTestModeLevel
+// is active — see trust/test-mode-level route) — lets different testers
+// each verify a different stage at the same time, instead of everyone
+// being stuck on whatever single number the env var happens to be set to.
+// It only takes effect while the master test window is open; outside that
+// window the route that sets it refuses to persist anything, so a stale
+// per-user value left over from a past test window can never silently
+// activate on its own.
+export function decideGate(tool, domainTrust, amount = 0, domainOverride = null, { autonomous = false, testLevelOverride = null } = {}) {
   const domain = domainOverride || GATED_DOMAINS[tool]
   if (!domain) return { mode: 'execute', domain: null }
   if (domainTrust.enabled === false) return { mode: 'blocked', domain, reason: 'domain_disabled' }
@@ -121,8 +130,13 @@ export function decideGate(tool, domainTrust, amount = 0, domainOverride = null,
 
   // QA test window — see getGlobalTestModeLevel above. Runs through the
   // exact same level-based branching as a real level, just fed the
-  // overridden number instead of domainTrust.level.
-  const effectiveLevel = getGlobalTestModeLevel() ?? domainTrust.level
+  // overridden number instead of domainTrust.level. A tester's own pick
+  // wins over the env var's default, but only while the master window
+  // (getGlobalTestModeLevel) is actually open.
+  const globalTestLevel = getGlobalTestModeLevel()
+  const effectiveLevel = globalTestLevel !== null
+    ? (testLevelOverride ?? globalTestLevel)
+    : domainTrust.level
 
   if (effectiveLevel <= 1) return { mode: 'blocked', domain, reason: 'observe_mode' }
   if (effectiveLevel >= 4) return { mode: 'execute', domain }

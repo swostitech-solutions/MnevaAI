@@ -1284,7 +1284,7 @@ import { createDeviceToken, hashToken } from "./deviceNotifications.js";
 import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
-import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle } from "../services/pendingActions.service.js";
+import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle, getGlobalTestModeLevel } from "../services/pendingActions.service.js";
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
 
 const upload = multer({
@@ -3470,7 +3470,33 @@ trustRouter.get("/settings", async (req, res) => {
   if (preferences.privacy) {
     preferences.privacy = { ...preferences.privacy, e2eEncryption: true, signedLedger: true };
   }
-  res.json({ domains, plan: user?.plan || "Free", preferences });
+  // Only true during a sanctioned QA test window (GLOBAL_TEST_MODE_LEVEL
+  // set on the server) — the mobile Trust tab's "Test this level" picker
+  // only ever renders when this is true, so it's invisible in normal
+  // production regardless of what's sitting in this account's preferences.
+  const testModeActive = getGlobalTestModeLevel() !== null;
+  res.json({ domains, plan: user?.plan || "Free", preferences, testModeActive });
+});
+
+// Lets one tester pick their OWN level (1-4) to verify, independent of
+// whatever every other tester has picked — see testLevelOverride in
+// pendingActions.service.js's decideGate. Refuses outside the sanctioned
+// test window so a value left over from a past window can never silently
+// reactivate just because someone's account still has it saved.
+trustRouter.patch("/test-mode-level", async (req, res) => {
+  if (getGlobalTestModeLevel() === null) {
+    return res.status(409).json({ error: "Test mode is not currently active." });
+  }
+  const { level } = req.body;
+  const n = level === null ? null : parseInt(level, 10);
+  if (n !== null && (!Number.isInteger(n) || n < 1 || n > 4)) {
+    return res.status(400).json({ error: "level must be 1, 2, 3, 4 or null" });
+  }
+  const user = await userStore.getById(req.user.id);
+  const prefs = user?.preferences || {};
+  prefs.testModeLevel = n;
+  await prisma.user.update({ where: { id: req.user.id }, data: { preferences: prefs } });
+  res.json({ success: true, testModeLevel: n });
 });
 
 trustRouter.patch("/settings", async (req, res) => {

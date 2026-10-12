@@ -5,7 +5,7 @@ import { emitToUser } from '../services/realtime.js'
 import { sendPushToUser } from '../services/pushService.js'
 import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
-import { GATED_DOMAINS, domainForCall, getDomainTrust, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction, recordDomainAction } from '../services/pendingActions.service.js'
+import { GATED_DOMAINS, domainForCall, getDomainTrust, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction, recordDomainAction, getGlobalTestModeLevel } from '../services/pendingActions.service.js'
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from '../services/activityCalc.js'
 
 function validTimeZone(value) {
@@ -1024,7 +1024,15 @@ export async function executeTool(name, input, userId, opts = {}) {
   if (domain && !opts.skipGate) {
     const domainTrust = await getDomainTrust(userId, domain)
     const amount = name === 'initiate_payment' ? Number(input.amount) || 0 : 0
-    const gate = decideGate(name, domainTrust, amount, domain, { autonomous: !!opts.autonomous })
+    // Only looked up while the master QA test window is open at all — a
+    // normal gated call in production never pays this extra query.
+    let testLevelOverride = null
+    if (getGlobalTestModeLevel() !== null) {
+      const testUser = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
+      const pickedLevel = parseInt(testUser?.preferences?.testModeLevel, 10)
+      testLevelOverride = Number.isInteger(pickedLevel) && pickedLevel >= 1 && pickedLevel <= 4 ? pickedLevel : null
+    }
+    const gate = decideGate(name, domainTrust, amount, domain, { autonomous: !!opts.autonomous, testLevelOverride })
     if (gate.mode === 'blocked') {
       const reasonMessage = blockedMessage(gate.reason, describeAction(name))
       // `error` mirrors every other failure path in this switch (the chat

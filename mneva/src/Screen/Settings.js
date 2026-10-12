@@ -488,6 +488,11 @@ export default function Settings({ navigation, route }) {
   const [domainTrust, setDomainTrust] = useState({});
   const [selectedDomain, setSelectedDomain] = useState('finance');
   const [confirmingLevel, setConfirmingLevel] = useState(false);
+  // QA test window — only true while the backend's GLOBAL_TEST_MODE_LEVEL
+  // is set; invisible otherwise, including in normal production.
+  const [testModeActive, setTestModeActive] = useState(false);
+  const [testModeLevel, setTestModeLevel] = useState(null);
+  const [settingTestLevel, setSettingTestLevel] = useState(false);
   const [privacy, setPrivacy] = useState({ biometricGate: true, e2eEncryption: true, signedLedger: true });
   const [notifications, setNotifications] = useState({ email: true, payments: true, rides: true, aiInsights: true, system: true });
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
@@ -518,6 +523,8 @@ export default function Settings({ navigation, route }) {
       if (Array.isArray(prefs.notificationLeadTimes) && prefs.notificationLeadTimes.length) {
         setLeadTimes(prefs.notificationLeadTimes);
       }
+      setTestModeActive(!!data.testModeActive);
+      setTestModeLevel(Number.isInteger(prefs.testModeLevel) ? prefs.testModeLevel : null);
     }
     if (me) {
       setUser(me);
@@ -637,6 +644,23 @@ export default function Settings({ navigation, route }) {
   const toggleDomainEnabled = (domain, val) => {
     setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], enabled: val } }));
     save({ domain, enabled: val });
+  };
+
+  // Tap a level in the QA test-mode picker (only rendered while
+  // testModeActive) — applies to this account across every domain
+  // immediately, no app restart or rebuild needed. Tapping the already-
+  // selected level again clears it (back to "use the window's default").
+  const pickTestLevel = async (level) => {
+    const next = testModeLevel === level ? null : level;
+    setSettingTestLevel(true);
+    try {
+      await apiFetch('/api/trust/test-mode-level', { method: 'PATCH', body: { level: next } });
+      setTestModeLevel(next);
+    } catch {
+      Alert.alert('Could not set test level', 'Please try again.');
+    } finally {
+      setSettingTestLevel(false);
+    }
   };
 
   // Finance-only: confirms the L1->L2 promotion the PDF says finance must
@@ -851,6 +875,39 @@ export default function Settings({ navigation, route }) {
 
           return (
             <>
+              {/* QA test-mode picker — only rendered while the backend's
+                  test window is open (see GET /trust/settings' testModeActive).
+                  Invisible in normal production regardless of anything saved
+                  on this account, so there's no way a regular user ever sees
+                  or uses this to self-promote their own trust level. */}
+              {testModeActive && (
+                <View style={styles.testModeCard}>
+                  <View style={styles.testModeHeaderRow}>
+                    <Feather name="zap" size={14} color={theme.warning} />
+                    <Text style={styles.testModeTitle}>Test mode — pick a level to verify</Text>
+                  </View>
+                  <Text style={styles.testModeDesc}>
+                    Applies to your account only, across every domain, right now — no rebuild needed. Tap the same level again to clear it.
+                  </Text>
+                  <View style={styles.testModeChipRow}>
+                    {[1, 2, 3, 4].map((l) => (
+                      <TouchableOpacity
+                        key={l}
+                        style={[styles.testModeChip, testModeLevel === l && styles.testModeChipActive]}
+                        onPress={() => pickTestLevel(l)}
+                        disabled={settingTestLevel}
+                      >
+                        <Text style={[styles.testModeChipText, testModeLevel === l && styles.testModeChipTextActive]}>L{l}</Text>
+                        <Text style={[styles.testModeChipSub, testModeLevel === l && styles.testModeChipTextActive]}>{LEVEL_NAMES[l]}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {testModeLevel == null && (
+                    <Text style={styles.testModeHint}>No level picked — using the test window's default for everyone.</Text>
+                  )}
+                </View>
+              )}
+
               {/* Domain sub-tabs — each of the 4 PDF domains earns trust on
                   its own clock, so everything below is scoped to whichever
                   one is selected here. Finance is the default. Horizontally
@@ -1206,6 +1263,18 @@ const createStyles = (theme) => StyleSheet.create({
   domainTabBtnActive: { backgroundColor: theme.accent },
   domainTabText: { fontSize: 12.5, fontWeight: '700', color: theme.muted },
   domainTabTextActive: { color: '#FFFFFF' },
+
+  testModeCard: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.12)' : '#FFF8EA', borderRadius: 16, borderWidth: 1, borderColor: theme.warning, padding: 14, marginBottom: 16 },
+  testModeHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 4 },
+  testModeTitle: { fontSize: 13.5, fontWeight: '800', color: theme.text },
+  testModeDesc: { fontSize: 11.5, color: theme.muted, lineHeight: 15, marginBottom: 12 },
+  testModeChipRow: { flexDirection: 'row', gap: 8 },
+  testModeChip: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, backgroundColor: theme.card, borderWidth: 1.5, borderColor: 'transparent' },
+  testModeChipActive: { backgroundColor: theme.warning, borderColor: theme.warning },
+  testModeChipText: { fontSize: 13, fontWeight: '800', color: theme.text },
+  testModeChipSub: { fontSize: 9.5, fontWeight: '600', color: theme.faint, marginTop: 1 },
+  testModeChipTextActive: { color: '#FFFFFF' },
+  testModeHint: { fontSize: 11, color: theme.faint, marginTop: 10 },
 
   confirmBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(52,199,123,0.14)' : '#EFFBF4', borderRadius: 14, borderWidth: 1, borderColor: theme.accent, padding: 14, marginBottom: 16 },
   confirmBannerTitle: { fontSize: 13.5, fontWeight: '800', color: theme.text },
