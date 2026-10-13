@@ -321,8 +321,8 @@ export function isOpenAIConfigured(apiKey = process.env.OPENAI_API_KEY) {
 function getOpenAIErrorMessage(error) {
   const detail = error?.message || error?.error?.message || ''
   const lower = String(detail).toLowerCase()
-  if (lower.includes('insufficient_quota') || lower.includes('billing')) {
-    return 'OpenAI rejected the request due to insufficient quota. Check your billing at platform.openai.com.'
+  if (lower.includes('insufficient_quota') || lower.includes('insufficient balance') || lower.includes('billing')) {
+    return 'The AI provider rejected the request due to insufficient balance — please add credits/top up to continue.'
   }
   if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) {
     return 'OpenAI rejected the request because the API key is invalid or expired.'
