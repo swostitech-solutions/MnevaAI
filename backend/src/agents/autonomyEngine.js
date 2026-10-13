@@ -327,7 +327,9 @@ function getOpenAIErrorMessage(error) {
   if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) {
     return 'OpenAI rejected the request because the API key is invalid or expired.'
   }
-  return detail || 'Unknown OpenAI error'
+  // Anything else (a bare 5xx, a timeout, a network drop) is a transient,
+  // technical failure — never show its raw text to the user, same as rule 21.
+  return "I'm having trouble reaching the AI service right now — please try that again in a moment."
 }
 
 async function callOpenAI({ model, system, messages, tools, toolChoice = null }) {
@@ -365,19 +367,36 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
   }
   if (toolChoice) payload.tool_choice = { type: 'function', function: { name: toolChoice } }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  })
+  // A bare 5xx/429 from OpenAI, or the fetch itself dropping (network blip,
+  // upstream timeout), is almost always transient — retry a couple of times
+  // before giving up, instead of turning a few-second hiccup into a dead-end
+  // chat reply the first time it happens.
+  const maxAttempts = 3
+  let data = null
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let response
+    try {
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      })
+    } catch (networkErr) {
+      if (attempt < maxAttempts) { await new Promise(r => setTimeout(r, attempt * 800)); continue }
+      throw networkErr
+    }
 
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    const message = data?.error?.message || `OpenAI API error ${response.status}`
-    throw new Error(message)
+    data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const message = data?.error?.message || `OpenAI API error ${response.status}`
+      const transient = response.status >= 500 || response.status === 429
+      if (transient && attempt < maxAttempts) { await new Promise(r => setTimeout(r, attempt * 800)); continue }
+      throw new Error(message)
+    }
+    break
   }
 
   const choice = data.choices?.[0]
@@ -2299,8 +2318,8 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
       }
       resp = await callOpenAI(_callArgs)
     } catch (error) {
+      logger.error(`AI request failed: ${error?.message || error}`)
       const detail = getOpenAIErrorMessage(error)
-      logger.error(`AI request failed: ${String(detail)}`)
 
       return {
         response: detail,
