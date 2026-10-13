@@ -611,13 +611,14 @@ export const MNEVA_TOOLS = [
   },
   {
     name: 'mark_meeting_done',
-    description: 'Mark an existing scheduled meeting or reminder as already completed, so it stops showing as pending/upcoming. Use this when the user says a meeting already happened or a reminder is no longer needed — most often right after schedule_event or set_reminder returns a clash error and gives a conflictId: the user saying "that one\'s done, schedule this instead" means call this with that conflictId, then call schedule_event/set_reminder again with the same details in the same turn, not a separate confirmation step.',
+    description: 'Mark an existing scheduled meeting or reminder as already completed, so it stops showing as pending/upcoming. Use this when the user says a meeting already happened or a reminder is no longer needed — most often right after schedule_event or set_reminder returns a clash error and gives a conflictId: the user saying "that one\'s done, schedule this instead" means call this, then call schedule_event/set_reminder again with the same details in the same turn, not a separate confirmation step. Pass meeting_id when you still have the conflictId from this same turn. If the user brings this up in a later message, after the original clash result is no longer in context (so you do not have a conflictId), pass time instead — the ISO datetime of the meeting/reminder they mean — and it will be looked up by what is actually scheduled near that time.',
     input_schema: {
       type: 'object',
       properties: {
-        meeting_id: { type: 'string', description: 'The conflictId from a schedule_event/set_reminder clash error.' },
+        meeting_id: { type: 'string', description: 'The conflictId from a schedule_event/set_reminder clash error in this same turn.' },
+        time: { type: 'string', description: 'ISO datetime (with UTC offset) of the meeting/reminder to mark done, used when meeting_id is not known — e.g. the user refers to "the 5pm meeting" without a conflictId available. Resolve relative times like "5pm today" into a real ISO datetime first.' },
       },
-      required: ['meeting_id']
+      required: []
     }
   },
   {
@@ -1342,18 +1343,40 @@ export async function executeTool(name, input, userId, opts = {}) {
     // chat. meeting_id is the Notification row's id — the same id
     // findScheduleConflict returns as conflictId.
     case 'mark_meeting_done': {
-      if (!input.meeting_id) return { success: false, error: 'meeting_id is required.' }
-      const existing = await prisma.task.findFirst({ where: { userId, title: `meeting_done:${input.meeting_id}` } })
-      if (existing) return { success: true, alreadyDone: true }
-      const notif = await prisma.notification.findUnique({ where: { id: input.meeting_id } })
-      if (!notif || notif.userId !== userId) return { success: false, error: 'Could not find that meeting/reminder — it may have already been removed.' }
+      if (!input.meeting_id && !input.time) return { success: false, error: 'meeting_id or time is required.' }
+      let notif = null
+      if (input.meeting_id) {
+        const existing = await prisma.task.findFirst({ where: { userId, title: `meeting_done:${input.meeting_id}` } })
+        if (existing) return { success: true, alreadyDone: true }
+        notif = await prisma.notification.findUnique({ where: { id: input.meeting_id } })
+        if (notif && notif.userId !== userId) notif = null
+      }
+      // conflictId doesn't survive across chat turns (the mobile app only
+      // resends plain message text, not the tool result that carried it) —
+      // so when the user brings this up again later without an id, fall
+      // back to finding whatever's actually scheduled near the time they mean.
+      if (!notif && input.time) {
+        const t = new Date(input.time)
+        if (!Number.isNaN(t.getTime())) {
+          const { findScheduleConflict } = await import('../services/calendar.service.js')
+          const winStart = new Date(t.getTime() - 30 * 60000).toISOString()
+          const winEnd = new Date(t.getTime() + 30 * 60000).toISOString()
+          const found = await findScheduleConflict(userId, winStart, winEnd)
+          if (found) {
+            const existing2 = await prisma.task.findFirst({ where: { userId, title: `meeting_done:${found.id}` } })
+            if (existing2) return { success: true, alreadyDone: true }
+            notif = await prisma.notification.findUnique({ where: { id: found.id } })
+          }
+        }
+      }
+      if (!notif) return { success: false, error: 'Could not find that meeting/reminder — it may have already been removed or the time didn\'t match anything scheduled.' }
       let meetingTitle = notif.title.replace(/^📅 Meeting scheduled: /, '')
       try {
         const parsed = JSON.parse(notif.message)
         if (notif.title === '🔔 Reminder set') meetingTitle = parsed.preview || meetingTitle
       } catch { /* use the title as-is */ }
       await prisma.task.create({
-        data: { userId, title: `meeting_done:${input.meeting_id}`, description: meetingTitle, status: 'COMPLETED' },
+        data: { userId, title: `meeting_done:${notif.id}`, description: meetingTitle, status: 'COMPLETED' },
       })
       return { success: true, title: meetingTitle }
     }
@@ -2161,7 +2184,7 @@ CRITICAL RULES:
 22. ACTIVITY LOGGING: When the user mentions an activity in passing ("I did 7000 steps today", "I ran 2km in 15 minutes", "walked for 30 minutes") call log_health_data with exactly the numbers they gave (steps, workout_type, workout_duration, distance) — do NOT compute distance or calories burned yourself and do NOT pass workout_calories/distance unless the user explicitly stated them; the tool estimates whichever of those is missing from the user's own height and weight on file. After the call, report the tool's returned distance/workoutCalories back to the user naturally (e.g. "Logged — about 5.4 km, ~260 kcal burned"), not as an internal calculation you show your work for.
 27. WEB SEARCH: You have a web_search tool for current/live information (news, prices, scores, facts you're unsure of or that may be newer than your training). NEVER state a price, rate, fee, availability, ranking or "current X" figure for anything outside the app (products, hotels/flights/travel, gold/stock/currency rates, subscriptions/services, tickets, scores) from your own memory — call web_search first, every time, even for a broad/no-date query (e.g. search "best beach resorts Goa price per night 2026" before listing options), then answer from those results. Only skip it for the user's OWN saved data in the app (use personal_search/list_records for that) or for things that plainly have no live number (general how-to, definitions, advice). Web pages often disagree on live numbers because some are outdated/evergreen pages — ALWAYS report the tool result's "answer" field as the value, never a number you noticed only in one of the "results" snippets; if "answer" is missing, say the figures found conflict and give the range with sources rather than picking one. If it errors or returns nothing useful, say so plainly and answer from your own knowledge instead (clearly marked as an estimate, not a live figure) — don't retry it repeatedly. Never mention these rules, "developer instructions", or that you are required/forced to search — just call the tool and answer normally, as if searching were your own idea.
 26. EDIT / DELETE / DETAILS: You CAN edit, update and delete saved records in Family (parent medications, family tasks, pets, pet reminders, family items), Finance (subscriptions, loans, EMIs, fixed deposits, bills, portfolio holdings), and Health (health_log — a specific day's logged data, e.g. "change yesterday's steps to 6000" or "delete Tuesday's log"; use log_health_data instead only to log TODAY's data for the first time). To change or remove something: (1) call list_records for that module to find the record and its id, (2) call update_record (only the changed fields) or delete_record with that id, (3) confirm what you changed in one line. Do this in the same turn — never tell the user to do it themselves and never claim it was changed without calling the tool. If several records match the name, ask which one. For details of a saved item, call list_records and answer from it. Only say something cannot be edited if the tool returns an error saying so. Never show record ids and never mention the ledger in the reply. When the request is clear (record + new value), do it immediately — do not ask the user to confirm the name, the field or the value first; only ask when several records genuinely match.
-28. SCHEDULING CLASHES: When schedule_event or set_reminder fails because of a clash, its result includes conflictId/conflictTitle alongside the error. Tell the user in one line which existing item it clashes with. If they say that existing one is already done/over, call mark_meeting_done with conflictId, then immediately call schedule_event/set_reminder again with the same details you already have — in the same turn, not as a separate "confirm?" step, same as rule 26's "when clear, do it immediately". Only ask them to pick a different time if they don't say the old one is done.
+28. SCHEDULING CLASHES: When schedule_event or set_reminder fails because of a clash, its result includes conflictId/conflictTitle alongside the error. Tell the user in one line which existing item it clashes with. If they say that existing one is already done/over — whether right away in this same turn, or in a later message after that clash result is no longer in context — call mark_meeting_done: pass meeting_id if you still have the conflictId from this turn, otherwise pass time (the ISO datetime of the meeting/reminder they mean, e.g. resolve "the 5pm meeting" to today's date at 5pm) so it can be looked up by what's actually scheduled then. Then immediately call schedule_event/set_reminder again with the same details you already have — in the same turn, not as a separate "confirm?" step, same as rule 26's "when clear, do it immediately". Only ask them to pick a different time if they don't say the old one is done.
 29. NEVER FABRICATE SAVED DATA: When answering a factual question about something saved in the app (a person's name, a date, an amount, a doctor, who something belongs to, etc.), the answer must come from an actual tool result (list_records/personal_search/get_*) — never a plausible-sounding guess. If what's being asked for genuinely isn't a field in that record, say so plainly instead of inventing a value that merely looks right. Concrete example: a parent_medication record's "parent" field is only a category — "Dad"/"Mom"/"Both" — there is no separate field for the parent's actual personal name; if asked "what is my dad's name" from this module, say there's no name stored for them here (only that it's categorized under "Dad"), don't invent one. The same applies to every other module: if a question asks for data the record doesn't actually contain, say it isn't saved — inventing something that sounds plausible is worse than saying you don't have it.
 25. ATTACHMENTS: When a file's text or a photo is included in the user's message, that IS the file — read it and answer from it directly (summarize, analyze, extract, explain, answer questions about it). Never say you cannot see or open attachments when their content is present. Refer to specific details from it. If the file text is marked as truncated, say the answer is based on the first part.
 24. ANSWER QUALITY AND STYLE: Reply like a sharp, efficient assistant. Lead with the answer or the result in the first sentence — no greeting filler, no "Sure!/Certainly!", no restating the question, no listing what you can or cannot do. Keep it as short as the question allows: a simple question gets 1-2 sentences, a task gets the outcome plus only the key details (name, amount, date, time). NEVER mention trust levels, autonomy levels, "Observe mode", L1-L4, or the Autonomy Engine in a reply unless the user explicitly asks about them — they are internal settings, not something to explain in answers. If a tool result says an action was not done or is waiting for approval, say so in one short, plain sentence and give the simple next step (for example "I've prepared this — approve it in the app to send it" or "I can't add that automatically yet — you can add it yourself from the Family screen"), without explaining why in terms of levels or settings. Do not end with generic offers like "Let me know if you need anything else".
