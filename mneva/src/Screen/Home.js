@@ -9094,21 +9094,21 @@ export default function Home({ navigation }) {
             {/* Stats row */}
             <View style={styles.weatherStatsRow}>
               <View style={styles.weatherStat}>
-                <Feather name="droplet" size={10} color={theme.info} />
-                <Text style={styles.weatherStatText}>
-                  {weather ? `${weather.humidity}%` : "--"}
+                <Feather name="droplet" size={11} color={theme.info} />
+                <Text style={styles.weatherStatText} numberOfLines={1}>
+                  {weather ? `${weather.humidity}% humidity` : "--"}
                 </Text>
               </View>
               <View style={styles.weatherStat}>
-                <Feather name="wind" size={10} color={theme.faint} />
-                <Text style={styles.weatherStatText}>
-                  {weather ? `${weather.wind}km/h` : "--"}
+                <Feather name="wind" size={11} color={theme.faint} />
+                <Text style={styles.weatherStatText} numberOfLines={1}>
+                  {weather ? `${weather.wind} km/h wind` : "--"}
                 </Text>
               </View>
               <View style={styles.weatherStat}>
-                <Feather name="thermometer" size={10} color={theme.danger} />
-                <Text style={styles.weatherStatText}>
-                  {weather ? `${weather.high}°/${weather.low}°` : "--"}
+                <Feather name="thermometer" size={11} color={theme.danger} />
+                <Text style={styles.weatherStatText} numberOfLines={1}>
+                  {weather ? `${weather.high}° / ${weather.low}°` : "--"}
                 </Text>
               </View>
             </View>
@@ -9955,23 +9955,27 @@ const createStyles = (theme) => StyleSheet.create({
     marginTop: 3,
     lineHeight: 15,
   },
+  // Stacked one-per-row instead of 3 equal-width columns — this card only
+  // ever gets ~half the screen (it sits next to the Focus card in topRow),
+  // so three side-by-side pills left barely 25-30px of text width each,
+  // which wrapped/overlapped unpredictably across phone sizes (worst for
+  // "32°/24°", the longest value). A full-width row per stat always has
+  // room regardless of screen width.
   weatherStatsRow: {
-    flexDirection: "row",
     marginTop: 10,
     gap: 6,
   },
   weatherStat: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: 6,
     backgroundColor: theme.card,
     borderRadius: 8,
-    paddingVertical: 5,
-    paddingHorizontal: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
   },
   weatherStatText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
     color: theme.textSecondary,
   },
