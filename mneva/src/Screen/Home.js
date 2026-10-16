@@ -7699,7 +7699,9 @@ export default function Home({ navigation }) {
   const [allTasks, setAllTasks] = useState([]);
   const [calendarItems, setCalendarItems] = useState([]);
   const [doneMeetingIds, setDoneMeetingIds] = useState(new Set());
+  const [cancelledMeetingIds, setCancelledMeetingIds] = useState(new Set());
   const [confirmedPendingIds, setConfirmedPendingIds] = useState(new Set());
+  const [choiceItemId, setChoiceItemId] = useState(null);
   const [profilePct, setProfilePct] = useState(null);
   const [profileCity, setProfileCity] = useState(null);
   const notificationBriefRefreshRef = useRef(null);
@@ -7894,7 +7896,7 @@ export default function Home({ navigation }) {
   // Shared by the real fetch below and by the cache-hydration pass before it,
   // so a returning user sees last known-good content immediately instead of
   // blank/zero placeholders for however long the network round-trip takes.
-  const applyPhase1Data = ({ me, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData }) => {
+  const applyPhase1Data = ({ me, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData, cancelledMeetingsData }) => {
     if (me) setUser(me);
     if (notifs) {
       setUnreadCount(notifs.unreadCount || 0);
@@ -7930,6 +7932,8 @@ export default function Home({ navigation }) {
     }
     if (doneMeetingsData)
       setDoneMeetingIds(new Set(doneMeetingsData.ids || []));
+    if (cancelledMeetingsData)
+      setCancelledMeetingIds(new Set(cancelledMeetingsData.ids || []));
     if (profileRes2) {
       const city = profileRes2?.profile?.city || null;
       const country = profileRes2?.profile?.country || null;
@@ -7954,7 +7958,8 @@ export default function Home({ navigation }) {
           (t) =>
             t.status === "PENDING" &&
             t.title &&
-            !t.title.startsWith("meeting_done:"),
+            !t.title.startsWith("meeting_done:") &&
+            !t.title.startsWith("meeting_cancelled:"),
         )
         .map((t, i) => ({
           id: t.id,
@@ -8005,7 +8010,7 @@ export default function Home({ navigation }) {
     let cancelled = false;
     (async () => {
       const [
-        notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData,
+        notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData, cancelledMeetingsData,
         ledgerData, portfolioData, spendingData, healthData,
       ] = await Promise.all([
         peekCachedResponse("/api/notifications"),
@@ -8014,6 +8019,7 @@ export default function Home({ navigation }) {
         peekCachedResponse("/api/tasks"),
         peekCachedResponse("/api/calendar/meetings"),
         peekCachedResponse("/api/tasks/meeting-done"),
+        peekCachedResponse("/api/tasks/meeting-cancelled"),
         peekCachedResponse("/api/agent/ledger"),
         peekCachedResponse("/api/finance/portfolio"),
         peekCachedResponse("/api/finance/spending"),
@@ -8022,7 +8028,7 @@ export default function Home({ navigation }) {
       if (cancelled) return;
       const gotPhase1 = notifs || briefData || profileRes2 || tasksData || calendarData || doneMeetingsData;
       if (!hasRealPhase1Ref.current && gotPhase1) {
-        applyPhase1Data({ me: null, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData });
+        applyPhase1Data({ me: null, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData, cancelledMeetingsData });
         setBriefLoading(false);
       }
       const gotPhase2 = ledgerData || portfolioData || spendingData || healthData;
@@ -8071,6 +8077,7 @@ export default function Home({ navigation }) {
         tasksRes,
         calendarRes,
         doneMeetingsRes,
+        cancelledMeetingsRes,
       ] = await Promise.allSettled([
         apiFetch("/api/auth/me"),
         apiFetch("/api/notifications"),
@@ -8079,6 +8086,7 @@ export default function Home({ navigation }) {
         apiFetch("/api/tasks"),
         apiFetch("/api/calendar/meetings"),
         apiFetch("/api/tasks/meeting-done"),
+        apiFetch("/api/tasks/meeting-cancelled"),
       ]);
 
       const me = meRes.status === "fulfilled" ? meRes.value : null;
@@ -8091,6 +8099,8 @@ export default function Home({ navigation }) {
         calendarRes.status === "fulfilled" ? calendarRes.value : null;
       const doneMeetingsData =
         doneMeetingsRes.status === "fulfilled" ? doneMeetingsRes.value : null;
+      const cancelledMeetingsData =
+        cancelledMeetingsRes.status === "fulfilled" ? cancelledMeetingsRes.value : null;
 
       // FIX: if every critical call failed together, this is almost never
       // "the account has no data" — it's a connectivity/backend failure.
@@ -8108,7 +8118,7 @@ export default function Home({ navigation }) {
       if (!allCriticalFailed) hasLoadedDataRef.current = true;
 
       hasRealPhase1Ref.current = true;
-      applyPhase1Data({ me, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData });
+      applyPhase1Data({ me, notifs, briefData, profileRes2, tasksData, calendarData, doneMeetingsData, cancelledMeetingsData });
       if (tasksData) hasLoadedDataRef.current = true;
 
       setBriefLoading(false);
@@ -8249,8 +8259,9 @@ export default function Home({ navigation }) {
         apiFetch("/api/dashboard/brief"),
         apiFetch("/api/calendar/meetings"),
         apiFetch("/api/tasks/meeting-done"),
+        apiFetch("/api/tasks/meeting-cancelled"),
       ])
-        .then(([tasksRes, briefRes, calendarRes, doneRes]) => {
+        .then(([tasksRes, briefRes, calendarRes, doneRes, cancelledRes]) => {
           if (briefRes.status === "fulfilled" && briefRes.value)
             setBrief(briefRes.value);
           if (calendarRes.status === "fulfilled") {
@@ -8261,6 +8272,8 @@ export default function Home({ navigation }) {
           }
           if (doneRes.status === "fulfilled")
             setDoneMeetingIds(new Set(doneRes.value.ids || []));
+          if (cancelledRes.status === "fulfilled")
+            setCancelledMeetingIds(new Set(cancelledRes.value.ids || []));
           if (tasksRes.status === "fulfilled") {
             const allTasks = Array.isArray(tasksRes.value)
               ? tasksRes.value
@@ -8278,7 +8291,8 @@ export default function Home({ navigation }) {
                 (t) =>
                   t.status === "PENDING" &&
                   t.title &&
-                  !t.title.startsWith("meeting_done:"),
+                  !t.title.startsWith("meeting_done:") &&
+                  !t.title.startsWith("meeting_cancelled:"),
               )
               .map((t, i) => ({
                 id: t.id,
@@ -8757,7 +8771,12 @@ export default function Home({ navigation }) {
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 999);
-  const todayReminders = calendarItems.filter(
+  // A meeting/reminder marked "didn't happen" is dropped the same way
+  // Priorities.js drops it — never shown here again, not even as done.
+  const activeCalendarItems = calendarItems.filter(
+    (item) => !cancelledMeetingIds.has(item.id),
+  );
+  const todayReminders = activeCalendarItems.filter(
     (item) =>
       !isJoinableMeetingLink(item.meetLink) &&
       item.start &&
@@ -8767,7 +8786,7 @@ export default function Home({ navigation }) {
   // counts these in its header but only lists them under its MEETINGS tab.
   // "Today's Priorities" is meant to be everything due today though, so this
   // card needs the actual meeting rows too, not just the header count.
-  const todayMeetings = calendarItems.filter(
+  const todayMeetings = activeCalendarItems.filter(
     (item) =>
       isJoinableMeetingLink(item.meetLink) &&
       item.start &&
@@ -8889,6 +8908,24 @@ export default function Home({ navigation }) {
       });
     } catch {
       setDoneMeetingIds((prev) => {
+        const s = new Set(prev);
+        s.delete(reminderId);
+        return s;
+      });
+    }
+  };
+  // "Didn't happen" — same tap-the-badge choice as Priorities.js's meeting
+  // cards, tracked separately from done so it's never counted as completed.
+  const handleCancelDashboardReminder = async (reminderId, reminderTitle) => {
+    if (cancelledMeetingIds.has(reminderId)) return;
+    setCancelledMeetingIds((prev) => new Set([...prev, reminderId]));
+    try {
+      await apiFetch("/api/tasks/meeting-cancelled", {
+        method: "POST",
+        body: { meetingId: reminderId, meetingTitle: reminderTitle },
+      });
+    } catch {
+      setCancelledMeetingIds((prev) => {
         const s = new Set(prev);
         s.delete(reminderId);
         return s;
@@ -9227,52 +9264,92 @@ export default function Home({ navigation }) {
                 // vs MeetingCard).
                 const isPast = (item.kind === "reminder" || item.kind === "meeting") && item.start && new Date(item.start).getTime() < Date.now();
                 const awaitingConfirmation = isPast && !item.done && !confirmedPending;
+                // Tapping the badge opens the same complete/didn't-happen
+                // choice Priorities.js's checkbox does — only meaningful for
+                // a meeting/reminder that isn't already past-due (that case
+                // already gets its own Yes/No prompt above) or resolved.
+                const isActionable = (item.kind === "reminder" || item.kind === "meeting") && !item.done && !awaitingConfirmation && !confirmedPending;
+                const showingChoice = isActionable && choiceItemId === item.id;
                 return (
-                  <View key={item.id} style={styles.briefingItemRow}>
-                    <View style={styles.briefingIconWrap}>
-                      <Feather
-                        name={item.done ? "check" : awaitingConfirmation ? "help-circle" : item.icon}
-                        size={12}
-                        color={theme.accent}
-                      />
-                    </View>
-                    <View style={styles.briefingItemTextWrap}>
-                      <Text style={styles.briefingItemText} numberOfLines={1}>
-                        {item.title}
-                      </Text>
-                      {!!item.detail && (
-                        <Text style={styles.briefingItemDetail} numberOfLines={1}>
-                          {item.detail}
-                        </Text>
-                      )}
-                      {awaitingConfirmation && (
-                        <Text style={styles.briefingConfirmPrompt}>Did you complete this?</Text>
-                      )}
-                    </View>
-                    {awaitingConfirmation ? (
-                      <View style={styles.briefingConfirmBtnRow}>
-                        <TouchableOpacity
-                          style={styles.briefingConfirmNoBtn}
-                          onPress={() => handleConfirmDashboardPending(item.id)}
-                        >
-                          <Text style={styles.briefingConfirmNoText}>No</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.briefingConfirmYesBtn}
-                          onPress={() => handleCheckDashboardReminder(item.rawId, item.title)}
-                        >
-                          <Feather name="check" size={11} color={theme.accent} />
-                          <Text style={styles.briefingConfirmYesText}>Yes</Text>
-                        </TouchableOpacity>
+                  <React.Fragment key={item.id}>
+                    <View style={styles.briefingItemRow}>
+                      <View style={styles.briefingIconWrap}>
+                        <Feather
+                          name={item.done ? "check" : awaitingConfirmation ? "help-circle" : item.icon}
+                          size={12}
+                          color={theme.accent}
+                        />
                       </View>
-                    ) : (
-                      <View style={styles.briefingItemBadge}>
-                        <Text style={styles.briefingItemBadgeText}>
-                          {item.done ? "DONE" : confirmedPending ? "PENDING" : "NEW"}
+                      <View style={styles.briefingItemTextWrap}>
+                        <Text style={styles.briefingItemText} numberOfLines={1}>
+                          {item.title}
                         </Text>
+                        {!!item.detail && (
+                          <Text style={styles.briefingItemDetail} numberOfLines={1}>
+                            {item.detail}
+                          </Text>
+                        )}
+                        {awaitingConfirmation && (
+                          <Text style={styles.briefingConfirmPrompt}>Did you complete this?</Text>
+                        )}
+                      </View>
+                      {awaitingConfirmation ? (
+                        <View style={styles.briefingConfirmBtnRow}>
+                          <TouchableOpacity
+                            style={styles.briefingConfirmNoBtn}
+                            onPress={() => handleConfirmDashboardPending(item.id)}
+                          >
+                            <Text style={styles.briefingConfirmNoText}>No</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.briefingConfirmYesBtn}
+                            onPress={() => handleCheckDashboardReminder(item.rawId, item.title)}
+                          >
+                            <Feather name="check" size={11} color={theme.accent} />
+                            <Text style={styles.briefingConfirmYesText}>Yes</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : isActionable ? (
+                        <TouchableOpacity
+                          style={styles.briefingItemBadge}
+                          activeOpacity={0.7}
+                          onPress={() => setChoiceItemId((prev) => (prev === item.id ? null : item.id))}
+                        >
+                          <Text style={styles.briefingItemBadgeText}>NEW</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.briefingItemBadge}>
+                          <Text style={styles.briefingItemBadgeText}>
+                            {item.done ? "DONE" : confirmedPending ? "PENDING" : "NEW"}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    {showingChoice && (
+                      <View style={styles.briefingChoiceRow}>
+                        <Text style={styles.briefingChoicePrompt}>What happened with this one?</Text>
+                        <View style={styles.briefingChoiceBtnRow}>
+                          <TouchableOpacity
+                            style={styles.briefingChoiceDidntBtn}
+                            onPress={() => { setChoiceItemId(null); handleCancelDashboardReminder(item.rawId, item.title); }}
+                          >
+                            <Feather name="x-circle" size={12} color="#FFFFFF" />
+                            <Text style={styles.briefingChoiceDidntText}>Didn't happen</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.briefingChoiceCompleteBtn}
+                            onPress={() => { setChoiceItemId(null); handleCheckDashboardReminder(item.rawId, item.title); }}
+                          >
+                            <Feather name="check-circle" size={12} color={theme.accent} />
+                            <Text style={styles.briefingChoiceCompleteText}>Complete</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity style={styles.briefingChoiceCancelBtn} onPress={() => setChoiceItemId(null)}>
+                          <Text style={styles.briefingChoiceCancelText}>Cancel</Text>
+                        </TouchableOpacity>
                       </View>
                     )}
-                  </View>
+                  </React.Fragment>
                 );
               })}
 
@@ -10035,6 +10112,23 @@ const createStyles = (theme) => StyleSheet.create({
     paddingVertical: 6,
   },
   briefingConfirmYesText: { fontSize: 11, fontWeight: "800", color: theme.accent },
+  // Complete/didn't-happen choice panel — same role as Priorities.js's
+  // actionChoiceRow, restyled for this card's white-on-color gradient.
+  briefingChoiceRow: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+    padding: 10,
+    marginTop: -2,
+    marginBottom: 8,
+  },
+  briefingChoicePrompt: { color: "rgba(255,255,255,0.75)", fontSize: 11, fontWeight: "700", marginBottom: 8 },
+  briefingChoiceBtnRow: { flexDirection: "row", gap: 8 },
+  briefingChoiceCompleteBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, backgroundColor: "#FFFFFF", borderRadius: 9, paddingVertical: 8 },
+  briefingChoiceCompleteText: { fontSize: 11.5, fontWeight: "800", color: theme.accent },
+  briefingChoiceDidntBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, backgroundColor: "rgba(224,84,110,0.35)", borderRadius: 9, paddingVertical: 8 },
+  briefingChoiceDidntText: { fontSize: 11.5, fontWeight: "800", color: "#FFFFFF" },
+  briefingChoiceCancelBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 6, marginTop: 2 },
+  briefingChoiceCancelText: { fontSize: 11, fontWeight: "600", color: "rgba(255,255,255,0.6)" },
   briefingSuggestBtn: {
     flexDirection: "row",
     alignItems: "center",
