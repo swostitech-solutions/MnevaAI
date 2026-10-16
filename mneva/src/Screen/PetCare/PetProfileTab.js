@@ -32,13 +32,16 @@ const WEIGHT_RE = /^\d{1,4}(\.\d{1,2})?\s?(kg|kgs|g|grams?|lb|lbs|pounds?)?$/i;
 const HEIGHT_RE = /^\d{1,3}(\.\d{1,2})?\s?(cm|cms|centimeters?|in|inch|inches|ft|feet)?$/i;
 
 
+// dob is stored as ISO "YYYY-MM-DD" (same as every other date field in this
+// app) — this used to assume a "DD/MM/YYYY" slash format instead, so
+// new Date() always got an invalid date, calcAge always returned null, and
+// the profile card silently showed a bare "old" with no number in front.
 const calcAge = (dobStr) => {
   if (!dobStr) return null;
-  const parts = dobStr.split('/');
-  if (parts.length !== 3) return null;
-  const birth = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+  const birth = new Date(dobStr);
   if (isNaN(birth)) return null;
   const totalMonths = (new Date().getFullYear() - birth.getFullYear()) * 12 + (new Date().getMonth() - birth.getMonth());
+  if (totalMonths < 0) return null;
   return totalMonths < 12 ? `${totalMonths} months` : `${Math.floor(totalMonths / 12)} yrs ${totalMonths % 12} mo`;
 };
 
@@ -154,7 +157,7 @@ export default function PetProfileTab({ horizontalPad, insets }) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.petName}>{activePet.name}</Text>
                 <Text style={styles.petBreed}>{activePet.breed || activePet.species}{activePet.sex ? ` · ${activePet.sex}` : ''}</Text>
-                {activePet.dob ? <Text style={styles.petAge}>{calcAge(activePet.dob)} old</Text> : null}
+                {calcAge(activePet.dob) ? <Text style={styles.petAge}>{calcAge(activePet.dob)} old</Text> : null}
               </View>
               <TouchableOpacity style={styles.editBtn} onPress={openEdit}>
                 <Feather name="edit-2" size={16} color={theme.warning} />
