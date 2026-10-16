@@ -68,7 +68,7 @@ export default function TasksTab({ horizontalPad, insets }) {
             <Text style={styles.emptySubtitle}>Tap the button below to create{'\n'}your first family task</Text>
           </View>
         ) : (
-          filtered.map(task => <TaskCard key={task.id} task={task} myId={myId} theme={theme} styles={styles} />)
+          filtered.map(task => <TaskCard key={task.id} task={task} myId={myId} theme={theme} styles={styles} insets={insets} />)
         )}
       </ScrollView>
 
@@ -98,7 +98,7 @@ export default function TasksTab({ horizontalPad, insets }) {
 }
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
-function TaskCard({ task, myId, theme, styles }) {
+function TaskCard({ task, myId, theme, styles, insets }) {
   const { updateTaskStatus } = useFamilyTask();
   const [detailOpen, setDetailOpen] = useState(false);
   const s = TASK_STATUSES[task.status] || TASK_STATUSES.DRAFT;
@@ -218,13 +218,13 @@ function TaskCard({ task, myId, theme, styles }) {
         <Text style={styles.tapHintText}>Tap for full details</Text>
       </View>
 
-      <TaskDetailModal visible={detailOpen} onClose={() => setDetailOpen(false)} task={task} myId={myId} theme={theme} styles={styles} />
+      <TaskDetailModal visible={detailOpen} onClose={() => setDetailOpen(false)} task={task} myId={myId} theme={theme} styles={styles} insets={insets} />
     </TouchableOpacity>
   );
 }
 
 // ─── Task Detail Modal ─────────────────────────────────────────────────────────
-function TaskDetailModal({ visible, onClose, task, myId, theme, styles }) {
+function TaskDetailModal({ visible, onClose, task, myId, theme, styles, insets }) {
   const { updateTaskStatus, toggleChecklistItem, addComment, editTask, deleteTask } = useFamilyTask();
   const [editOpen, setEditOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
@@ -262,7 +262,7 @@ function TaskDetailModal({ visible, onClose, task, myId, theme, styles }) {
         <TouchableWithoutFeedback onPress={onClose}><View style={StyleSheet.absoluteFill} /></TouchableWithoutFeedback>
         <View style={styles.detailSheet}>
           <View style={styles.sheetHandle} />
-          <ScrollView showsVerticalScrollIndicator={false} style={{ paddingHorizontal: 20 }} contentContainerStyle={{ paddingBottom: 24 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ paddingHorizontal: 20 }} contentContainerStyle={{ paddingBottom: 24 + (insets?.bottom || 0) }}>
             <View style={styles.detailHeaderRow}>
               <Text style={styles.detailTitle}>{task.title}</Text>
               <View style={[styles.statusBadge, { backgroundColor: s.bg }]}>
@@ -343,10 +343,10 @@ function TaskDetailModal({ visible, onClose, task, myId, theme, styles }) {
             {isCreator && (
               <View style={[styles.actionRow, { marginTop: 20 }]}>
                 <TouchableOpacity style={[styles.actionBtn, styles.actionEdit]} onPress={() => setEditOpen(true)}>
-                  <Feather name="edit-2" size={13} color={theme.accentAlt} /><Text style={[styles.actionBtnText, { color: theme.accentAlt }]}>Edit</Text>
+                  <Feather name="edit-2" size={13} color={theme.accentAlt} /><Text style={[styles.actionBtnText, { color: theme.accentAlt }]} numberOfLines={1}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.actionBtn, styles.actionReject]} onPress={onDelete}>
-                  <Feather name="trash-2" size={13} color={theme.danger} /><Text style={[styles.actionBtnText, { color: theme.danger }]}>Delete</Text>
+                  <Feather name="trash-2" size={13} color={theme.danger} /><Text style={[styles.actionBtnText, { color: theme.danger }]} numberOfLines={1}>Delete</Text>
                 </TouchableOpacity>
               </View>
             )}

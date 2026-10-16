@@ -12,7 +12,7 @@ const userSelect  = { id: true, name: true, email: true, avatar: true }
 // inverseRelationship below) — nobody else needs this, so it's kept off the
 // plain userSelect used everywhere else (task creator/assignee, etc).
 const userSelectWithGender = { ...userSelect, userProfile: { select: { gender: true } } }
-const connInclude = {
+export const connInclude = {
   requester: { select: userSelectWithGender },
   receiver:  { select: userSelectWithGender },
 }
@@ -51,7 +51,7 @@ export function inverseRelationship(relationship, otherGender) {
   return SELF_INVERSE[relationship] || relationship
 }
 
-const fmtConn = (conn, myId) => {
+export const fmtConn = (conn, myId) => {
   const iAmRequester = conn.requesterId === myId
   const other = iAmRequester ? conn.receiver : conn.requester
   return {
@@ -116,10 +116,17 @@ familyRouter.get('/connections', async (req, res) => {
 familyRouter.post('/connections', async (req, res) => {
   try {
     const myId = req.user.id
-    const { receiverEmail, relationship } = req.body
-    if (!receiverEmail || !relationship) return res.status(400).json({ error: 'receiverEmail and relationship required' })
+    const { receiverEmail, receiverPhone, relationship } = req.body
+    if ((!receiverEmail && !receiverPhone) || !relationship) return res.status(400).json({ error: 'receiverEmail or receiverPhone, and relationship, are required' })
 
-    const receiver = await prisma.user.findFirst({ where: { email: { equals: receiverEmail, mode: 'insensitive' } } })
+    const receiver = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(receiverEmail ? [{ email: { equals: receiverEmail, mode: 'insensitive' } }] : []),
+          ...(receiverPhone ? [{ phone: receiverPhone }] : []),
+        ],
+      },
+    })
     if (!receiver) return res.status(404).json({ error: 'User not found' })
     if (receiver.id === myId) return res.status(400).json({ error: 'Cannot connect to yourself' })
 

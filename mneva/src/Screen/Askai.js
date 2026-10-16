@@ -1340,7 +1340,20 @@ export default function AskAI({ navigation }) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 500);
     } catch (err) {
-      addMessage({ id: String(Date.now() + 1), sender: "ai", text: "Sorry, I could not connect to the AI right now. Please try again." });
+      // apiFetch normalizes a client-side timeout/abort to status 0 — that
+      // means the request was genuinely in flight and got cut off (a slow
+      // or unstable connection), which reads very differently to the user
+      // than never reaching the server at all (no status at all, since the
+      // raw fetch rejection carries none) or a real server-side error
+      // (a real HTTP status). Each gets its own honest message instead of
+      // one blanket "could not connect" for every case.
+      const status = err?.status;
+      const text = status === 0
+        ? "Connection interrupted while waiting for the complete answer — please try again in a moment."
+        : status === undefined
+          ? "You seem to be offline. Please check your internet connection and try again."
+          : "Sorry, I could not connect to the AI right now. Please try again.";
+      addMessage({ id: String(Date.now() + 1), sender: "ai", text });
       setAiLoading(false);
     }
   };
