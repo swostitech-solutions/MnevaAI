@@ -3,7 +3,7 @@ import { getStoredAuth } from '../../storage/auth';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback, Alert,
+  TouchableWithoutFeedback, Alert, RefreshControl,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,10 +22,16 @@ const PRIORITY_BG    = { Low: '#EFFDF6', Medium: '#FEF3C7', High: '#FCEAED', Urg
 export default function TasksTab({ horizontalPad, insets }) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
-  const { tasks, connections } = useFamilyTask();
+  const { tasks, connections, fetchAll } = useFamilyTask();
   const [filter, setFilter] = useState('All');
   const [createModal, setCreateModal] = useState(false);
   const [myId, setMyId] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try { await fetchAll(); } finally { setRefreshing(false); }
+  };
 
   useEffect(() => {
     getStoredAuth().then(({ user }) => { if (user?.id) setMyId(user.id); }).catch(() => {});
@@ -37,12 +43,10 @@ export default function TasksTab({ horizontalPad, insets }) {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Filter bar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.filterBar, { paddingHorizontal: horizontalPad }]}
-      >
+      {/* Filter bar — wraps instead of scrolling horizontally, so all 5
+          filters (including "Completed", which used to sit cut off at the
+          edge with no visible hint it was scrollable) are always on screen. */}
+      <View style={[styles.filterBar, { paddingHorizontal: horizontalPad }]}>
         {FILTERS.map(f => (
           <TouchableOpacity
             key={f}
@@ -52,12 +56,13 @@ export default function TasksTab({ horizontalPad, insets }) {
             <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>{f}</Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+      </View>
 
       {/* Task list */}
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: horizontalPad, paddingBottom: insets.bottom + 110, paddingTop: 4 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} colors={[theme.accent]} />}
       >
         {filtered.length === 0 ? (
           <View style={styles.emptyWrap}>
@@ -670,7 +675,7 @@ function CreateTaskModal({ visible, onClose, insets, connections, theme, styles 
 
 const createStyles = (theme) => StyleSheet.create({
   // Filter bar
-  filterBar: { paddingVertical: 12, gap: 8 },
+  filterBar: { flexDirection: 'row', flexWrap: 'wrap', paddingVertical: 12, gap: 8 },
   filterChip: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: theme.card, borderWidth: 1.5, borderColor: 'transparent' },
   filterChipActive: { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderColor: theme.accent },
   filterChipText: { fontSize: 12, fontWeight: '700', color: theme.faint },
