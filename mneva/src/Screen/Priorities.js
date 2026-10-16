@@ -312,6 +312,13 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onCancel, onConfirmPe
               <Text style={styles.actionCompleteText}>Complete</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={styles.actionCancelBtn}
+            onPress={() => setShowChoice(false)}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.actionCancelText}>Cancel</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -1044,6 +1051,8 @@ const createStyles = (theme) => StyleSheet.create({
   actionCompleteText: { fontSize: 12.5, fontWeight: "700", color: "#FFFFFF" },
   actionDidntBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: theme.isDark ? "rgba(224,84,110,0.16)" : "#FDEBEE", borderWidth: 1, borderColor: theme.isDark ? "rgba(224,84,110,0.3)" : "#F6CCD4" },
   actionDidntText: { fontSize: 12.5, fontWeight: "700", color: theme.danger },
+  actionCancelBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 8, marginTop: 4 },
+  actionCancelText: { fontSize: 12, fontWeight: "600", color: theme.faint },
 
   // Empty
   emptyWrap: { alignItems: "center", paddingVertical: 40, gap: 10 },
