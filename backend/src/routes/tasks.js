@@ -113,6 +113,46 @@ router.post('/meeting-done', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// GET /api/tasks/meeting-cancelled
+// Mirrors /meeting-done — same sentinel-task mechanism, separate prefix, so
+// a meeting that never happened can be told apart from one that actually
+// did, instead of silently counting it as "done".
+router.get('/meeting-cancelled', async (req, res) => {
+  try {
+    const tasks = await prisma.task.findMany({
+      where: {
+        userId: req.user.id,
+        status: 'COMPLETED',
+        title: { startsWith: 'meeting_cancelled:' },
+      },
+      select: { title: true },
+    })
+    const ids = tasks.map(t => t.title.replace('meeting_cancelled:', ''))
+    res.json({ ids })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// POST /api/tasks/meeting-cancelled
+router.post('/meeting-cancelled', async (req, res) => {
+  try {
+    const { meetingId, meetingTitle } = req.body
+    if (!meetingId) return res.status(400).json({ error: 'meetingId required' })
+    const existing = await prisma.task.findFirst({
+      where: { userId: req.user.id, title: `meeting_cancelled:${meetingId}` },
+    })
+    if (existing) return res.json(existing)
+    const task = await prisma.task.create({
+      data: {
+        title: `meeting_cancelled:${meetingId}`,
+        description: meetingTitle || null,
+        userId: req.user.id,
+        status: 'COMPLETED',
+      },
+    })
+    res.json(task)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // PATCH /api/tasks/:id — must be LAST
 router.patch('/:id', async (req, res) => {
   try {

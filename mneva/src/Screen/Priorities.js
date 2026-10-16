@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated, Platform,
+  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated, Platform, Alert,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -208,7 +208,7 @@ function SectionHeader({ icon, label, color, tint, styles }) {
   );
 }
 
-function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, styles, theme }) {
+function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, onRequestAction, styles, theme }) {
   const { date, time, durStr } = fmtMeeting(m.start, m.end);
   const attendees = Array.isArray(m.attendees) ? m.attendees : [];
   const isRealtimeMeeting = isJoinableMeetingLink(m.meetLink);
@@ -230,7 +230,7 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, sty
         ) : (
           <TouchableOpacity
             style={[styles.checkCircle, done && styles.checkCircleActive]}
-            onPress={() => onCheck(m)}
+            onPress={() => onRequestAction(m)}
             disabled={done}
           >
             {done && <Feather name="check" size={13} color="#FFFFFF" />}
@@ -300,6 +300,7 @@ export default function Priorities({ navigation }) {
   const [tasks, setTasks] = useState([]);
   const [allCalendarItems, setAllCalendarItems] = useState([]);
   const [doneMeetingIds, setDoneMeetingIds] = useState(new Set());
+  const [cancelledMeetingIds, setCancelledMeetingIds] = useState(new Set());
   const [confirmedPendingIds, setConfirmedPendingIds] = useState(new Set());
   const [doneAutoIds, setDoneAutoIds] = useState(new Set());
   const [confirmedAutoPendingIds, setConfirmedAutoPendingIds] = useState(new Set());
@@ -322,11 +323,12 @@ export default function Priorities({ navigation }) {
   const hasRealBriefRef = useRef(false);
   const hasRealSummaryRef = useRef(false);
 
-  const applyTasksData = ({ taskRes, meetRes, doneRes }) => {
+  const applyTasksData = ({ taskRes, meetRes, doneRes, cancelRes }) => {
     const allTasks = Array.isArray(taskRes) ? taskRes : [];
-    setTasks(allTasks.filter(t => !t.title?.startsWith("meeting_done:")));
+    setTasks(allTasks.filter(t => !t.title?.startsWith("meeting_done:") && !t.title?.startsWith("meeting_cancelled:")));
     setAllCalendarItems(Array.isArray(meetRes) ? meetRes : meetRes?.meetings || []);
     setDoneMeetingIds(new Set(doneRes?.ids || []));
+    setCancelledMeetingIds(new Set(cancelRes?.ids || []));
   };
 
   const applyBriefData = (brief) => {
@@ -343,16 +345,17 @@ export default function Priorities({ navigation }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [taskRes, meetRes, doneRes, brief, summary] = await Promise.all([
+      const [taskRes, meetRes, doneRes, cancelRes, brief, summary] = await Promise.all([
         peekCachedResponse("/api/tasks"),
         peekCachedResponse("/api/calendar/meetings"),
         peekCachedResponse("/api/tasks/meeting-done"),
+        peekCachedResponse("/api/tasks/meeting-cancelled"),
         peekCachedResponse("/api/dashboard/brief"),
         peekCachedResponse("/api/dashboard/full-summary"),
       ]);
       if (cancelled) return;
       if (!hasRealDataRef.current && (taskRes || meetRes || doneRes)) {
-        applyTasksData({ taskRes: taskRes || [], meetRes: meetRes || [], doneRes: doneRes || { ids: [] } });
+        applyTasksData({ taskRes: taskRes || [], meetRes: meetRes || [], doneRes: doneRes || { ids: [] }, cancelRes: cancelRes || { ids: [] } });
         setLoading(false);
       }
       if (!hasRealBriefRef.current && brief) {
@@ -376,16 +379,18 @@ export default function Priorities({ navigation }) {
       // These feeds are supplemental to tasks.  Do not blank the whole
       // Priorities screen when Calendar or the meeting-completion feed is
       // temporarily unavailable.
-      const [taskResult, meetingResult, doneResult] = await Promise.allSettled([
+      const [taskResult, meetingResult, doneResult, cancelResult] = await Promise.allSettled([
         apiFetch("/api/tasks"),
         apiFetch("/api/calendar/meetings"),
         apiFetch("/api/tasks/meeting-done"),
+        apiFetch("/api/tasks/meeting-cancelled"),
       ]);
       const taskRes = taskResult.status === 'fulfilled' ? taskResult.value : [];
       const meetRes = meetingResult.status === 'fulfilled' ? meetingResult.value : [];
       const doneRes = doneResult.status === 'fulfilled' ? doneResult.value : { ids: [] };
+      const cancelRes = cancelResult.status === 'fulfilled' ? cancelResult.value : { ids: [] };
       hasRealDataRef.current = true;
-      applyTasksData({ taskRes, meetRes, doneRes });
+      applyTasksData({ taskRes, meetRes, doneRes, cancelRes });
     } catch {}
     finally {
       setLoading(false);
@@ -449,8 +454,11 @@ export default function Priorities({ navigation }) {
   // The Meetings tab is intentionally limited to entries that can actually
   // be joined. Calendar appointments without a live-conference URL belong in
   // Today/Upcoming as reminders, regardless of their stored source/kind.
-  const meetings = allCalendarItems.filter(m => isJoinableMeetingLink(m.meetLink));
-  const reminders = allCalendarItems.filter(m => !isJoinableMeetingLink(m.meetLink));
+  // A meeting the user marked "didn't happen" is dropped entirely rather
+  // than shown checked/done — it never actually occurred.
+  const activeCalendarItems = allCalendarItems.filter(m => !cancelledMeetingIds.has(m.id));
+  const meetings = activeCalendarItems.filter(m => isJoinableMeetingLink(m.meetLink));
+  const reminders = activeCalendarItems.filter(m => !isJoinableMeetingLink(m.meetLink));
   const calendarReminderTitles = new Set(reminders.map(m => (m.title || '').trim().toLowerCase()));
   // Reminders are also persisted as pending tasks. Keep their task record as
   // a fallback when the calendar feed is slow or unavailable, but avoid
@@ -465,7 +473,7 @@ export default function Priorities({ navigation }) {
     .sort((a, b) => new Date(a.start) - new Date(b.start));
   // Upcoming means a later calendar date — not a later time today. Include
   // reminders here so they appear on their due date alongside commitments.
-  const upcomingItems = allCalendarItems
+  const upcomingItems = activeCalendarItems
     .filter(m => new Date(m.start) > todayEnd)
     .sort((a, b) => new Date(a.start) - new Date(b.start));
 
@@ -552,6 +560,36 @@ export default function Priorities({ navigation }) {
       // Rollback on failure
       setDoneMeetingIds(prev => { const s = new Set(prev); s.delete(m.id); return s; });
     }
+  };
+
+  // "Meeting didn't happen" — tracked separately from done so it can be told
+  // apart later, but removed from the active list the same way a completed
+  // one would be (see activeCalendarItems above).
+  const handleCancelMeeting = async (m) => {
+    if (cancelledMeetingIds.has(m.id)) return;
+    setCancelledMeetingIds(prev => new Set([...prev, m.id]));
+    try {
+      await apiFetch("/api/tasks/meeting-cancelled", {
+        method: "POST",
+        body: { meetingId: m.id, meetingTitle: m.title },
+      });
+    } catch {
+      setCancelledMeetingIds(prev => { const s = new Set(prev); s.delete(m.id); return s; });
+    }
+  };
+
+  // Tapping the checkbox before a meeting's time has passed used to mark it
+  // done immediately with no way to say it was cancelled instead — ask first.
+  const handleMeetingAction = (m) => {
+    Alert.alert(
+      m.title,
+      "What happened with this meeting?",
+      [
+        { text: "Meeting complete", onPress: () => handleCheckMeeting(m) },
+        { text: "Meeting didn't happen", style: "destructive", onPress: () => handleCancelMeeting(m) },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
   };
 
   // "No, still pending" on the past-due Yes/No prompt — settles the card
@@ -768,6 +806,7 @@ export default function Priorities({ navigation }) {
                         done={doneMeetingIds.has(m.id)}
                         confirmedPending={confirmedPendingIds.has(m.id)}
                         onCheck={handleCheckMeeting}
+                        onRequestAction={handleMeetingAction}
                         onConfirmPending={handleConfirmPending}
                         styles={styles}
                         theme={theme}
@@ -814,6 +853,7 @@ export default function Priorities({ navigation }) {
                         done={doneMeetingIds.has(m.id)}
                         confirmedPending={confirmedPendingIds.has(m.id)}
                         onCheck={handleCheckMeeting}
+                        onRequestAction={handleMeetingAction}
                         onConfirmPending={handleConfirmPending}
                         styles={styles}
                         theme={theme}
@@ -860,6 +900,7 @@ export default function Priorities({ navigation }) {
                       done={doneMeetingIds.has(m.id)}
                       confirmedPending={confirmedPendingIds.has(m.id)}
                       onCheck={handleCheckMeeting}
+                      onRequestAction={handleMeetingAction}
                       onConfirmPending={handleConfirmPending}
                       styles={styles}
                       theme={theme}
