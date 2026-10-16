@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated, Platform, Alert,
+  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated, Platform,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -208,7 +208,7 @@ function SectionHeader({ icon, label, color, tint, styles }) {
   );
 }
 
-function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, onRequestAction, styles, theme }) {
+function MeetingCard({ m, done, confirmedPending, onCheck, onCancel, onConfirmPending, styles, theme }) {
   const { date, time, durStr } = fmtMeeting(m.start, m.end);
   const attendees = Array.isArray(m.attendees) ? m.attendees : [];
   const isRealtimeMeeting = isJoinableMeetingLink(m.meetLink);
@@ -219,6 +219,10 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, onR
   // into a persistent "still pending" tag instead of re-asking every render.
   const isPast = new Date(m.start).getTime() < Date.now();
   const awaitingConfirmation = isPast && !done && !confirmedPending;
+  // Tapping the checkbox before the meeting's time has passed opens the same
+  // inline complete/didn't-happen choice, right on the card, instead of
+  // marking it done outright or popping a plain OS alert.
+  const [showChoice, setShowChoice] = useState(false);
 
   return (
     <View style={[styles.meetCard, done && styles.cardDone, awaitingConfirmation && styles.meetCardOverdue]}>
@@ -230,7 +234,7 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, onR
         ) : (
           <TouchableOpacity
             style={[styles.checkCircle, done && styles.checkCircleActive]}
-            onPress={() => onRequestAction(m)}
+            onPress={() => setShowChoice(prev => !prev)}
             disabled={done}
           >
             {done && <Feather name="check" size={13} color="#FFFFFF" />}
@@ -285,6 +289,29 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onConfirmPending, onR
         <View style={styles.pendingTag}>
           <Feather name="clock" size={10} color={theme.warning} />
           <Text style={styles.pendingTagText}>Still pending · past due</Text>
+        </View>
+      )}
+      {!awaitingConfirmation && showChoice && !done && (
+        <View style={styles.actionChoiceRow}>
+          <Text style={styles.actionChoiceTitle}>What happened with this one?</Text>
+          <View style={styles.actionChoiceBtnRow}>
+            <TouchableOpacity
+              style={styles.actionDidntBtn}
+              onPress={() => { setShowChoice(false); onCancel(m); }}
+              activeOpacity={0.8}
+            >
+              <Feather name="x-circle" size={13} color={theme.danger} />
+              <Text style={styles.actionDidntText}>Didn't happen</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionCompleteBtn}
+              onPress={() => { setShowChoice(false); onCheck(m); }}
+              activeOpacity={0.85}
+            >
+              <Feather name="check-circle" size={13} color="#FFFFFF" />
+              <Text style={styles.actionCompleteText}>Complete</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>
@@ -578,20 +605,6 @@ export default function Priorities({ navigation }) {
     }
   };
 
-  // Tapping the checkbox before a meeting's time has passed used to mark it
-  // done immediately with no way to say it was cancelled instead — ask first.
-  const handleMeetingAction = (m) => {
-    Alert.alert(
-      m.title,
-      "What happened with this meeting?",
-      [
-        { text: "Meeting complete", onPress: () => handleCheckMeeting(m) },
-        { text: "Meeting didn't happen", style: "destructive", onPress: () => handleCancelMeeting(m) },
-        { text: "Cancel", style: "cancel" },
-      ],
-    );
-  };
-
   // "No, still pending" on the past-due Yes/No prompt — settles the card
   // into a persistent "still pending" tag for this session instead of
   // re-asking on every render, without marking it complete.
@@ -806,7 +819,7 @@ export default function Priorities({ navigation }) {
                         done={doneMeetingIds.has(m.id)}
                         confirmedPending={confirmedPendingIds.has(m.id)}
                         onCheck={handleCheckMeeting}
-                        onRequestAction={handleMeetingAction}
+                        onCancel={handleCancelMeeting}
                         onConfirmPending={handleConfirmPending}
                         styles={styles}
                         theme={theme}
@@ -853,7 +866,7 @@ export default function Priorities({ navigation }) {
                         done={doneMeetingIds.has(m.id)}
                         confirmedPending={confirmedPendingIds.has(m.id)}
                         onCheck={handleCheckMeeting}
-                        onRequestAction={handleMeetingAction}
+                        onCancel={handleCancelMeeting}
                         onConfirmPending={handleConfirmPending}
                         styles={styles}
                         theme={theme}
@@ -900,7 +913,7 @@ export default function Priorities({ navigation }) {
                       done={doneMeetingIds.has(m.id)}
                       confirmedPending={confirmedPendingIds.has(m.id)}
                       onCheck={handleCheckMeeting}
-                      onRequestAction={handleMeetingAction}
+                      onCancel={handleCancelMeeting}
                       onConfirmPending={handleConfirmPending}
                       styles={styles}
                       theme={theme}
@@ -1024,6 +1037,13 @@ const createStyles = (theme) => StyleSheet.create({
   confirmYesText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
   pendingTag: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", marginTop: 10, backgroundColor: theme.isDark ? "rgba(255,184,77,0.16)" : "#FEF3C7", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 },
   pendingTagText: { fontSize: 11, fontWeight: "700", color: theme.warning },
+  actionChoiceRow: { marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: theme.isDark ? "rgba(129,128,255,0.10)" : "#F6F5FF", borderWidth: 1, borderColor: theme.isDark ? "rgba(129,128,255,0.22)" : "#E4E1FB" },
+  actionChoiceTitle: { fontSize: 12, fontWeight: "700", color: theme.textSecondary, marginBottom: 10 },
+  actionChoiceBtnRow: { flexDirection: "row", gap: 8 },
+  actionCompleteBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: theme.accent },
+  actionCompleteText: { fontSize: 12.5, fontWeight: "700", color: "#FFFFFF" },
+  actionDidntBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: theme.isDark ? "rgba(224,84,110,0.16)" : "#FDEBEE", borderWidth: 1, borderColor: theme.isDark ? "rgba(224,84,110,0.3)" : "#F6CCD4" },
+  actionDidntText: { fontSize: 12.5, fontWeight: "700", color: theme.danger },
 
   // Empty
   emptyWrap: { alignItems: "center", paddingVertical: 40, gap: 10 },
