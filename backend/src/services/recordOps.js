@@ -99,7 +99,7 @@ export function domainForModule(module) {
   return MODULES[module]?.domain || null
 }
 
-async function getRouter(from) {
+export async function getRouter(from) {
   switch (from) {
     case 'family': return (await import('../routes/family.js')).familyRouter
     case 'pet': return (await import('../routes/pet.js')).petRouter
@@ -116,7 +116,7 @@ const ioShim = {
   to: (room) => ({ emit: (event, payload) => emitToUser(String(room).replace(/^u:/, ''), event, payload) }),
 }
 
-async function callRoute(router, method, path, { userId, params = {}, body = {} }) {
+export async function callRoute(router, method, path, { userId, params = {}, body = {} }) {
   const layer = router.stack.find((l) => l.route && l.route.path === path && l.route.methods[method])
   if (!layer) throw new Error(`No ${method.toUpperCase()} ${path} route`)
   const handlers = layer.route.stack.map((s) => s.handle)

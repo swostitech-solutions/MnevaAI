@@ -203,7 +203,7 @@ export function requestedRecordTool(messages = []) {
   // real sentences put other words in between ("kitne family task hai" —
   // "kitne" and "hai" aren't next to each other) — the noun check below is
   // what keeps this from over-firing on unrelated small talk.
-  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what'?s|what\s+is|who\s+is|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|list|count)\b/
+  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what|who|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|list|count)\b/
   const noun = /\b(medications?|medicines?|dawa|dawai|dosage|doses?|refill|pets?|dogs?|cats?|puppy|puppies|kittens?|breed|tasks?|reminders?|subscriptions?|loans?|emis?|fd|fds|fixed deposits?|bills?|holdings?|portfolio|child|children|kids?|activity|activities|warranty|warranties|gifts?|celebrations?|steps?|heart\s*rate|sleep|calories?|weight|height|bmi|vitals?|workout|distance|health\s*log|blood\s*pressure|spo2|oxygen|body\s*fat|muscle\s*mass|waist|water|protein|carbs?|cycle|father|dad|mom|mother|parents?|doctor)\b/
   return verb.test(text) && noun.test(text) ? 'list_records' : null
 }
@@ -1177,14 +1177,50 @@ export async function executeTool(name, input, userId, opts = {}) {
         return { error: 'Could not generate full summary', detail: err.message }
       }
     }
-    case 'query_bills':          return []
+    // These three used to be hardcoded stubs (query_bills always [],
+    // get_portfolio/get_spending_summary always all-zero) — real bills,
+    // holdings and spending exist and are fully built in Finance, but the
+    // AI could never see any of it through these, so every bill/portfolio/
+    // spending question got answered from an empty result instead of the
+    // real data (either "you have nothing" or an outright guess). Now
+    // calling the exact same route handlers the Finance screen itself
+    // calls, via recordOps' internal route-invoker, so the AI's answer is
+    // never out of sync with what's actually on screen.
+    case 'query_bills': {
+      const { getRouter: _getRouter, callRoute: _callRoute } = await import('../services/recordOps.js')
+      const router = await _getRouter('finance')
+      const { status, payload } = await _callRoute(router, 'get', '/bills', { userId })
+      if (status >= 400) return { success: false, error: payload?.error || 'Could not load bills.' }
+      const bills = Array.isArray(payload) ? payload : []
+      const filter = input.filter || 'all'
+      if (filter === 'all') return bills
+      if (filter === 'paid') return bills.filter(b => b.status === 'Paid')
+      if (filter === 'pending') return bills.filter(b => b.status !== 'Paid')
+      if (filter === 'due_soon') {
+        const soon = new Date(); soon.setDate(soon.getDate() + 7)
+        return bills.filter(b => b.status !== 'Paid' && b.dueDate && new Date(b.dueDate) <= soon)
+      }
+      return bills
+    }
     // Gating (blocked/pending) already handled generically above — this
     // case only ever runs once the gate says 'execute'.
     case 'initiate_payment': {
       return await executePaymentSideEffect(userId, input)
     }
-    case 'get_portfolio':        return { totalInvested: 0, totalCurrent: 0, holdings: [], accounts: [] }
-    case 'get_spending_summary': return { period: input.period, total: 0, categories: [], insights: [] }
+    case 'get_portfolio': {
+      const { getRouter: _getRouter, callRoute: _callRoute } = await import('../services/recordOps.js')
+      const router = await _getRouter('finance')
+      const { status, payload } = await _callRoute(router, 'get', '/portfolio', { userId })
+      if (status >= 400) return { success: false, error: payload?.error || 'Could not load portfolio.' }
+      return payload
+    }
+    case 'get_spending_summary': {
+      const { getRouter: _getRouter, callRoute: _callRoute } = await import('../services/recordOps.js')
+      const router = await _getRouter('finance')
+      const { status, payload } = await _callRoute(router, 'get', '/spending', { userId })
+      if (status >= 400) return { success: false, error: payload?.error || 'Could not load spending summary.' }
+      return payload
+    }
     case 'get_emails': {
       try {
         const { listEmails: _listEmails } = await import('../services/gmail.service.js')

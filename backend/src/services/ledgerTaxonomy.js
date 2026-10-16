@@ -46,6 +46,7 @@ const TOOL_META = {
   create_emi: { domain: 'finance', autonomyStage: 'trusted_automation' },
   create_fixed_deposit: { domain: 'finance', autonomyStage: 'trusted_automation' },
   add_portfolio_holding: { domain: 'finance', autonomyStage: 'trusted_automation' },
+  add_expense: { domain: 'finance', autonomyStage: 'trusted_automation' },
   add_parent_medication: { domain: 'family', autonomyStage: 'trusted_automation' },
   add_pet: { domain: 'family', autonomyStage: 'trusted_automation' },
   add_pet_reminder: { domain: 'family', autonomyStage: 'trusted_automation' },
