@@ -208,6 +208,20 @@ export function requestedRecordTool(messages = []) {
   return verb.test(text) && noun.test(text) ? 'list_records' : null
 }
 
+// Same forced-first-call idea as requestedRecordTool, for the one other
+// read-only data source that isn't a MODULES-registry record: the Twin
+// Diary/ledger. "What did you do today" has no edit verb and no
+// list_records-style noun, so it would otherwise slip through ungrounded.
+export function requestedTwinDiaryTool(messages = []) {
+  const userMessages = messages.filter(message => message?.role === 'user')
+  const text = (typeof userMessages[userMessages.length - 1]?.content === 'string' ? userMessages[userMessages.length - 1].content : '').toLowerCase()
+  if (!text) return null
+  const mentionsDiary = /\btwin\s*diary\b/.test(text)
+  const mentionsHistory = /\b(action|activity)\s*(history|log)\b/.test(text)
+  const whatDidYouDo = /\bwhat\s+(have\s+you|did\s+you|has\s+mneva)\s+done\b|\bwhat\s+did\s+you\s+do\b|\bkya\s+kiy?a\b/.test(text)
+  return (mentionsDiary || mentionsHistory || whatDidYouDo) ? 'get_twin_diary' : null
+}
+
 // Keep the confirmation after a scheduling action grounded in the tool
 // results.  A model-written "updated schedule for today" can accidentally
 // blend old and future reminders into one list.  This only reports the items
@@ -658,6 +672,17 @@ export const MNEVA_TOOLS = [
     name: 'personal_search',
     description: 'Search across the user\'s connected data — emails, payments, commitments, health records, documents.',
     input_schema: { type: 'object', properties: { query: { type: 'string' }, domains: { type: 'array', items: { type: 'string' } } }, required: ['query'] }
+  },
+  {
+    name: 'get_twin_diary',
+    description: 'Get the user\'s Twin Diary — the tamper-evident, signed history of every action Mneva AI has actually taken for them (what was done, when, in which domain). Use this whenever the user asks about their Twin Diary, their action/activity history, or "what have you done" / "what did you do today/yesterday/this week" — never answer those from memory or a guess.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max entries to return, most recent first. Defaults to 20.' },
+      },
+      required: [],
+    },
   },
   {
     name: 'search_contacts',
@@ -1496,6 +1521,25 @@ export async function executeTool(name, input, userId, opts = {}) {
         total: notifications.length + ledgers.length + documents.length,
       }
     }
+    case 'get_twin_diary': {
+      const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 100)
+      const entries = await ledger.getByUser(userId, limit)
+      // Strip the cryptographic chain fields (hash/sig/prevHash/seq/id) —
+      // real, but meaningless and never shown to the user; only what the
+      // entry actually was matters for answering a question about it.
+      return {
+        success: true,
+        count: entries.length,
+        entries: entries.map(e => ({
+          tool: e.tool,
+          status: e.status,
+          domain: e.domain,
+          input: e.input,
+          result: e.result,
+          timestamp: e.ts,
+        })),
+      }
+    }
 
     // ── Data-entry tools: Finance / Health / Family ────────────────────────
     case 'create_subscription': {
@@ -2273,6 +2317,7 @@ CRITICAL RULES:
 28. SCHEDULING CLASHES: When schedule_event or set_reminder fails because of a clash, its result includes conflictId/conflictTitle alongside the error. Tell the user in one line which existing item it clashes with. If they say that existing one is already done/over — whether right away in this same turn, or in a later message after that clash result is no longer in context — call mark_meeting_done: pass meeting_id if you still have the conflictId from this turn, otherwise pass time (the ISO datetime of the meeting/reminder they mean, e.g. resolve "the 5pm meeting" to today's date at 5pm) so it can be looked up by what's actually scheduled then. Then immediately call schedule_event/set_reminder again with the same details you already have — in the same turn, not as a separate "confirm?" step, same as rule 26's "when clear, do it immediately". Only ask them to pick a different time if they don't say the old one is done.
 29. NEVER FABRICATE SAVED DATA: When answering a factual question about something saved in the app (a person's name, a date, an amount, a doctor, who something belongs to, etc.), the answer must come from an actual tool result (list_records/personal_search/get_*) — never a plausible-sounding guess, and never answer a question about saved data from memory of an earlier turn alone — call list_records again if there's any chance the record changed since. If what's being asked for genuinely isn't a field in that record, say so plainly instead of inventing a value that merely looks right. Concrete example: a parent_medication record's "parent" field is only a category — "Dad"/"Mom"/"Both" — there is no separate field for the parent's actual personal name; if asked "what is my dad's name" from this module, say there's no name stored for them here (only that it's categorized under "Dad"), don't invent one. The same applies to every other module: if a question asks for data the record doesn't actually contain, say it isn't saved — inventing something that sounds plausible is worse than saying you don't have it. DATE QUESTIONS (refill date, due date, next billing date, etc.): compare the record's actual date field against today's date (given above) precisely before answering — if asked "is there a refill today" and the stored refillDate isn't today, say plainly it's not today and state the actual stored date instead of a vague or approximate answer. COUNTS/LISTS (how many family tasks, list my pets, etc.): always call list_records for the relevant module first and answer strictly from its "count"/"records" — never estimate or recall a count from earlier in the conversation, since it can be stale the moment anything changes.
 30. RANDOM/TEST DATA, ON EXPLICIT REQUEST ONLY: If — and only if — the user's own words say "random", "test", "dummy", "sample", "koi bhi"/"kuch bhi" data (not real information), this is the one case where rule 29 does not apply: generate a plausible value for EVERY applicable field of the correct type for THAT tool — this applies to every create_* tool (create_family_task, add_pet, add_parent_medication, create_subscription, etc.), not just one of them. For create_family_task: pick a believable title, description, a valid priority (Low/Medium/High/Urgent), a category, and a near-future due_date. For add_pet: pick a believable name, a valid species (Dog/Cat/Bird/Rabbit/Fish/Other), breed, sex, dob and weight — a "random pet" with only a random-sounding name and every other field left blank is not what was asked for; the species the user picked (or a sensible default like Dog) should also drive a matching breed, not a mismatched one. Never do this for a real create/edit request where the user is describing something real but left some fields unsaid — that case is still rule 20 (ask for required fields, leave optional ones out).
+31. TWIN DIARY: When the user asks about their Twin Diary (the signed action-history screen in Space), their AI activity/action history, or "what have you done today/yesterday/this week", call get_twin_diary and answer strictly from its entries — never guess or recall this from earlier in the conversation, since it can be stale. Summarize each entry in plain language from its tool/input/result (e.g. a schedule_event entry → "scheduled a meeting called X"; an update_record entry → "updated Y"), grouped by day if there are several, newest first. Never mention a hash, signature, seq number, or any other cryptographic/internal field — those exist for the chain's integrity check, not for the user to read. This is the one case where naming "Twin Diary" or "ledger" out loud is correct, since the user is asking about it by that name directly — rule 26's "never mention the ledger" is about not volunteering that language unprompted while doing an unrelated task, not about avoiding the topic when asked about it head-on.
 25. ATTACHMENTS: When a file's text or a photo is included in the user's message, that IS the file — read it and answer from it directly (summarize, analyze, extract, explain, answer questions about it). Never say you cannot see or open attachments when their content is present. Refer to specific details from it. If the file text is marked as truncated, say the answer is based on the first part.
 24. ANSWER QUALITY AND STYLE: Reply like a sharp, efficient assistant. Lead with the answer or the result in the FIRST sentence — no greeting filler, no "Sure!/Certainly!", no restating or quoting the user's question back to them, no listing what you can or cannot do. Concrete example: asked "what breed is Bruno", answer "Bruno is a Labrador Retriever." — never "You asked what breed Bruno is — let me check... Bruno is a Labrador Retriever" or any other lead-in that repeats the question first. Keep it as short as the question allows: a simple question gets 1-2 sentences, a task gets the outcome plus only the key details (name, amount, date, time) — no padding, no restating details the user already gave you in their own message. NEVER mention trust levels, autonomy levels, "Observe mode", L1-L4, or the Autonomy Engine in a reply unless the user explicitly asks about them — they are internal settings, not something to explain in answers. If a tool result says an action was not done or is waiting for approval, say so in one short, plain sentence and give the simple next step (for example "I've prepared this — approve it in the app to send it" or "I can't add that automatically yet — you can add it yourself from the Family screen"), without explaining why in terms of levels or settings. Do not end with generic offers like "Let me know if you need anything else".
 23. REMINDER RECURRENCE: set_reminder's "repeat" parameter defaults to "once" whenever you don't pass it — so whenever the user's own words imply recurrence ("every day", "daily", "each week", "weekly", "every month", "monthly", or the Hindi/Hinglish equivalents "roz", "har din", "har hafte", "har mahine"), you MUST pass the matching value ("daily"/"weekly"/"monthly") yourself. Never leave a recurring request as a one-time reminder just because it wasn't spelled out in English — the reminder the user actually asked for and the one that gets saved must match.
@@ -2361,7 +2406,8 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   let iterations = 0
   const requestedActionTool = requestedSchedulingTool(messages)
   const requestedLookupTool = requestedActionTool ? null : requestedRecordTool(messages)
-  const requestedSearchTool = (requestedActionTool || requestedLookupTool) ? null : requestedWebSearchTool(messages)
+  const requestedDiaryTool = (requestedActionTool || requestedLookupTool) ? null : requestedTwinDiaryTool(messages)
+  const requestedSearchTool = (requestedActionTool || requestedLookupTool || requestedDiaryTool) ? null : requestedWebSearchTool(messages)
   const latestUserText = String([...messages].reverse().find(m => m?.role === 'user')?.content || '').toLowerCase()
   const wantsChange = !!requestedLookupTool && !/\bdetails?\b/.test(latestUserText)
   let nudgedToAct = false
@@ -2382,7 +2428,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         system: await buildSystemPrompt(user, context),
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
-        toolChoice: allToolResults.length === 0 ? (requestedActionTool || requestedLookupTool || requestedSearchTool) : null,
+        toolChoice: allToolResults.length === 0 ? (requestedActionTool || requestedLookupTool || requestedDiaryTool || requestedSearchTool) : null,
       }
       resp = await callOpenAI(_callArgs)
     } catch (error) {
