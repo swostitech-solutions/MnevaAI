@@ -50,6 +50,7 @@ export default function ParentMedication({ navigation }) {
   const [detailModal, setDetailModal] = useState(false);
   const [selectedMed, setSelectedMed] = useState(null);
   const [form, setForm]               = useState(EMPTY_FORM);
+  const [editingId, setEditingId]     = useState(null);
   const mountedRef = useRef(true);
 
   const hasRealDataRef = useRef(false);
@@ -123,15 +124,36 @@ export default function ParentMedication({ navigation }) {
     if (!canSave || saving) return;
     setSaving(true);
     try {
-      await apiFetch('/api/family/parent-medications', {
-        method: 'POST',
-        body: form,
-      });
+      if (editingId) {
+        await apiFetch(`/api/family/parent-medications/${editingId}`, {
+          method: 'PATCH',
+          body: form,
+        });
+      } else {
+        await apiFetch('/api/family/parent-medications', {
+          method: 'POST',
+          body: form,
+        });
+      }
       setForm(EMPTY_FORM);
       setDoctorError('');
+      setEditingId(null);
       setModal(false);
     } catch { /* socket will update state */ }
     finally { setSaving(false); }
+  };
+
+  const openEdit = (med) => {
+    setForm({
+      medName: med.medName || '', dosage: med.dosage || '', frequency: med.frequency || '',
+      mealTime: med.mealTime || '', parent: med.parent || '', startDate: med.startDate || '',
+      duration: med.duration || '', doctor: med.doctor || '', notes: med.notes || '',
+      refillDate: med.refillDate || '', doseTimes: med.doseTimes || [],
+    });
+    setDoctorError('');
+    setEditingId(med.id);
+    setDetailModal(false);
+    setModal(true);
   };
 
   const toggleActive = async (med) => {
@@ -161,7 +183,7 @@ export default function ParentMedication({ navigation }) {
           <Text style={styles.headerTitle}>Parent Medication</Text>
           <Text style={styles.headerSubtitle}>Mneva remembers & tracks in real-time</Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => { setForm(EMPTY_FORM); setModal(true); }}>
+        <TouchableOpacity style={styles.addBtn} onPress={() => { setForm(EMPTY_FORM); setEditingId(null); setModal(true); }}>
           <LinearGradient colors={['#E0546E', '#C8405A']} style={styles.addBtnGrad}>
             <Feather name="plus" size={18} color="#FFFFFF" />
           </LinearGradient>
@@ -263,10 +285,10 @@ export default function ParentMedication({ navigation }) {
         </ScrollView>
       )}
 
-      {/* ── Add Medication Modal ── */}
-      <Modal visible={modal} transparent animationType="slide" onRequestClose={() => setModal(false)}>
+      {/* ── Add/Edit Medication Modal ── */}
+      <Modal visible={modal} transparent animationType="slide" onRequestClose={() => { setModal(false); setEditingId(null); }}>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableWithoutFeedback onPress={() => setModal(false)}>
+          <TouchableWithoutFeedback onPress={() => { setModal(false); setEditingId(null); }}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
           <View style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}>
@@ -276,7 +298,7 @@ export default function ParentMedication({ navigation }) {
                 <Feather name="activity" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={{ flex: 1 }}>
-                <Text style={styles.sheetTitle}>Add Medication</Text>
+                <Text style={styles.sheetTitle}>{editingId ? 'Edit Medication' : 'Add Medication'}</Text>
                 <Text style={styles.sheetSubtitle}>Mneva AI will remember this</Text>
               </View>
             </View>
@@ -372,7 +394,7 @@ export default function ParentMedication({ navigation }) {
               <TouchableOpacity style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]} disabled={!canSave || saving} onPress={saveMedication}>
                 <LinearGradient colors={['#E0546E', '#C8405A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
                   {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Feather name="check" size={16} color="#FFFFFF" />}
-                  <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save & Teach Mneva AI'}</Text>
+                  <Text style={styles.saveBtnText}>{saving ? 'Saving...' : editingId ? 'Save Changes' : 'Save & Teach Mneva AI'}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </ScrollView>
@@ -397,6 +419,9 @@ export default function ParentMedication({ navigation }) {
                   <Text style={styles.sheetTitle}>{selectedMed.medName}</Text>
                   <Text style={styles.sheetSubtitle}>For {selectedMed.parent}</Text>
                 </View>
+                <TouchableOpacity onPress={() => openEdit(selectedMed)} style={styles.editBtn}>
+                  <Feather name="edit-2" size={17} color={theme.muted} />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => deleteMed(selectedMed.id)} style={styles.deleteBtn}>
                   <Feather name="trash-2" size={18} color={theme.danger} />
                 </TouchableOpacity>
@@ -504,6 +529,7 @@ const createStyles = (theme) => StyleSheet.create({
   sheetTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
   sheetSubtitle: { fontSize: 12, color: theme.faint, marginTop: 2 },
   deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  editBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
 
   fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 },
   fieldHint: { fontSize: 11, color: theme.faint, marginBottom: 10, marginTop: -4, lineHeight: 15 },
