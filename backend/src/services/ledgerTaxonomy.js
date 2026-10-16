@@ -54,6 +54,7 @@ const TOOL_META = {
   parent_medication_updated: { domain: 'family', autonomyStage: null },
   parent_medication_deleted: { domain: 'family', autonomyStage: null },
   family_task_created: { domain: 'family', autonomyStage: null },
+  family_task_edited: { domain: 'family', autonomyStage: null },
   family_task_status_changed: { domain: 'family', autonomyStage: null },
   family_task_deleted: { domain: 'family', autonomyStage: null },
   pet_created: { domain: 'family', autonomyStage: null },
