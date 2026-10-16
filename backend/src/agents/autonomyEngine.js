@@ -1695,15 +1695,19 @@ export async function executeTool(name, input, userId, opts = {}) {
     }
     case 'log_health_data': {
       const fieldMap = {
-        steps: 'steps', heart_rate: 'heartRate', blood_pressure_systolic: 'bloodPressureSystolic',
+        // steps is handled separately below — it's additive with whatever
+        // Google Fit already logged today (stepsManual/stepsFit), never a
+        // flat overwrite, so it isn't in this generic copy-across map.
+        heart_rate: 'heartRate', blood_pressure_systolic: 'bloodPressureSystolic',
         blood_pressure_diastolic: 'bloodPressureDiastolic', blood_oxygen: 'bloodOxygen', weight: 'weight',
         height: 'height', bmi: 'bmi', body_fat: 'bodyFat', muscle_mass: 'muscleMass', waist: 'waist',
         body_temp: 'bodyTemp', sleep: 'sleep', calories: 'calories', protein: 'protein',
         carbs: 'carbs', fat: 'fat', fiber: 'fiber', water: 'water', active_minutes: 'activeMinutes',
         workout_type: 'workoutType', workout_duration: 'workoutDuration', workout_calories: 'workoutCalories', distance: 'distance',
       }
+      const hasSteps = input.steps != null
       const provided = Object.entries(fieldMap).filter(([k]) => input[k] != null)
-      if (!provided.length) return { success: false, error: 'Please provide at least one metric to log (e.g. steps, weight, sleep hours).' }
+      if (!provided.length && !hasSteps) return { success: false, error: 'Please provide at least one metric to log (e.g. steps, weight, sleep hours).' }
 
       const userRow = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
       const prefs = userRow?.preferences || {}
@@ -1721,9 +1725,24 @@ export async function executeTool(name, input, userId, opts = {}) {
 
       // Steps and Distance are fully interchangeable: mentioning only one
       // ("ran 5km") derives the other via the same stride-length
-      // relationship, in either direction.
-      if (input.steps == null && input.distance != null) {
-        synced.steps = computeStepsFromDistanceKm(Number(input.distance), heightCm)
+      // relationship, in either direction. Either way, the result is this
+      // call's MANUAL steps contribution — never assigned to synced.steps
+      // directly (that used to silently overwrite/discard whatever Google
+      // Fit had already logged today, and get discarded right back the next
+      // time the Health screen refreshed and Fit's own sync ran, since Fit's
+      // merge logic only ever adds stepsManual, which a flat assignment here
+      // never set). Tracked as stepsManual/stepsFit, the same convention the
+      // manual /sync route uses, so the two sources always recombine instead
+      // of one clobbering the other.
+      let effectiveSteps = hasSteps ? Number(input.steps) : null
+      if (effectiveSteps == null && input.distance != null) {
+        effectiveSteps = computeStepsFromDistanceKm(Number(input.distance), heightCm)
+      }
+      if (effectiveSteps != null) {
+        const stepsFit = existing.stepsFit || 0
+        synced.stepsManual = effectiveSteps
+        synced.stepsFit = stepsFit
+        synced.steps = effectiveSteps + stepsFit
       }
 
       // ── Carry forward last-known Body metrics ────────────────────────────
@@ -1762,8 +1781,8 @@ export async function executeTool(name, input, userId, opts = {}) {
       // and skip the calculation entirely. Duration is deliberately NOT
       // auto-filled — it stays purely manual, only ever set when the user
       // actually states one.
-      if (input.steps != null && input.distance == null) {
-        synced.distance = computeDistanceKmFromSteps(synced.steps, heightCm)
+      if (hasSteps && input.distance == null) {
+        synced.distance = computeDistanceKmFromSteps(effectiveSteps, heightCm)
       }
 
       // Calories needs a real activity signal — a workout type plus either
@@ -1778,14 +1797,14 @@ export async function executeTool(name, input, userId, opts = {}) {
       prefs.healthLog = { ...(prefs.healthLog || {}), [today]: synced }
       prefs.healthSync = synced
       await prisma.user.update({ where: { id: userId }, data: { preferences: prefs } })
-      ledger.add({ userId, tool: 'health_data_synced', input: { fields: provided.map(([k]) => k) }, result: { date: today }, status: 'completed' }).catch(() => {})
+      ledger.add({ userId, tool: 'health_data_synced', input: { fields: [...provided.map(([k]) => k), ...(effectiveSteps != null ? ['steps'] : [])] }, result: { date: today }, status: 'completed' }).catch(() => {})
 
       const logged = Object.fromEntries(provided.map(([, bk]) => [bk, synced[bk]]))
       if (synced.bmi != null) logged.bmi = synced.bmi
       if (synced.distance != null) logged.distance = synced.distance
       if (synced.workoutCalories != null) logged.workoutCalories = synced.workoutCalories
       if (synced.workoutDuration != null) logged.workoutDuration = synced.workoutDuration
-      if (input.steps == null && synced.steps != null) logged.steps = synced.steps
+      if (synced.steps != null) logged.steps = synced.steps
       for (const key of ['weight', 'height', 'bodyFat', 'muscleMass', 'waist']) {
         if (synced[key] != null) logged[key] = synced[key]
       }
