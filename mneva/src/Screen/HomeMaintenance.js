@@ -30,9 +30,15 @@ export default function HomeMaintenance({ navigation }) {
   const [taskModal, setTaskModal]   = useState(false);
   const [contactModal, setContactModal] = useState(false);
   const [warrantyModal, setWarrantyModal] = useState(false);
-  const [taskForm, setTaskForm]     = useState({ type: '', title: '', priority: '', dueDate: '', time: '', notes: '' });
+  const [taskForm, setTaskForm]     = useState({ type: '', title: '', priority: '', dueDate: '', time: '', notes: '', done: false });
   const [contactForm, setContactForm] = useState({ name: '', role: '', phone: '', notes: '' });
   const [warrantyForm, setWarrantyForm] = useState({ item: '', brand: '', purchaseDate: '', expiryDate: '', notes: '' });
+  // Which item (if any) a modal is currently editing — null means the modal
+  // is in "add new" mode. Tracked per-type since only one modal is open at
+  // a time, but each has its own form state.
+  const [editingTaskId, setEditingTaskId]         = useState(null);
+  const [editingContactId, setEditingContactId]   = useState(null);
+  const [editingWarrantyId, setEditingWarrantyId] = useState(null);
 
   useEffect(() => {
     const off = on('family:alert', (data) => {
@@ -50,23 +56,61 @@ export default function HomeMaintenance({ navigation }) {
     const remindAt = (taskForm.dueDate && taskForm.time)
       ? new Date(`${taskForm.dueDate}T${taskForm.time}:00`).toISOString()
       : taskForm.dueDate ? new Date(`${taskForm.dueDate}T09:00:00`).toISOString() : null;
-    await create('task', taskForm, remindAt);
-    setTaskForm({ type: '', title: '', priority: '', dueDate: '', time: '', notes: '' });
+    const { done, ...data } = taskForm;
+    if (editingTaskId) {
+      await update(editingTaskId, { data, done, remindAt });
+    } else {
+      await create('task', data, remindAt);
+    }
+    setTaskForm({ type: '', title: '', priority: '', dueDate: '', time: '', notes: '', done: false });
+    setEditingTaskId(null);
     setTaskModal(false);
   };
 
   const saveContact = async () => {
     if (!contactForm.name.trim()) return;
-    await create('contact', contactForm);
+    if (editingContactId) {
+      await update(editingContactId, { data: contactForm });
+    } else {
+      await create('contact', contactForm);
+    }
     setContactForm({ name: '', role: '', phone: '', notes: '' });
+    setEditingContactId(null);
     setContactModal(false);
   };
 
   const saveWarranty = async () => {
     if (!warrantyForm.item.trim()) return;
-    await create('warranty', warrantyForm);
+    if (editingWarrantyId) {
+      await update(editingWarrantyId, { data: warrantyForm });
+    } else {
+      await create('warranty', warrantyForm);
+    }
     setWarrantyForm({ item: '', brand: '', purchaseDate: '', expiryDate: '', notes: '' });
+    setEditingWarrantyId(null);
     setWarrantyModal(false);
+  };
+
+  const openEditTask = (t) => {
+    setTaskForm({
+      type: t.data.type || '', title: t.data.title || '', priority: t.data.priority || '',
+      dueDate: t.data.dueDate || '', time: t.data.time || '', notes: t.data.notes || '', done: !!t.done,
+    });
+    setEditingTaskId(t.id);
+    setTaskModal(true);
+  };
+  const openEditContact = (c) => {
+    setContactForm({ name: c.data.name || '', role: c.data.role || '', phone: c.data.phone || '', notes: c.data.notes || '' });
+    setEditingContactId(c.id);
+    setContactModal(true);
+  };
+  const openEditWarranty = (w) => {
+    setWarrantyForm({
+      item: w.data.item || '', brand: w.data.brand || '',
+      purchaseDate: w.data.purchaseDate || '', expiryDate: w.data.expiryDate || '', notes: w.data.notes || '',
+    });
+    setEditingWarrantyId(w.id);
+    setWarrantyModal(true);
   };
 
   return (
@@ -108,14 +152,13 @@ export default function HomeMaintenance({ navigation }) {
             </View>
           )}
 
-          <SectionHeader label="MAINTENANCE TASKS" color="#E0546E" bg="#FCEAED" onAdd={() => setTaskModal(true)} styles={styles} />
+          <SectionHeader label="MAINTENANCE TASKS" color="#E0546E" bg="#FCEAED" onAdd={() => { setTaskForm({ type: '', title: '', priority: '', dueDate: '', time: '', notes: '', done: false }); setEditingTaskId(null); setTaskModal(true); }} styles={styles} />
           <View style={styles.card}>
             {tasks.length === 0 ? <EmptyRow icon="tool" text="No tasks added" theme={theme} styles={styles} /> : tasks.map((t, i) => (
-              <View key={t.id} style={[styles.listRow, i < tasks.length - 1 && styles.divider]}>
-                <TouchableOpacity onPress={() => update(t.id, { done: !t.done })}
-                  style={[styles.rowIcon, { backgroundColor: t.done ? (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') : (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]}>
+              <TouchableOpacity key={t.id} activeOpacity={0.7} onPress={() => openEditTask(t)} style={[styles.listRow, i < tasks.length - 1 && styles.divider]}>
+                <View style={[styles.rowIcon, { backgroundColor: t.done ? (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') : (theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED') }]}>
                   <Feather name={t.done ? 'check-circle' : 'tool'} size={14} color={t.done ? theme.accent : theme.danger} />
-                </TouchableOpacity>
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.rowTitle, t.done && { textDecorationLine: 'line-through', color: theme.faint }]}>{t.data.title}</Text>
                   <Text style={styles.rowMeta}>{[t.data.type, t.data.dueDate ? `Due: ${t.data.dueDate}` : null].filter(Boolean).join(' · ')}</Text>
@@ -123,42 +166,42 @@ export default function HomeMaintenance({ navigation }) {
                 {t.data.priority ? <View style={[styles.tag, { backgroundColor: pBg(t.data.priority) }]}><Text style={[styles.tagText, { color: pColor(t.data.priority) }]}>{t.data.priority}</Text></View> : null}
                 {t.remindAt && <View style={styles.remindTag}><Feather name="bell" size={10} color={theme.danger} /></View>}
                 <TouchableOpacity onPress={() => remove(t.id)} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
 
-          <SectionHeader label="SERVICE CONTACTS" color="#4FA6E8" bg="#EAF3FD" onAdd={() => setContactModal(true)} styles={styles} />
+          <SectionHeader label="SERVICE CONTACTS" color="#4FA6E8" bg="#EAF3FD" onAdd={() => { setContactForm({ name: '', role: '', phone: '', notes: '' }); setEditingContactId(null); setContactModal(true); }} styles={styles} />
           <View style={styles.card}>
             {contacts.length === 0 ? <EmptyRow icon="phone" text="No contacts added" theme={theme} styles={styles} /> : contacts.map((c, i) => (
-              <View key={c.id} style={[styles.listRow, i < contacts.length - 1 && styles.divider]}>
+              <TouchableOpacity key={c.id} activeOpacity={0.7} onPress={() => openEditContact(c)} style={[styles.listRow, i < contacts.length - 1 && styles.divider]}>
                 <View style={[styles.rowIcon, { backgroundColor: '#EAF3FD' }]}><Feather name="phone" size={14} color="#4FA6E8" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{c.data.name}</Text>
                   <Text style={styles.rowMeta}>{[c.data.role, c.data.phone].filter(Boolean).join(' · ')}</Text>
                 </View>
                 <TouchableOpacity onPress={() => remove(c.id)} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
 
-          <SectionHeader label="WARRANTIES & APPLIANCES" color="#D97706" bg="#FEF3C7" onAdd={() => setWarrantyModal(true)} styles={styles} />
+          <SectionHeader label="WARRANTIES & APPLIANCES" color="#D97706" bg="#FEF3C7" onAdd={() => { setWarrantyForm({ item: '', brand: '', purchaseDate: '', expiryDate: '', notes: '' }); setEditingWarrantyId(null); setWarrantyModal(true); }} styles={styles} />
           <View style={styles.card}>
             {warranties.length === 0 ? <EmptyRow icon="shield" text="No warranties added" theme={theme} styles={styles} /> : warranties.map((w, i) => (
-              <View key={w.id} style={[styles.listRow, i < warranties.length - 1 && styles.divider]}>
+              <TouchableOpacity key={w.id} activeOpacity={0.7} onPress={() => openEditWarranty(w)} style={[styles.listRow, i < warranties.length - 1 && styles.divider]}>
                 <View style={[styles.rowIcon, { backgroundColor: '#FEF3C7' }]}><Feather name="shield" size={14} color="#D97706" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{w.data.item}{w.data.brand ? ` · ${w.data.brand}` : ''}</Text>
                   <Text style={styles.rowMeta}>{w.data.expiryDate ? `Expires: ${w.data.expiryDate}` : w.data.purchaseDate ? `Bought: ${w.data.purchaseDate}` : ''}</Text>
                 </View>
                 <TouchableOpacity onPress={() => remove(w.id)} style={{ padding: 4 }}><Feather name="x" size={14} color={theme.faint} /></TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         </ScrollView>
       )}
 
       {/* Task Modal */}
-      <SheetModal visible={taskModal} onClose={() => setTaskModal(false)} insets={insets} title="Add Task" gradColors={['#E0546E', '#C8405A']} icon="tool" theme={theme} styles={styles}>
+      <SheetModal visible={taskModal} onClose={() => { setTaskModal(false); setEditingTaskId(null); }} insets={insets} title={editingTaskId ? 'Edit Task' : 'Add Task'} gradColors={['#E0546E', '#C8405A']} icon="tool" theme={theme} styles={styles}>
         <FLabel styles={styles}>Task Type *</FLabel>
         <View style={styles.chipRow}>
           {TASK_TYPES.map(t => (
@@ -182,11 +225,17 @@ export default function HomeMaintenance({ navigation }) {
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><FLabel styles={styles}>Time (HH:MM)</FLabel><TextInput style={styles.input} placeholder="09:00" placeholderTextColor={theme.placeholder} value={taskForm.time} onChangeText={v => setTaskForm(f => ({ ...f, time: v }))} keyboardType="numeric" /></View>
         </View>
-        <SaveBtn onPress={saveTask} disabled={!taskForm.title.trim() || !taskForm.type} colors={['#E0546E', '#C8405A']} label="Save Task" styles={styles} />
+        {editingTaskId && (
+          <TouchableOpacity style={styles.doneToggleRow} onPress={() => setTaskForm(f => ({ ...f, done: !f.done }))}>
+            <Feather name={taskForm.done ? 'check-square' : 'square'} size={18} color={taskForm.done ? theme.accent : theme.faint} />
+            <Text style={styles.doneToggleText}>Mark as done</Text>
+          </TouchableOpacity>
+        )}
+        <SaveBtn onPress={saveTask} disabled={!taskForm.title.trim() || !taskForm.type} colors={['#E0546E', '#C8405A']} label={editingTaskId ? 'Save Changes' : 'Save Task'} styles={styles} />
       </SheetModal>
 
       {/* Contact Modal */}
-      <SheetModal visible={contactModal} onClose={() => setContactModal(false)} insets={insets} title="Add Service Contact" gradColors={['#4FA6E8', '#2E86C8']} icon="phone" theme={theme} styles={styles}>
+      <SheetModal visible={contactModal} onClose={() => { setContactModal(false); setEditingContactId(null); }} insets={insets} title={editingContactId ? 'Edit Service Contact' : 'Add Service Contact'} gradColors={['#4FA6E8', '#2E86C8']} icon="phone" theme={theme} styles={styles}>
         <FLabel styles={styles}>Name *</FLabel>
         <TextInput style={styles.input} placeholder="e.g. Ramesh Plumber" placeholderTextColor={theme.placeholder} value={contactForm.name} onChangeText={v => setContactForm(f => ({ ...f, name: v }))} />
         <View style={styles.rowFields}>
@@ -194,11 +243,11 @@ export default function HomeMaintenance({ navigation }) {
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><FLabel styles={styles}>Phone</FLabel><TextInput style={styles.input} placeholder="+91 98765..." placeholderTextColor={theme.placeholder} value={contactForm.phone} onChangeText={v => setContactForm(f => ({ ...f, phone: v }))} keyboardType="phone-pad" /></View>
         </View>
-        <SaveBtn onPress={saveContact} disabled={!contactForm.name.trim()} colors={['#4FA6E8', '#2E86C8']} label="Save Contact" styles={styles} />
+        <SaveBtn onPress={saveContact} disabled={!contactForm.name.trim()} colors={['#4FA6E8', '#2E86C8']} label={editingContactId ? 'Save Changes' : 'Save Contact'} styles={styles} />
       </SheetModal>
 
       {/* Warranty Modal */}
-      <SheetModal visible={warrantyModal} onClose={() => setWarrantyModal(false)} insets={insets} title="Add Warranty" gradColors={['#D97706', '#B45309']} icon="shield" theme={theme} styles={styles}>
+      <SheetModal visible={warrantyModal} onClose={() => { setWarrantyModal(false); setEditingWarrantyId(null); }} insets={insets} title={editingWarrantyId ? 'Edit Warranty' : 'Add Warranty'} gradColors={['#D97706', '#B45309']} icon="shield" theme={theme} styles={styles}>
         <FLabel styles={styles}>Item Name *</FLabel>
         <TextInput style={styles.input} placeholder="e.g. Washing Machine" placeholderTextColor={theme.placeholder} value={warrantyForm.item} onChangeText={v => setWarrantyForm(f => ({ ...f, item: v }))} />
         <FLabel styles={styles}>Brand</FLabel>
@@ -208,7 +257,7 @@ export default function HomeMaintenance({ navigation }) {
           <View style={{ width: 12 }} />
           <View style={{ flex: 1 }}><DateField label="Expiry Date" value={warrantyForm.expiryDate} onChange={v => setWarrantyForm(f => ({ ...f, expiryDate: v.slice(0, 10) }))} /></View>
         </View>
-        <SaveBtn onPress={saveWarranty} disabled={!warrantyForm.item.trim()} colors={['#D97706', '#B45309']} label="Save Warranty" styles={styles} />
+        <SaveBtn onPress={saveWarranty} disabled={!warrantyForm.item.trim()} colors={['#D97706', '#B45309']} label={editingWarrantyId ? 'Save Changes' : 'Save Warranty'} styles={styles} />
       </SheetModal>
     </SafeAreaView>
   );
@@ -309,6 +358,8 @@ const createStyles = (theme) => StyleSheet.create({
   chipActive: { backgroundColor: theme.isDark ? 'rgba(255,184,77,0.16)' : '#FEF3C7', borderColor: theme.warning },
   chipText: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
   chipTextActive: { color: theme.warning },
+  doneToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 16 },
+  doneToggleText: { fontSize: 14, fontWeight: '600', color: theme.text },
   saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 4, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.45 },
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
