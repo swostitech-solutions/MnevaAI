@@ -38,6 +38,19 @@ const formFromItem = (item) => ({
 const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : '—';
 const ACCENT = ['#9B72FF', '#7C5CE8'];
 
+// Next billing = start date + one billing cycle, by calendar (not a flat
+// day count) — "23 Oct" + Monthly should land on "23 Nov", not "22 Nov".
+const addCycle = (dateStr, billingCycle) => {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  if (billingCycle === 'Weekly') d.setDate(d.getDate() + 7);
+  else if (billingCycle === 'Quarterly') d.setMonth(d.getMonth() + 3);
+  else if (billingCycle === 'Half-Yearly') d.setMonth(d.getMonth() + 6);
+  else if (billingCycle === 'Yearly') d.setFullYear(d.getFullYear() + 1);
+  else d.setMonth(d.getMonth() + 1); // Monthly (default)
+  return d.toISOString();
+};
+
 export default function SubscriptionScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { on } = useSocket();
@@ -183,7 +196,7 @@ export default function SubscriptionScreen({ navigation }) {
             <Text style={styles.fieldLabel}>Billing Cycle <Text style={styles.required}>*</Text></Text>
             <View style={styles.chipRow}>
               {BILLING_CYCLES.map(c => (
-                <TouchableOpacity key={c} style={[styles.selectChip, form.billingCycle === c && styles.selectChipActive]} onPress={() => setField('billingCycle', c)}>
+                <TouchableOpacity key={c} style={[styles.selectChip, form.billingCycle === c && styles.selectChipActive]} onPress={() => setForm(f => ({ ...f, billingCycle: c, nextBillingDate: f.startDate ? (addCycle(f.startDate, c) || f.nextBillingDate) : f.nextBillingDate }))}>
                   <Text style={[styles.selectChipText, form.billingCycle === c && styles.selectChipTextActive]}>{c}</Text>
                 </TouchableOpacity>
               ))}
@@ -202,7 +215,7 @@ export default function SubscriptionScreen({ navigation }) {
             </View>
 
             <Text style={styles.sectionLabel}>DATES</Text>
-            <DateField label="Subscription Start Date" required value={form.startDate} onChange={v => setField('startDate', v)} />
+            <DateField label="Subscription Start Date" required value={form.startDate} onChange={v => setForm(f => ({ ...f, startDate: v, nextBillingDate: addCycle(v, f.billingCycle) || f.nextBillingDate }))} />
             <DateField label="Next Billing Date" value={form.nextBillingDate} onChange={v => setField('nextBillingDate', v)} />
             <DateField label="Renewal Date" value={form.renewalDate} onChange={v => setField('renewalDate', v)} />
             <DateField label="Cancellation Date" value={form.cancellationDate} onChange={v => setField('cancellationDate', v)} />
