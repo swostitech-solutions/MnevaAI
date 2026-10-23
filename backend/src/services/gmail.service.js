@@ -545,9 +545,15 @@ async function fetchUrgentEmailsFresh(user, maxResults) {
   const authClient = await getAuthenticatedGmailClient(user)
   const gmail = google.gmail({ version: 'v1', auth: authClient })
 
-  // today's unread primary inbox emails
+  // today's primary inbox emails — NOT restricted to unread. A genuinely
+  // urgent email (a meeting, an interview, a deadline) is exactly the kind
+  // of thing a person opens right away, which marks it read in Gmail — an
+  // `is:unread` filter here meant that simply reading an urgent email made
+  // it vanish from this list and from Priorities, even though it was still
+  // just as urgent. Urgency is judged by content (classifyEmailsUrgency),
+  // not by whether the user has looked at it yet.
   const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
-  const q = `in:inbox is:unread after:${todayStr} category:primary`
+  const q = `in:inbox after:${todayStr} category:primary`
 
   const listRes = await gmail.users.messages.list({
     userId: 'me',
