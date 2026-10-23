@@ -231,6 +231,24 @@ export function requestedTwinDiaryTool(messages = []) {
   return (mentionsDiary || mentionsHistory || whatDidYouDo) ? 'get_twin_diary' : null
 }
 
+// Same forced-first-call idea again, for the inbox. "How many unread emails
+// do I have" has no list_records-style noun and no edit verb either, so it
+// was never grounded in a real get_emails call — the model just answered
+// (often "0") without ever checking.
+export function requestedEmailTool(messages = []) {
+  const userMessages = messages.filter(message => message?.role === 'user')
+  const text = (typeof userMessages[userMessages.length - 1]?.content === 'string' ? userMessages[userMessages.length - 1].content : '').toLowerCase()
+  if (!text) return null
+  // Don't steal this from an actual send/draft/reply request (their own
+  // tools handle those) or a "what's my email address" profile question
+  // (rule 9 answers that directly from the profile, no tool needed).
+  if (/\b(send|draft|reply|compose)\b/.test(text)) return null
+  if (/\bmy\s+email\s+(is|address)\b|\bemail\s+address\b/.test(text)) return null
+  const inboxNoun = /\b(unread|inbox|emails?|mails?)\b/.test(text)
+  const askIntent = /\b(how\s+many|kitn[aei]|what|kya|any|koi|list|show\s*me|tell\s*me|bata\w*|dikha\w*|important|urgent|new)\b/.test(text)
+  return (inboxNoun && askIntent) ? 'get_emails' : null
+}
+
 // Keep the confirmation after a scheduling action grounded in the tool
 // results.  A model-written "updated schedule for today" can accidentally
 // blend old and future reminders into one list.  This only reports the items
@@ -2452,7 +2470,8 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   const requestedActionTool = requestedSchedulingTool(messages)
   const requestedLookupTool = requestedActionTool ? null : requestedRecordTool(messages)
   const requestedDiaryTool = (requestedActionTool || requestedLookupTool) ? null : requestedTwinDiaryTool(messages)
-  const requestedSearchTool = (requestedActionTool || requestedLookupTool || requestedDiaryTool) ? null : requestedWebSearchTool(messages)
+  const requestedEmailTool_ = (requestedActionTool || requestedLookupTool || requestedDiaryTool) ? null : requestedEmailTool(messages)
+  const requestedSearchTool = (requestedActionTool || requestedLookupTool || requestedDiaryTool || requestedEmailTool_) ? null : requestedWebSearchTool(messages)
   const latestUserText = String([...messages].reverse().find(m => m?.role === 'user')?.content || '').toLowerCase()
   const wantsChange = !!requestedLookupTool && !/\bdetails?\b/.test(latestUserText)
   let nudgedToAct = false
@@ -2473,7 +2492,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
         system: await buildSystemPrompt(user, context),
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
-        toolChoice: allToolResults.length === 0 ? (requestedActionTool || requestedLookupTool || requestedDiaryTool || requestedSearchTool) : null,
+        toolChoice: allToolResults.length === 0 ? (requestedActionTool || requestedLookupTool || requestedDiaryTool || requestedEmailTool_ || requestedSearchTool) : null,
       }
       resp = await callOpenAI(_callArgs)
     } catch (error) {
