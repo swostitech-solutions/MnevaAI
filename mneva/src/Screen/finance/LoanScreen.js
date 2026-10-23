@@ -440,7 +440,7 @@ export default function LoanScreen({ navigation }) {
                     <Text style={styles.rowSub}>{loan.lenderName} · Next EMI {fmtShortDate(loan.nextEmiDate)}</Text>
                   </View>
                   <View style={styles.rowRight}>
-                    <Text style={styles.rowAmount}>₹{(loan.outstandingAmount || 0).toLocaleString('en-IN')}</Text>
+                    <Text style={styles.rowAmount}>₹{Math.max(0, (loan.originalAmount || 0) - (loan.outstandingAmount || 0)).toLocaleString('en-IN')}</Text>
                     <View style={[styles.badge, { backgroundColor: loan.status === 'Active' ? (theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6') : theme.soft }]}>
                       <Text style={[styles.badgeText, { color: loan.status === 'Active' ? theme.accent : theme.muted }]}>{loan.status}</Text>
                     </View>
