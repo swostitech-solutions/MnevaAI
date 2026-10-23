@@ -184,6 +184,15 @@ export function requestedWebSearchTool(messages = []) {
   const userMessages = messages.filter(message => message?.role === 'user')
   const text = String(userMessages[userMessages.length - 1]?.content || '').toLowerCase()
   if (!text) return null
+  // Our own internally-built prompts (SportsDiscovery/MusicDiscovery's
+  // trending-chart queries, etc.) explicitly tell the model to search —
+  // this exact phrase is never something a real user types, so matching it
+  // literally forces that tool call instead of leaving it to the model's
+  // own judgment, same as every other "AI didn't reliably follow the
+  // instruction on its own" fix in this file.
+  if (/\bcall your web_search tool\b/.test(text)) return 'web_search'
+  const liveScoreIntent = /\b(live score|live scores|match score|cricket score|football score|match result|live match|fixtures?)\b/
+  if (liveScoreIntent.test(text)) return 'web_search'
   const externalNoun = /\b(hotel|hotels|resort|resorts|flight|flights|ticket|tickets|movie|showtime|gold rate|silver rate|petrol|diesel|share price|stock price|stocks?|exchange rate|currency|iphone|smartphone|mobile phone|laptop|car price|bike price|match score|cricket score|score of|repo rate)\b/
   const priceIntent = /\b(price|rate|cost|kimat|keemat|kitna|charge|fare|fees?|book(?:ing)?|available|availability|options?)\b/
   return externalNoun.test(text) && priceIntent.test(text) ? 'web_search' : null

@@ -269,7 +269,18 @@ function AIChatPanel({ onSongsUpdate, currentContext }) {
     setLoading(true);
 
     try {
-      const prompt = `You are Mneva AI music assistant. The user is browsing ${currentContext}. 
+      // "Trending"/"Charts" claim to be real current rankings (e.g. "India
+      // Top 50"), not a recommendation — those need a real web search for
+      // what's actually charting right now, not a guess from training data
+      // that could be describing whatever was popular a year ago.
+      const isRealChart = /^(Trending|Charts)\b/.test(currentContext || '');
+      const prompt = isRealChart
+        ? `You are Mneva AI music assistant. Call your web_search tool first to find what is actually trending/charting right now for "${currentContext}" — never answer from memory, since chart rankings change constantly and your training data cannot be current. Based ONLY on what you find, respond with a numbered list of 5-8 real songs in this exact format:
+1. Song Title - Artist Name · Album Name
+2. Song Title - Artist Name · Album Name
+...
+Keep it concise. If your search doesn't turn up enough real, current songs, return fewer rather than inventing any. User request: ${content}`
+        : `You are Mneva AI music assistant. The user is browsing ${currentContext}.
 Respond with a numbered list of 5-8 song recommendations in this exact format:
 1. Song Title - Artist Name · Album Name
 2. Song Title - Artist Name · Album Name

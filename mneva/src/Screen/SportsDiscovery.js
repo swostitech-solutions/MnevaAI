@@ -19,19 +19,21 @@ import { useTheme } from '../context/ThemeContext';
 
 const TAB_BAR_HEIGHT = 50;
 
-// ── DeepSeek sports fetch ─────────────────────────────────────────────────────
+// ── Real-time sports fetch — grounded in an actual web search, not the
+// model's own training data (which can never be current for live/recent
+// scores) ──────────────────────────────────────────────────────────────────
 async function fetchSportsFromAI(sportTitle, tab) {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const prompt = `Today is ${today}. You are a real-time sports data agent.
-Return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? "upcoming (next 7 days)" : "recently completed (last 7 days)"} ${sportTitle} matches.
+  const searchGoal = tab === "Live" ? "live score" : tab === "Upcoming" ? "upcoming fixtures schedule" : "recent match results";
+  const prompt = `Today is ${today}. Call your web_search tool first — search for "${sportTitle} ${searchGoal}" — to find real, current information. Never answer from memory: live/recent match scores and schedules change constantly and your training data cannot possibly be up to date.
+Based ONLY on what your search actually finds, return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? "upcoming (next 7 days)" : "recently completed (last 7 days)"} ${sportTitle} matches.
 Each object must have exactly these fields:
 { "teamA": string, "teamB": string, "scoreA": string, "scoreB": string, "info": string, "venue": string, "status": "${tab === "Live" ? "live" : tab === "Upcoming" ? "upcoming" : "result"}" }
 Rules:
 - scoreA/scoreB: empty string for upcoming matches, actual score for live/result
 - info: for live = current over/minute/quarter + competition name, for upcoming = date + time, for result = winner + margin
 - venue: stadium/city name
-- Return 3 to 5 matches maximum
-- Use real current data based on your knowledge
+- Return 3 to 5 matches maximum — fewer, or an empty array, if your search doesn't turn up that many real ones. Never invent a match to fill the count.
 - Return ONLY the JSON array, nothing else`;
 
   const res = await apiFetch("/api/agent/chat", {
@@ -61,107 +63,11 @@ const SPORTS = [
 
 const MATCH_TABS = ["Live", "Upcoming", "Previous"];
 
-// Fallback match data per sport per tab
-const MATCHES = {
-  cricket: {
-    Live: [
-      { id: "c1", teamA: "India", teamB: "Australia", scoreA: "287/4", scoreB: "210/8", info: "48.2 Overs · 3rd ODI", venue: "Wankhede, Mumbai", status: "live" },
-      { id: "c2", teamA: "England", teamB: "South Africa", scoreA: "156/3", scoreB: "—", info: "22.0 Overs · 2nd Test", venue: "Lord's, London", status: "live" },
-    ],
-    Upcoming: [
-      { id: "c3", teamA: "India", teamB: "New Zealand", scoreA: "", scoreB: "", info: "Tomorrow · 9:30 AM", venue: "Eden Gardens, Kolkata", status: "upcoming" },
-      { id: "c4", teamA: "Pakistan", teamB: "Sri Lanka", scoreA: "", scoreB: "", info: "25 Jul · 2:00 PM", venue: "Gaddafi Stadium, Lahore", status: "upcoming" },
-      { id: "c5", teamA: "West Indies", teamB: "Bangladesh", scoreA: "", scoreB: "", info: "26 Jul · 6:00 PM", venue: "Kensington Oval, Barbados", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "c6", teamA: "India", teamB: "England", scoreA: "345/7", scoreB: "289 AO", info: "India won by 56 runs", venue: "Chepauk, Chennai", status: "result" },
-      { id: "c7", teamA: "Australia", teamB: "Pakistan", scoreA: "312/6", scoreB: "308/9", info: "Australia won by 4 runs", venue: "MCG, Melbourne", status: "result" },
-    ],
-  },
-  football: {
-    Live: [
-      { id: "f1", teamA: "Man City", teamB: "Arsenal", scoreA: "2", scoreB: "1", info: "67' · Premier League", venue: "Etihad Stadium", status: "live" },
-      { id: "f2", teamA: "Real Madrid", teamB: "Barcelona", scoreA: "1", scoreB: "1", info: "54' · La Liga", venue: "Santiago Bernabéu", status: "live" },
-    ],
-    Upcoming: [
-      { id: "f3", teamA: "Liverpool", teamB: "Chelsea", scoreA: "", scoreB: "", info: "Tomorrow · 8:00 PM", venue: "Anfield, Liverpool", status: "upcoming" },
-      { id: "f4", teamA: "PSG", teamB: "Bayern Munich", scoreA: "", scoreB: "", info: "26 Jul · 10:45 PM", venue: "Parc des Princes", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "f5", teamA: "Man United", teamB: "Tottenham", scoreA: "3", scoreB: "2", info: "Man United won · FT", venue: "Old Trafford", status: "result" },
-      { id: "f6", teamA: "Juventus", teamB: "AC Milan", scoreA: "0", scoreB: "0", info: "Draw · FT", venue: "Allianz Stadium", status: "result" },
-    ],
-  },
-  tennis: {
-    Live: [
-      { id: "t1", teamA: "Djokovic", teamB: "Alcaraz", scoreA: "6-4, 3", scoreB: "3-6, 5", info: "Set 3 · Wimbledon SF", venue: "Centre Court, London", status: "live" },
-    ],
-    Upcoming: [
-      { id: "t2", teamA: "Sinner", teamB: "Medvedev", scoreA: "", scoreB: "", info: "Tomorrow · 3:00 PM", venue: "Court Philippe-Chatrier", status: "upcoming" },
-      { id: "t3", teamA: "Swiatek", teamB: "Sabalenka", scoreA: "", scoreB: "", info: "26 Jul · 5:00 PM", venue: "Arthur Ashe Stadium", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "t4", teamA: "Nadal", teamB: "Federer", scoreA: "6-3, 6-4", scoreB: "3-6, 4-6", info: "Nadal won · Final", venue: "Roland Garros", status: "result" },
-    ],
-  },
-  basketball: {
-    Live: [
-      { id: "b1", teamA: "Lakers", teamB: "Warriors", scoreA: "87", scoreB: "91", info: "Q3 · 4:32 · NBA", venue: "Crypto.com Arena", status: "live" },
-    ],
-    Upcoming: [
-      { id: "b2", teamA: "Celtics", teamB: "Heat", scoreA: "", scoreB: "", info: "Tomorrow · 7:30 AM", venue: "TD Garden, Boston", status: "upcoming" },
-      { id: "b3", teamA: "Bulls", teamB: "Knicks", scoreA: "", scoreB: "", info: "26 Jul · 6:00 AM", venue: "United Center, Chicago", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "b4", teamA: "Bucks", teamB: "Nets", scoreA: "112", scoreB: "104", info: "Bucks won · Final", venue: "Fiserv Forum", status: "result" },
-    ],
-  },
-  kabaddi: {
-    Live: [
-      { id: "k1", teamA: "Patna Pirates", teamB: "U Mumba", scoreA: "32", scoreB: "28", info: "H2 · 8 min · PKL", venue: "Patliputra Sports Complex", status: "live" },
-    ],
-    Upcoming: [
-      { id: "k2", teamA: "Jaipur Pink Panthers", teamB: "Bengal Warriors", scoreA: "", scoreB: "", info: "Tomorrow · 7:30 PM", venue: "SMS Indoor Stadium", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "k3", teamA: "Dabang Delhi", teamB: "Telugu Titans", scoreA: "41", scoreB: "35", info: "Delhi won · Final", venue: "Thyagaraj Sports Complex", status: "result" },
-    ],
-  },
-  hockey: {
-    Live: [
-      { id: "h1", teamA: "India", teamB: "Netherlands", scoreA: "3", scoreB: "2", info: "Q3 · 42' · FIH Pro League", venue: "Major Dhyan Chand Stadium", status: "live" },
-    ],
-    Upcoming: [
-      { id: "h2", teamA: "Australia", teamB: "Belgium", scoreA: "", scoreB: "", info: "Tomorrow · 5:00 PM", venue: "Perth Hockey Stadium", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "h3", teamA: "Germany", teamB: "Argentina", scoreA: "4", scoreB: "2", info: "Germany won · FT", venue: "Olympic Stadium, Berlin", status: "result" },
-    ],
-  },
-  badminton: {
-    Live: [
-      { id: "bd1", teamA: "Sindhu", teamB: "Tai Tzu-ying", scoreA: "21-18, 14", scoreB: "18-21, 18", info: "Game 3 · BWF World Tour", venue: "Axiata Arena, KL", status: "live" },
-    ],
-    Upcoming: [
-      { id: "bd2", teamA: "Lakshya Sen", teamB: "Viktor Axelsen", scoreA: "", scoreB: "", info: "Tomorrow · 4:00 PM", venue: "Istora Senayan, Jakarta", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "bd3", teamA: "Srikanth", teamB: "Lin Dan", scoreA: "21-15, 21-19", scoreB: "15-21, 19-21", info: "Srikanth won · SF", venue: "All England Arena", status: "result" },
-    ],
-  },
-  formula1: {
-    Live: [
-      { id: "f1r1", teamA: "Verstappen", teamB: "Hamilton", scoreA: "P1", scoreB: "P3", info: "Lap 42/58 · British GP", venue: "Silverstone Circuit", status: "live" },
-    ],
-    Upcoming: [
-      { id: "f1r2", teamA: "Hungarian GP", teamB: "Qualifying", scoreA: "", scoreB: "", info: "Tomorrow · 5:00 PM", venue: "Hungaroring, Budapest", status: "upcoming" },
-      { id: "f1r3", teamA: "Hungarian GP", teamB: "Race Day", scoreA: "", scoreB: "", info: "27 Jul · 3:00 PM", venue: "Hungaroring, Budapest", status: "upcoming" },
-    ],
-    Previous: [
-      { id: "f1r4", teamA: "Leclerc", teamB: "Norris", scoreA: "P1", scoreB: "P2", info: "Leclerc won · Monaco GP", venue: "Circuit de Monaco", status: "result" },
-    ],
-  },
-};
+// Static placeholder match data (fake teams/scores, e.g. a frozen "India
+// 287/4 vs Australia") used to live here as a fallback — removed. Showing
+// invented matches whenever the real AI+web-search fetch found nothing was
+// strictly worse than an honest "no matches found" empty state, which the
+// UI below already has.
 
 // ── Match Card ──────────────────────────────────────────────────────────────
 function MatchCard({ match, sportColors, theme, matchStyles }) {
@@ -354,7 +260,7 @@ export default function SportsDiscovery({ navigation }) {
   const sport       = SPORTS.find(s => s.id === selected);
   const sportColors = sport?.colors || ["#6C47FF", "#4A2FCC"];
   // Priority: AI data > static fallback
-  const matches = aiMatches ?? (selected ? (MATCHES[selected]?.[activeTab] || []) : []);
+  const matches = aiMatches || [];
   const aiContext = sport ? `${sport.title} · ${activeTab}` : "Sports";
 
   const loadAIMatches = useCallback(async (sportTitle, tab) => {
@@ -478,13 +384,13 @@ export default function SportsDiscovery({ navigation }) {
               {!aiLoading && !aiError && aiMatches && (
                 <View style={styles.aiSourceRow}>
                   <Feather name="cpu" size={10} color={theme.accentAlt} />
-                  <Text style={styles.aiSourceText}>Powered by Mneva AI · DeepSeek</Text>
+                  <Text style={styles.aiSourceText}>Powered by Mneva AI · live web search</Text>
                 </View>
               )}
               {!aiLoading && aiError && (
                 <View style={styles.aiSourceRow}>
                   <Feather name="alert-circle" size={10} color={theme.warning} />
-                  <Text style={[styles.aiSourceText, { color: theme.warning }]}>Showing cached data · AI unavailable</Text>
+                  <Text style={[styles.aiSourceText, { color: theme.warning }]}>Couldn't load live data · try again</Text>
                 </View>
               )}
 
