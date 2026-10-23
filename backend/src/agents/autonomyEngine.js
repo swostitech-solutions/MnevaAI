@@ -203,7 +203,7 @@ export function requestedRecordTool(messages = []) {
   // real sentences put other words in between ("kitne family task hai" —
   // "kitne" and "hai" aren't next to each other) — the noun check below is
   // what keeps this from over-firing on unrelated small talk.
-  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what|who|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|list|count)\b/
+  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what|who|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|list|count|kais[ae]|puch\w*|jaan\w*|information)\b/
   const noun = /\b(medications?|medicines?|dawa|dawai|dosage|doses?|refill|pets?|dogs?|cats?|puppy|puppies|kittens?|breed|tasks?|reminders?|subscriptions?|loans?|emis?|fd|fds|fixed deposits?|bills?|holdings?|portfolio|child|children|kids?|activity|activities|warranty|warranties|maintenance|appliances?|contacts?|gifts?|celebrations?|steps?|heart\s*rate|sleep|calories?|weight|height|bmi|vitals?|workout|distance|health\s*log|blood\s*pressure|spo2|oxygen|body\s*fat|muscle\s*mass|waist|water|protein|carbs?|cycle|father|dad|mom|mother|parents?|doctor)\b/
   return verb.test(text) && noun.test(text) ? 'list_records' : null
 }
