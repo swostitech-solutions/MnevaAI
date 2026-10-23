@@ -93,13 +93,12 @@ export default function GoogleTasksScreen({ navigation }) {
     } catch {}
   };
 
-  // Google's /list only ever returns non-completed tasks (showCompleted:
-  // false), so once this succeeds the task won't come back on the next
-  // refresh — removing it locally now just avoids the visual lag of waiting
-  // for that refresh.
+  // The backend now fetches completed tasks too, so marking one done keeps
+  // it in the list (moved into the Done section below) instead of removing
+  // it outright — optimistic here, corrected by loadTasks() on failure.
   const handleComplete = async (item) => {
     if (!item.listId) return;
-    setTasks(prev => prev.filter(t => t.id !== item.id));
+    setTasks(prev => prev.map(t => t.id === item.id ? { ...t, status: 'completed' } : t));
     try {
       await apiFetch(`/api/gtasks/${item.listId}/${item.id}/complete`, { method: 'PATCH' });
     } catch {

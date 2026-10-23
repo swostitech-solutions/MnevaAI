@@ -136,7 +136,11 @@ router.get('/list', async (req, res) => {
     const lists = await tasks.tasklists.list({ maxResults: 10 })
     const allTasks = []
     for (const list of lists.data.items || []) {
-      const result = await tasks.tasks.list({ tasklist: list.id, maxResults: 20, showCompleted: false })
+      // showCompleted (and showHidden, since Google auto-hides a completed
+      // task after a while) were off, so completed tasks never came back
+      // from Google at all — the app's own "done" tab/filter had nothing to
+      // show no matter what, since the data simply wasn't being fetched.
+      const result = await tasks.tasks.list({ tasklist: list.id, maxResults: 50, showCompleted: true, showHidden: true })
       allTasks.push(...(result.data.items || []).map(t => ({ ...t, listTitle: list.title, listId: list.id })))
     }
     res.json({ tasks: allTasks })
