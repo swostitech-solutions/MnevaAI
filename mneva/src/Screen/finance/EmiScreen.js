@@ -40,6 +40,17 @@ const formFromItem = (item) => ({
 });
 
 const fmtShortDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : '—';
+
+// Next payment = start date + one billing cycle, by calendar (not a flat
+// 30-day add — "23 Oct" + Monthly should land on "23 Nov", not "22 Nov").
+const addCycle = (dateStr, frequency) => {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  if (frequency === 'Bi-weekly') d.setDate(d.getDate() + 14);
+  else if (frequency === 'Quarterly') d.setMonth(d.getMonth() + 3);
+  else d.setMonth(d.getMonth() + 1); // Monthly (default)
+  return d.toISOString();
+};
 const ACCENT = ['#F5A623', '#E0901A'];
 
 export default function EmiScreen({ navigation }) {
@@ -230,15 +241,15 @@ export default function EmiScreen({ navigation }) {
             <Text style={styles.fieldLabel}>Installments Remaining</Text>
             <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="number-pad" value={form.installmentsRemaining} onChangeText={v => setField('installmentsRemaining', v)} />
 
-            <DateField label="Start Date" required value={form.startDate} onChange={v => setField('startDate', v)} />
+            <DateField label="Start Date" required value={form.startDate} onChange={v => setForm(f => ({ ...f, startDate: v, nextPaymentDate: addCycle(v, f.frequency) || f.nextPaymentDate }))} />
             <DateField label="Next Payment Date" value={form.nextPaymentDate} onChange={v => setField('nextPaymentDate', v)} />
             <DateField label="End Date" value={form.endDate} onChange={v => setField('endDate', v)} />
 
             <Text style={styles.fieldLabel}>Frequency</Text>
             <View style={styles.chipRow}>
-              {FREQUENCIES.map(f => (
-                <TouchableOpacity key={f} style={[styles.selectChip, form.frequency === f && styles.selectChipActive]} onPress={() => setField('frequency', f)}>
-                  <Text style={[styles.selectChipText, form.frequency === f && styles.selectChipTextActive]}>{f}</Text>
+              {FREQUENCIES.map(freq => (
+                <TouchableOpacity key={freq} style={[styles.selectChip, form.frequency === freq && styles.selectChipActive]} onPress={() => setForm(f => ({ ...f, frequency: freq, nextPaymentDate: f.startDate ? (addCycle(f.startDate, freq) || f.nextPaymentDate) : f.nextPaymentDate }))}>
+                  <Text style={[styles.selectChipText, form.frequency === freq && styles.selectChipTextActive]}>{freq}</Text>
                 </TouchableOpacity>
               ))}
             </View>
