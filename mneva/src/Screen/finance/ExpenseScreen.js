@@ -241,8 +241,8 @@ export default function ExpenseScreen({ navigation }) {
                       <Feather name={CATEGORY_ICONS[e.category] || 'shopping-bag'} size={16} color={theme.accent} />
                     </View>
                     <View style={styles.rowTextWrap}>
-                      <Text style={styles.rowName} numberOfLines={1}>{e.note || e.category || 'Expense'}</Text>
-                      <Text style={styles.rowSub}>{e.paymentMethod}{e.category ? ` · ${e.category}` : ''} · {dateLabel}, {timeLabel}</Text>
+                      <Text style={styles.rowName} numberOfLines={1}>{e.category || 'Expense'}</Text>
+                      <Text style={styles.rowSub} numberOfLines={1}>{e.paymentMethod} · {dateLabel}, {timeLabel}{e.note ? ` · ${e.note}` : ''}</Text>
                     </View>
                     <Text style={styles.rowAmount}>₹{(e.amount || 0).toLocaleString('en-IN')}</Text>
                     <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />

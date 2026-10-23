@@ -642,6 +642,13 @@ financeRouter.patch('/expenses/:id', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'expense:updated', expense)
+    ledger.add({
+      userId: req.user.id,
+      tool: 'expense_updated',
+      input: { fields: Object.keys(b) },
+      result: { expenseId: expense.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ expense })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -653,6 +660,16 @@ financeRouter.delete('/expenses/:id', async (req, res) => {
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     await prisma.expense.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'expense:deleted', { id: req.params.id })
+    // Without this, a deleted expense left zero trace anywhere — asking Ask
+    // AI "how many expenses have I deleted" had no real data to answer
+    // from at all (not even a wrong guess had anything to be wrong about).
+    ledger.add({
+      userId: req.user.id,
+      tool: 'expense_deleted',
+      input: { amount: existing.amount, category: existing.category },
+      result: { expenseId: existing.id },
+      status: 'completed',
+    }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

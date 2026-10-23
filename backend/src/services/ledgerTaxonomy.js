@@ -47,6 +47,8 @@ const TOOL_META = {
   create_fixed_deposit: { domain: 'finance', autonomyStage: 'trusted_automation' },
   add_portfolio_holding: { domain: 'finance', autonomyStage: 'trusted_automation' },
   add_expense: { domain: 'finance', autonomyStage: 'trusted_automation' },
+  expense_updated: { domain: 'finance', autonomyStage: null },
+  expense_deleted: { domain: 'finance', autonomyStage: null },
   add_parent_medication: { domain: 'family', autonomyStage: 'trusted_automation' },
   add_pet: { domain: 'family', autonomyStage: 'trusted_automation' },
   add_pet_reminder: { domain: 'family', autonomyStage: 'trusted_automation' },
