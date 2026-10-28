@@ -15,8 +15,18 @@
       }
     },
     "production": {
+      "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      }
+    },
+    "personal": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "MNEVA_INCLUDE_CALL_LOG": "1"
       }
     }
   },
