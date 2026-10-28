@@ -1,5 +1,5 @@
 import express from 'express'
-import { decodeSlackState, createSlackAuthUrl, exchangeCodeForTokens, saveSlackTokens, clearSlackConnection, sendSlackMessage } from '../services/slack.service.js'
+import { decodeSlackState, createSlackAuthUrl, exchangeCodeForTokens, saveSlackTokens, clearSlackConnection, sendSlackMessage, listChannels, listMessages } from '../services/slack.service.js'
 import { logger } from '../config/logger.js'
 import { userStore } from '../models/userStore.js'
 import { ledger } from '../services/ledgerService.js'
@@ -101,6 +101,22 @@ router.post('/send-test', async (req, res) => {
     res.json({ success: true, result })
   } catch (err) {
     res.status(400).json({ success: false, error: err.message })
+  }
+})
+
+router.get('/channels', async (req, res) => {
+  try {
+    res.json({ channels: await listChannels(req.user.id) })
+  } catch (err) {
+    res.status(err.message?.includes('not connected') ? 409 : 500).json({ error: err.message })
+  }
+})
+
+router.get('/channels/:id/messages', async (req, res) => {
+  try {
+    res.json({ messages: await listMessages(req.user.id, req.params.id, Number(req.query.limit) || 30) })
+  } catch (err) {
+    res.status(err.message?.includes('not connected') ? 409 : 500).json({ error: err.message })
   }
 })
 
