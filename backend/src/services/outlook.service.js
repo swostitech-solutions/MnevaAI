@@ -282,6 +282,28 @@ export async function listTasks(user, listId) {
   }))
 }
 
+// Flattened across every list, shaped like Google Tasks' raw items
+// (status: 'completed'|'needsAction', due, listTitle, listId) so the
+// Microsoft To Do screen can reuse the same rendering logic as Google Tasks.
+export async function listAllTasks(user) {
+  const lists = await listTaskLists(user)
+  const allTasks = []
+  for (const list of lists) {
+    const data = await graphFetch(user, `/me/todo/lists/${encodeURIComponent(list.id)}/tasks?$top=50`)
+    for (const t of data.value || []) {
+      allTasks.push({
+        id: t.id,
+        title: t.title,
+        status: t.status === 'completed' ? 'completed' : 'needsAction',
+        due: t.dueDateTime?.dateTime || null,
+        listTitle: list.name,
+        listId: list.id,
+      })
+    }
+  }
+  return allTasks
+}
+
 export async function createTask(user, listId, title) {
   return graphFetch(user, `/me/todo/lists/${encodeURIComponent(listId)}/tasks`, {
     method: 'POST',

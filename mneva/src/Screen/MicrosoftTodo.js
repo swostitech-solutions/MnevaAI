@@ -1,0 +1,253 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  ActivityIndicator, RefreshControl, Linking, AppState,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { apiFetch, peekCachedResponse } from '../api/client';
+import { useTheme } from '../context/ThemeContext';
+
+const TAB_BAR_CONTENT_HEIGHT = 50;
+const ACCENT = '#2564CF';
+
+export default function MicrosoftTodoScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
+  const tabBarHeight = TAB_BAR_CONTENT_HEIGHT + insets.bottom;
+
+  const [tasks, setTasks]           = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [connected, setConnected]   = useState(null);
+  const [filter, setFilter]         = useState('all');
+
+  const hasRealDataRef = useRef(false);
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/outlook/status');
+      setConnected(res.connected);
+      return res.connected;
+    } catch { setConnected(false); return false; }
+  }, []);
+
+  const loadTasks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/outlook/tasks');
+      hasRealDataRef.current = true;
+      setTasks(res.tasks || []);
+    } catch { setTasks([]); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [statusRes, tasksRes] = await Promise.all([
+        peekCachedResponse('/api/outlook/status').catch(() => null),
+        peekCachedResponse('/api/outlook/tasks').catch(() => null),
+      ]);
+      if (cancelled || hasRealDataRef.current) return;
+      if (statusRes) setConnected(statusRes.connected);
+      if (statusRes?.connected && tasksRes) {
+        setTasks(tasksRes.tasks || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    checkStatus().then(ok => { if (ok) loadTasks(); else setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', s => {
+      if (s === 'active') checkStatus().then(ok => { if (ok) loadTasks(); });
+    });
+    const linkSub = Linking.addEventListener('url', ({ url }) => {
+      if (url && url.includes('outlook=connected')) checkStatus().then(ok => { if (ok) loadTasks(); });
+    });
+    return () => { sub.remove(); linkSub.remove(); };
+  }, []);
+
+  const handleConnect = async () => {
+    try {
+      const res = await apiFetch('/api/outlook/connect?platform=mobile&from=MicrosoftTodo');
+      if (res.url) await Linking.openURL(res.url);
+    } catch {}
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await apiFetch('/api/outlook/disconnect', { method: 'POST' });
+      setConnected(false); setTasks([]);
+    } catch {}
+  };
+
+  const toggleComplete = async (task) => {
+    const wasDone = task.status === 'completed';
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: wasDone ? 'needsAction' : 'completed' } : t));
+    if (wasDone) return; // only "complete" is supported by the backend right now
+    try {
+      await apiFetch(`/api/outlook/tasks/${task.listId}/${task.id}/complete`, { method: 'PATCH' });
+    } catch {
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'needsAction' } : t));
+    }
+  };
+
+  if (connected === false) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
+            <Feather name="arrow-left" size={20} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={styles.topBarTitle}>Microsoft To Do</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.connectScreen}>
+          <LinearGradient colors={[ACCENT, '#163E8C']} style={styles.connectIcon}>
+            <Feather name="check-square" size={32} color="#FFFFFF" />
+          </LinearGradient>
+          <Text style={styles.connectTitle}>Microsoft To Do</Text>
+          <Text style={styles.connectSubtitle}>Connect your Microsoft account to sync your to-dos and let Mneva AI manage them for you.</Text>
+          <TouchableOpacity style={styles.connectBtn} onPress={handleConnect}>
+            <LinearGradient colors={[ACCENT, '#163E8C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.connectBtnGrad}>
+              <Feather name="check-square" size={18} color="#FFFFFF" />
+              <Text style={styles.connectBtnText}>Connect Microsoft To Do</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={styles.connectNote}>Read & write access · OAuth 2.0 · No passwords stored</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const FILTERS = [
+    { key: 'all', label: 'All' },
+    { key: 'pending', label: 'Pending' },
+    { key: 'completed', label: 'Done' },
+  ];
+
+  const filtered = filter === 'pending'
+    ? tasks.filter(t => t.status !== 'completed')
+    : filter === 'completed'
+    ? tasks.filter(t => t.status === 'completed')
+    : tasks;
+
+  const pending = tasks.filter(t => t.status !== 'completed').length;
+  const done    = tasks.filter(t => t.status === 'completed').length;
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack?.()}>
+          <Feather name="arrow-left" size={20} color={theme.text} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.topBarTitle}>Microsoft To Do</Text>
+          <Text style={styles.topBarSub}>{pending} pending · {done} done</Text>
+        </View>
+        <TouchableOpacity onPress={handleDisconnect} style={styles.disconnectBtn}>
+          <Text style={styles.disconnectText}>Disconnect</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.filterRow}>
+        {FILTERS.map(f => (
+          <TouchableOpacity
+            key={f.key}
+            style={[styles.chip, filter === f.key && styles.chipActive]}
+            onPress={() => setFilter(f.key)}
+          >
+            <Text style={[styles.chipText, filter === f.key && styles.chipTextActive]}>{f.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {loading && !refreshing ? (
+        <View style={styles.center}><ActivityIndicator size="large" color={ACCENT} /></View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: tabBarHeight + 24 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTasks(); }} tintColor={ACCENT} colors={[ACCENT]} />}
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Feather name="check-square" size={32} color={theme.disabled} />
+              <Text style={styles.emptyText}>No tasks found</Text>
+            </View>
+          }
+          renderItem={({ item }) => {
+            const isDone = item.status === 'completed';
+            const due = item.due ? new Date(item.due).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : null;
+            return (
+              <TouchableOpacity style={[styles.taskRow, isDone && styles.taskRowDone]} onPress={() => toggleComplete(item)} activeOpacity={0.7}>
+                <View style={[styles.taskCheck, isDone && styles.taskCheckDone]}>
+                  {isDone && <Feather name="check" size={12} color="#FFFFFF" />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.taskTitle, isDone && styles.taskTitleDone]} numberOfLines={2}>{item.title}</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 3 }}>
+                    {item.listTitle && <Text style={styles.taskMeta}>{item.listTitle}</Text>}
+                    {due && <Text style={[styles.taskMeta, { color: theme.danger }]}>Due {due}</Text>}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
+
+      <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Home')}><Ionicons name="home" size={22} color={theme.faint} /><Text style={styles.tabLabel}>HOME</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Priorities')}><Feather name="calendar" size={22} color={theme.faint} /><Text style={styles.tabLabel}>PRIORITIES</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('AskAI')}><Feather name="mic" size={22} color={theme.faint} /><Text style={styles.tabLabel}>ASK AI</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Space')}><Feather name="folder" size={22} color={theme.faint} /><Text style={styles.tabLabel}>SPACE</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation?.navigate?.('Profile')}><Feather name="user" size={22} color={theme.faint} /><Text style={styles.tabLabel}>PROFILE</Text></TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const createStyles = (theme) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: theme.card, alignItems: 'center', justifyContent: 'center' },
+  topBarTitle: { fontSize: 20, fontWeight: '800', color: theme.text },
+  topBarSub: { fontSize: 12, color: theme.faint, marginTop: 1 },
+  disconnectBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: theme.soft },
+  disconnectText: { fontSize: 12, fontWeight: '700', color: theme.muted },
+  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.borderStrong },
+  chipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+  chipText: { fontSize: 12, fontWeight: '600', color: theme.muted },
+  chipTextActive: { color: '#FFFFFF' },
+  taskRow: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: theme.card, borderRadius: 14, padding: 14, marginBottom: 8, gap: 12 },
+  taskRowDone: { opacity: 0.5 },
+  taskCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: ACCENT, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  taskCheckDone: { backgroundColor: ACCENT, borderColor: ACCENT },
+  taskTitle: { fontSize: 14, fontWeight: '700', color: theme.text },
+  taskTitleDone: { textDecorationLine: 'line-through', color: theme.faint },
+  taskMeta: { fontSize: 11, color: theme.faint, fontWeight: '500' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 10 },
+  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
+  connectScreen: { flex: 1, alignItems: 'center', paddingHorizontal: 28 },
+  connectIcon: { width: 80, height: 80, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 32, marginBottom: 20 },
+  connectTitle: { fontSize: 26, fontWeight: '800', color: theme.text, marginBottom: 10 },
+  connectSubtitle: { fontSize: 14, color: theme.muted, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  connectBtn: { width: '100%', borderRadius: 18, overflow: 'hidden', marginBottom: 14 },
+  connectBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 17, gap: 10 },
+  connectBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  connectNote: { fontSize: 12, color: theme.faint, textAlign: 'center' },
+  tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
+  tabItem: { flex: 1, alignItems: 'center' },
+  tabLabel: { fontSize: 10, fontWeight: '700', color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
+});

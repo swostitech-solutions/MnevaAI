@@ -38,6 +38,13 @@ import Docs from "./src/Screen/Docs";
 import Sheets from "./src/Screen/Sheets";
 import Slides from "./src/Screen/Slides";
 import GoogleDrive from "./src/Screen/GoogleDrive";
+import OutlookMail from "./src/Screen/OutlookMail";
+import OutlookCalendar from "./src/Screen/OutlookCalendar";
+import OneDrive from "./src/Screen/OneDrive";
+import Word from "./src/Screen/Word";
+import Excel from "./src/Screen/Excel";
+import PowerPoint from "./src/Screen/PowerPoint";
+import MicrosoftTodo from "./src/Screen/MicrosoftTodo";
 import Slack from "./src/Screen/Slack";
 import MediaDiscovery from "./src/Screen/MediaDiscovery";
 import MusicDiscovery from "./src/Screen/MusicDiscovery";
@@ -102,6 +109,19 @@ const DRIVE_CALLBACK_SCREENS = {
   Docs: "Docs",
   Sheets: "Sheets",
   Slides: "Slides",
+};
+
+// Maps Outlook/Microsoft 365 OAuth callback query params → screen to return
+// to — same idea as DRIVE_CALLBACK_SCREENS above, since all 7 Microsoft
+// screens share the one outlook.service.js OAuth grant.
+const OUTLOOK_CALLBACK_SCREENS = {
+  OutlookMail: "OutlookMail",
+  OutlookCalendar: "OutlookCalendar",
+  OneDrive: "OneDrive",
+  Word: "Word",
+  Excel: "Excel",
+  PowerPoint: "PowerPoint",
+  MicrosoftTodo: "MicrosoftTodo",
 };
 
 const AppLightTheme = {
@@ -323,6 +343,10 @@ function AppInner() {
           const returnScreen =
             DRIVE_CALLBACK_SCREENS[params.from] || "GoogleDrive";
           navigationRef.current.navigate(returnScreen);
+        } else if (params.outlook !== undefined) {
+          const returnScreen =
+            OUTLOOK_CALLBACK_SCREENS[params.from] || "ConnectedAccounts";
+          navigationRef.current.navigate(returnScreen);
         } else if (screen) {
           navigationRef.current.navigate(screen);
         } else if (isOAuthCallback) {
@@ -540,6 +564,13 @@ function AppInner() {
           <Stack.Screen name="Sheets" component={Sheets} />
           <Stack.Screen name="Slides" component={Slides} />
           <Stack.Screen name="GoogleDrive" component={GoogleDrive} />
+          <Stack.Screen name="OutlookMail" component={OutlookMail} />
+          <Stack.Screen name="OutlookCalendar" component={OutlookCalendar} />
+          <Stack.Screen name="OneDrive" component={OneDrive} />
+          <Stack.Screen name="Word" component={Word} />
+          <Stack.Screen name="Excel" component={Excel} />
+          <Stack.Screen name="PowerPoint" component={PowerPoint} />
+          <Stack.Screen name="MicrosoftTodo" component={MicrosoftTodo} />
           <Stack.Screen name="Slack" component={Slack} />
           <Stack.Screen name="MediaDiscovery" component={MediaDiscovery} />
           <Stack.Screen name="MusicDiscovery" component={MusicDiscovery} />

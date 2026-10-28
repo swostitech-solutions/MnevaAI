@@ -2,7 +2,7 @@ import express from 'express'
 import {
   decodeOutlookState, createOutlookAuthUrl, exchangeCodeForTokens, saveOutlookTokens,
   clearOutlookConnection, getOutlookProfile, listEmails, getEmailBody, sendEmail,
-  listEvents, createEvent, listDriveFiles, listTaskLists, listTasks, createTask, completeTask,
+  listEvents, createEvent, listDriveFiles, listTaskLists, listTasks, listAllTasks, createTask, completeTask,
 } from '../services/outlook.service.js'
 import { logger } from '../config/logger.js'
 import { userStore } from '../models/userStore.js'
@@ -160,6 +160,21 @@ router.get('/files', async (req, res) => {
 })
 
 // Microsoft To Do
+router.get('/tasks', async (req, res) => {
+  try {
+    const user = await userStore.getById(req.user.id)
+    res.json({ tasks: await listAllTasks(user) })
+  } catch (err) { handleOutlookError(err, res) }
+})
+
+router.patch('/tasks/:listId/:taskId/complete', async (req, res) => {
+  try {
+    const user = await userStore.getById(req.user.id)
+    const task = await completeTask(user, req.params.listId, req.params.taskId)
+    res.json({ task })
+  } catch (err) { handleOutlookError(err, res) }
+})
+
 router.get('/tasklists', async (req, res) => {
   try {
     const user = await userStore.getById(req.user.id)
