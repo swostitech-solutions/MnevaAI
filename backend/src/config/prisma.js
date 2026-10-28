@@ -34,7 +34,7 @@ const basePrisma = new PrismaClient({
 // of that existing (already-working) OAuth code needs to change or even be
 // aware this happens. Existing plaintext rows keep working unmodified until
 // scripts/encryptGoogleTokens.js re-saves them (see that script).
-const GOOGLE_TOKEN_NAMESPACES = ["gmail", "calendar", "googleFit", "googleContacts", "googleDrive", "googleTasks"];
+const GOOGLE_TOKEN_NAMESPACES = ["gmail", "calendar", "googleFit", "googleContacts", "googleDrive", "googleTasks", "outlook"];
 
 function withEncryptedTokens(preferences) {
   if (!preferences || typeof preferences !== "object") return preferences;

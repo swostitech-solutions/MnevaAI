@@ -18,6 +18,13 @@ const TINT_RGB = {
   '#EAF3FD': [107, 184, 240],
   '#EEEDFE': [129, 128, 255],
   '#F3EFFE': [129, 128, 255],
+  '#E3F1FC': [66, 169, 244],
+  '#E1EFFB': [73, 163, 232],
+  '#E2F0FC': [82, 181, 247],
+  '#E6EBF6': [91, 130, 190],
+  '#E5F5EC': [74, 163, 112],
+  '#FBEAE6': [224, 113, 88],
+  '#E6EDFC': [89, 140, 224],
 };
 const COLOR_MAP = {
   '#E0546E': 'danger',
@@ -126,6 +133,110 @@ const INTEGRATIONS = [
     chainId: 'google-drive',
     chainRole: 'linked',
     linkedNote: 'Included automatically with Google Drive',
+  },
+  {
+    id: 'outlookmail',
+    title: 'Outlook Mail',
+    subtitle: 'Emails & AI replies',
+    icon: 'mail',
+    color: '#0078D4',
+    bg: '#E3F1FC',
+    statusEndpoint: '/api/outlook/status',
+    connectEndpoint: '/api/outlook/connect',
+    disconnectEndpoint: '/api/outlook/disconnect',
+    connectMethod: 'oauth',
+    chainId: 'microsoft-account',
+    chainRole: 'primary',
+  },
+  {
+    id: 'outlookcalendar',
+    title: 'Outlook Calendar',
+    subtitle: 'Schedule meetings & Teams calls',
+    icon: 'calendar',
+    color: '#0F6CBD',
+    bg: '#E1EFFB',
+    statusEndpoint: '/api/outlook/status',
+    connectEndpoint: '/api/outlook/connect',
+    disconnectEndpoint: '/api/outlook/disconnect',
+    connectMethod: 'oauth',
+    chainId: 'microsoft-account',
+    chainRole: 'linked',
+    linkedNote: 'Auto-connects with Outlook Mail — same Microsoft sign-in',
+  },
+  {
+    id: 'onedrive',
+    title: 'OneDrive',
+    subtitle: 'Files, folders & AI search',
+    icon: 'hard-drive',
+    color: '#1490DF',
+    bg: '#E2F0FC',
+    statusEndpoint: '/api/outlook/status',
+    connectEndpoint: '/api/outlook/connect',
+    disconnectEndpoint: '/api/outlook/disconnect',
+    connectMethod: 'oauth',
+    chainId: 'microsoft-account',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Outlook Mail',
+  },
+  {
+    id: 'wordonline',
+    title: 'Word Online',
+    subtitle: 'Read & summarise documents',
+    icon: 'file-text',
+    color: '#2B579A',
+    bg: '#E6EBF6',
+    statusEndpoint: '/api/outlook/status',
+    connectEndpoint: '/api/outlook/connect',
+    disconnectEndpoint: '/api/outlook/disconnect',
+    connectMethod: 'oauth',
+    chainId: 'microsoft-account',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Outlook Mail',
+  },
+  {
+    id: 'exceleonline',
+    title: 'Excel Online',
+    subtitle: 'Read & analyse spreadsheets',
+    icon: 'grid',
+    color: '#217346',
+    bg: '#E5F5EC',
+    statusEndpoint: '/api/outlook/status',
+    connectEndpoint: '/api/outlook/connect',
+    disconnectEndpoint: '/api/outlook/disconnect',
+    connectMethod: 'oauth',
+    chainId: 'microsoft-account',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Outlook Mail',
+  },
+  {
+    id: 'powerpointonline',
+    title: 'PowerPoint Online',
+    subtitle: 'Read & summarise presentations',
+    icon: 'monitor',
+    color: '#C43E1C',
+    bg: '#FBEAE6',
+    statusEndpoint: '/api/outlook/status',
+    connectEndpoint: '/api/outlook/connect',
+    disconnectEndpoint: '/api/outlook/disconnect',
+    connectMethod: 'oauth',
+    chainId: 'microsoft-account',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Outlook Mail',
+  },
+  {
+    id: 'microsofttodo',
+    title: 'Microsoft To Do',
+    subtitle: 'Sync tasks & to-dos with AI',
+    icon: 'check-square',
+    color: '#2564CF',
+    bg: '#E6EDFC',
+    statusEndpoint: '/api/outlook/status',
+    connectEndpoint: '/api/outlook/connect',
+    disconnectEndpoint: '/api/outlook/disconnect',
+    connectMethod: 'oauth',
+    chainId: 'microsoft-account',
+    chainRole: 'linked',
+    linkedNote: 'Included automatically with Outlook Mail',
   },
   {
     id: 'tasks',
@@ -327,7 +438,8 @@ export default function ConnectedAccounts({ navigation }) {
         url.includes('fit=') ||
         url.includes('contacts=') ||
         url.includes('gmail=') ||
-        url.includes('calendar=')
+        url.includes('calendar=') ||
+        url.includes('outlook=')
       ) {
         loadStatuses(true);
       }
@@ -429,8 +541,8 @@ export default function ConnectedAccounts({ navigation }) {
           </View>
         </View>
 
-        {/* Chained Google connections */}
-        <Text style={styles.sectionHeader}>GOOGLE ACCOUNT CHAINS</Text>
+        {/* Chained connections — one OAuth grant unlocking several services */}
+        <Text style={styles.sectionHeader}>ACCOUNT CHAINS</Text>
         {chainGroups.map(group => {
           const primaryStatus = statuses[group.primary.id];
           const primaryConnected = primaryStatus?.connected || false;

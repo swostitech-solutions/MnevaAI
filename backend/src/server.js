@@ -42,6 +42,7 @@ import contactsRoutes, {
 } from "./routes/contacts.js";
 import gdriveRoutes, { gdriveCallbackHandler } from "./routes/gdrive.js";
 import gtasksRoutes, { gtasksCallbackHandler } from "./routes/gtasks.js";
+import outlookRoutes, { outlookCallbackHandler } from "./routes/outlook.js";
 import { smsRouter, meetingsRouter } from "./routes/_allRoutes.js";
 import tmdbRoutes from "./routes/tmdb.js";
 import notifyRoutes from "./routes/notify.js";
@@ -400,6 +401,7 @@ app.get("/api/googlefit/callback", googleFitCallbackHandler);
 app.get("/api/contacts/callback", googleContactsCallbackHandler);
 app.get("/api/gdrive/callback", gdriveCallbackHandler);
 app.get("/api/gtasks/callback", gtasksCallbackHandler);
+app.get("/api/outlook/callback", outlookCallbackHandler);
 app.get("/api/gmail/config-status", (req, res) => {
   // proxy to the router handler without auth
   const configured = !!(
@@ -420,6 +422,7 @@ app.use("/api/googlefit", authMiddleware, googleFitRoutes);
 app.use("/api/contacts", authMiddleware, contactsRoutes);
 app.use("/api/gdrive", authMiddleware, gdriveRoutes);
 app.use("/api/gtasks", authMiddleware, gtasksRoutes);
+app.use("/api/outlook", authMiddleware, outlookRoutes);
 
 app.use("/api/news", authMiddleware, newsRouter);
 app.use("/api/conversations", authMiddleware, conversationRoutes);
