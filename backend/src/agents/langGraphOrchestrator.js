@@ -24,9 +24,21 @@ function detectDomain(messages = []) {
   // Personal questions about the user → general (has full profile in system prompt)
   if (/(what is my name|who am i|my name|my email|my plan|my account|my profile|tell me about me|about myself)/i.test(lower)) return 'general'
 
-  // Only route to search for explicit document/file/memory queries
-  if (/(search|find|document|file|what did i (upload|save|store)|look up|query)/i.test(lower)) return 'search'
-  if (/(read|summarize|describe|explain|show me|tell me|find).*(document|file|note|memory|upload)/i.test(lower)) return 'search'
+  // Only route to search for explicit document/file/memory queries. "search"/
+  // "find"/"look up"/"query" alone used to be enough on their own — but those
+  // are completely ordinary words in a normal request ("find me some good
+  // songs", "search for comedy movies" in Media & Discovery's chat), so any
+  // such message was wrongly sent to this document-only memory-recall route
+  // instead of the real AI (which has web_search/TMDB/etc.) — it then always
+  // failed with "I could not find any relevant content from your uploaded
+  // documents..." since there was never a document to recall in the first
+  // place. Require an actual document/file-ish noun alongside the verb now;
+  // "document"/"file"/"upload(ed)"/"attachment" stay strong enough to fire
+  // on their own.
+  if (/(document|file|attachment|uploaded|my uploads?)\b/i.test(lower)) return 'search'
+  if (/(search|find|look up|query|read|summarize|describe|explain|show me|tell me)/i.test(lower)
+    && /(document|file|note|memory|upload|saved|stored|photo|image|attachment)/i.test(lower)) return 'search'
+  if (/what did i (upload|save|store)/i.test(lower)) return 'search'
 
   return 'general'
 }
