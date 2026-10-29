@@ -613,6 +613,7 @@ financeRouter.post('/expenses', async (req, res) => {
     const expense = await prisma.expense.create({
       data: {
         userId: req.user.id,
+        name: toStr(b.name),
         amount,
         category: toStr(b.category),
         paymentMethod: b.paymentMethod,
@@ -634,6 +635,7 @@ financeRouter.patch('/expenses/:id', async (req, res) => {
     const expense = await prisma.expense.update({
       where: { id: req.params.id },
       data: {
+        ...(b.name !== undefined && { name: toStr(b.name) }),
         ...(b.amount !== undefined && { amount: toFloat(b.amount) }),
         ...(b.category !== undefined && { category: toStr(b.category) }),
         ...(b.paymentMethod !== undefined && { paymentMethod: b.paymentMethod }),

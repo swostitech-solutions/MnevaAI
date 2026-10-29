@@ -19,7 +19,7 @@ const CATEGORY_ICONS = {
   Entertainment: 'film', Health: 'heart', Other: 'more-horizontal',
 };
 
-const EMPTY_FORM = { amount: '', paymentMethod: 'Cash', category: 'Food', note: '', date: '', time: '' };
+const EMPTY_FORM = { name: '', amount: '', paymentMethod: 'Cash', category: 'Food', note: '', date: '', time: '' };
 
 // Expense.date on the backend is a single DateTime column — the form splits
 // it into a DateField (day) and a TimeField ("HH:MM") for easier entry, and
@@ -27,6 +27,7 @@ const EMPTY_FORM = { amount: '', paymentMethod: 'Cash', category: 'Food', note: 
 const formFromItem = (item) => {
   const d = item.date ? new Date(item.date) : null;
   return {
+    name: item.name || '',
     amount: String(item.amount ?? ''),
     paymentMethod: item.paymentMethod || 'Cash',
     category: item.category || 'Other',
@@ -73,9 +74,16 @@ export default function ExpenseScreen({ navigation }) {
   useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
+    // Always re-sort by the expense's real `date` (newest first) after a
+    // live create/update — the list loads sorted that way from the server,
+    // but just unshifting a new one onto the front (or leaving an edited
+    // one in its old slot) put it at the top regardless of which date the
+    // user actually picked, so a back-dated expense showed up above ones
+    // that happened more recently.
+    const byDateDesc = (list) => [...list].sort((a, b) => new Date(b.date) - new Date(a.date));
     const offs = [
-      on('expense:created', (e) => setExpenses(prev => prev.some(x => x.id === e.id) ? prev : [e, ...prev])),
-      on('expense:updated', (e) => setExpenses(prev => prev.map(x => x.id === e.id ? e : x))),
+      on('expense:created', (e) => setExpenses(prev => prev.some(x => x.id === e.id) ? prev : byDateDesc([e, ...prev]))),
+      on('expense:updated', (e) => setExpenses(prev => byDateDesc(prev.map(x => x.id === e.id ? e : x)))),
       on('expense:deleted', ({ id }) => setExpenses(prev => prev.filter(x => x.id !== id))),
     ];
     return () => offs.forEach(off => off?.());
@@ -120,6 +128,7 @@ export default function ExpenseScreen({ navigation }) {
     setSaving(true);
     try {
       const body = {
+        name: form.name,
         amount: form.amount,
         paymentMethod: form.paymentMethod,
         category: form.category,
@@ -171,6 +180,9 @@ export default function ExpenseScreen({ navigation }) {
       {showForm ? (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView contentContainerStyle={[styles.formScroll, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.fieldLabel}>Name</Text>
+            <TextInput style={styles.input} placeholder="Groceries, Cab to airport…" placeholderTextColor={theme.placeholder} value={form.name} onChangeText={v => setField('name', v)} />
+
             <Text style={styles.fieldLabel}>Amount (₹) <Text style={styles.required}>*</Text></Text>
             <TextInput style={styles.input} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" value={form.amount} onChangeText={v => setField('amount', v.replace(/[^0-9.]/g, ''))} />
 
@@ -241,8 +253,8 @@ export default function ExpenseScreen({ navigation }) {
                       <Feather name={CATEGORY_ICONS[e.category] || 'shopping-bag'} size={16} color={theme.accent} />
                     </View>
                     <View style={styles.rowTextWrap}>
-                      <Text style={styles.rowName} numberOfLines={1}>{e.category || 'Expense'}</Text>
-                      <Text style={styles.rowSub} numberOfLines={1}>{e.paymentMethod} · {dateLabel}, {timeLabel}{e.note ? ` · ${e.note}` : ''}</Text>
+                      <Text style={styles.rowName} numberOfLines={1}>{e.name || e.category || 'Expense'}</Text>
+                      <Text style={styles.rowSub} numberOfLines={1}>{e.category ? `${e.category} · ` : ''}{e.paymentMethod} · {dateLabel}, {timeLabel}{e.note ? ` · ${e.note}` : ''}</Text>
                     </View>
                     <Text style={styles.rowAmount}>₹{(e.amount || 0).toLocaleString('en-IN')}</Text>
                     <Feather name="edit-2" size={14} color={theme.faint} style={{ marginLeft: 8 }} />

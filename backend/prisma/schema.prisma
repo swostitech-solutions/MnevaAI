@@ -781,6 +781,7 @@ model FixedDeposit {
 model Expense {
   id            String   @id @default(uuid())
   userId        String
+  name          String? // what the expense was for, e.g. "Groceries", "Cab to airport" — distinct from category
   amount        Float
   category      String? // e.g. Food, Transport, Shopping, Bills, Entertainment, Other
   paymentMethod String // Cash | Online | Card | UPI
