@@ -195,6 +195,7 @@ financeRouter.post('/loans', async (req, res) => {
     emit(req.app.get('io'), req.user.id, 'loan:created', loan)
     const linkedEmi = await prisma.emi.create({ data: emiDataFromLoan(loan) })
     emit(req.app.get('io'), req.user.id, 'emi:created', linkedEmi)
+    ledger.add({ userId: req.user.id, tool: 'loan_created', input: { name: loan.name, lenderName: loan.lenderName }, result: { loanId: loan.id }, status: 'completed' }).catch(() => {})
     res.status(201).json({ loan })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -254,6 +255,7 @@ financeRouter.patch('/loans/:id', async (req, res) => {
       ? await prisma.emi.update({ where: { id: existingEmi.id }, data: emiDataFromLoan(loan) })
       : await prisma.emi.create({ data: emiDataFromLoan(loan) })
     emit(req.app.get('io'), req.user.id, existingEmi ? 'emi:updated' : 'emi:created', linkedEmi)
+    ledger.add({ userId: req.user.id, tool: 'loan_updated', input: { fields: Object.keys(b) }, result: { loanId: loan.id }, status: 'completed' }).catch(() => {})
 
     res.json({ loan })
   } catch (err) { res.status(500).json({ error: err.message }) }
@@ -271,6 +273,7 @@ financeRouter.delete('/loans/:id', async (req, res) => {
     await prisma.loan.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'loan:deleted', { id: req.params.id })
     if (linkedEmi) emit(req.app.get('io'), req.user.id, 'emi:deleted', { id: linkedEmi.id })
+    ledger.add({ userId: req.user.id, tool: 'loan_deleted', input: { name: existing.name }, result: { loanId: req.params.id }, status: 'completed' }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -327,6 +330,7 @@ financeRouter.post('/emis', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'emi:created', emi)
+    ledger.add({ userId: req.user.id, tool: 'emi_created', input: { name: emi.name, provider: emi.provider }, result: { emiId: emi.id }, status: 'completed' }).catch(() => {})
     res.status(201).json({ emi })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -373,6 +377,7 @@ financeRouter.patch('/emis/:id', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'emi:updated', emi)
+    ledger.add({ userId: req.user.id, tool: 'emi_updated', input: { fields: Object.keys(b) }, result: { emiId: emi.id }, status: 'completed' }).catch(() => {})
     res.json({ emi })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -385,6 +390,7 @@ financeRouter.delete('/emis/:id', async (req, res) => {
     if (existing.loanId) return res.status(400).json({ error: 'This EMI is linked to a loan — delete the loan instead.' })
     await prisma.emi.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'emi:deleted', { id: req.params.id })
+    ledger.add({ userId: req.user.id, tool: 'emi_deleted', input: { name: existing.name }, result: { emiId: req.params.id }, status: 'completed' }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -434,6 +440,7 @@ financeRouter.post('/subscriptions', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'subscription:created', subscription)
+    ledger.add({ userId: req.user.id, tool: 'subscription_created', input: { name: subscription.name }, result: { subscriptionId: subscription.id }, status: 'completed' }).catch(() => {})
     res.status(201).json({ subscription })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -471,6 +478,7 @@ financeRouter.patch('/subscriptions/:id', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'subscription:updated', subscription)
+    ledger.add({ userId: req.user.id, tool: 'subscription_updated', input: { fields: Object.keys(b) }, result: { subscriptionId: subscription.id }, status: 'completed' }).catch(() => {})
     res.json({ subscription })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -482,6 +490,7 @@ financeRouter.delete('/subscriptions/:id', async (req, res) => {
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     await prisma.subscription.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'subscription:deleted', { id: req.params.id })
+    ledger.add({ userId: req.user.id, tool: 'subscription_deleted', input: { name: existing.name }, result: { subscriptionId: req.params.id }, status: 'completed' }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -535,6 +544,7 @@ financeRouter.post('/bills', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'bill:created', bill)
+    ledger.add({ userId: req.user.id, tool: 'bill_created', input: { name: bill.name }, result: { billId: bill.id }, status: 'completed' }).catch(() => {})
     res.status(201).json({ bill })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -576,6 +586,7 @@ financeRouter.patch('/bills/:id', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'bill:updated', bill)
+    ledger.add({ userId: req.user.id, tool: 'bill_updated', input: { fields: Object.keys(b) }, result: { billId: bill.id }, status: 'completed' }).catch(() => {})
     res.json({ bill })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -587,6 +598,7 @@ financeRouter.delete('/bills/:id', async (req, res) => {
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     await prisma.bill.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'bill:deleted', { id: req.params.id })
+    ledger.add({ userId: req.user.id, tool: 'bill_deleted', input: { name: existing.name }, result: { billId: req.params.id }, status: 'completed' }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -721,6 +733,7 @@ financeRouter.post('/fixed-deposits', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'fd:created', fixedDeposit)
+    ledger.add({ userId: req.user.id, tool: 'fixed_deposit_created', input: { name: fixedDeposit.name, bankName: fixedDeposit.bankName }, result: { fdId: fixedDeposit.id }, status: 'completed' }).catch(() => {})
     res.status(201).json({ fixedDeposit })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -757,6 +770,7 @@ financeRouter.patch('/fixed-deposits/:id', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'fd:updated', fixedDeposit)
+    ledger.add({ userId: req.user.id, tool: 'fixed_deposit_updated', input: { fields: Object.keys(b) }, result: { fdId: fixedDeposit.id }, status: 'completed' }).catch(() => {})
     res.json({ fixedDeposit })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -768,6 +782,7 @@ financeRouter.delete('/fixed-deposits/:id', async (req, res) => {
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     await prisma.fixedDeposit.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'fd:deleted', { id: req.params.id })
+    ledger.add({ userId: req.user.id, tool: 'fixed_deposit_deleted', input: { name: existing.name }, result: { fdId: req.params.id }, status: 'completed' }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -806,6 +821,7 @@ financeRouter.post('/portfolio/holdings', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'portfolio:created', holding)
+    ledger.add({ userId: req.user.id, tool: 'portfolio_holding_created', input: { name: holding.name, type: holding.type }, result: { holdingId: holding.id }, status: 'completed' }).catch(() => {})
     res.status(201).json({ holding })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -832,6 +848,7 @@ financeRouter.patch('/portfolio/holdings/:id', async (req, res) => {
       },
     })
     emit(req.app.get('io'), req.user.id, 'portfolio:updated', holding)
+    ledger.add({ userId: req.user.id, tool: 'portfolio_holding_updated', input: { fields: Object.keys(b) }, result: { holdingId: holding.id }, status: 'completed' }).catch(() => {})
     res.json({ holding })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -843,6 +860,7 @@ financeRouter.delete('/portfolio/holdings/:id', async (req, res) => {
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     await prisma.portfolioHolding.delete({ where: { id: req.params.id } })
     emit(req.app.get('io'), req.user.id, 'portfolio:deleted', { id: req.params.id })
+    ledger.add({ userId: req.user.id, tool: 'portfolio_holding_deleted', input: { name: existing.name }, result: { holdingId: req.params.id }, status: 'completed' }).catch(() => {})
     res.json({ success: true })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
