@@ -132,7 +132,22 @@ router.post('/meetings', async (req, res) => {
         conflict,
       })
     }
-    const meeting = await createMeetingWithGoogleMeet(req.user.id, { title, start, end: endTime, description, attendees: attendees || [] })
+    // Google Calendar can intermittently reject this (e.g. a connection made
+    // before a scope was added, or a transiently stale/expired token) even
+    // though the account is genuinely connected. The AI's own schedule_event
+    // tool (agents/autonomyEngine.js) already degrades gracefully in that
+    // case — the meeting is still tracked inside Mneva, just without a real
+    // Google Calendar event / Meet link — so this manual "Schedule" flow
+    // must not hard-fail the whole request on the same error.
+    let meeting
+    let calendarError = null
+    try {
+      meeting = await createMeetingWithGoogleMeet(req.user.id, { title, start, end: endTime, description, attendees: attendees || [] })
+    } catch (err) {
+      calendarError = err.message || 'Calendar event could not be created.'
+      meeting = { eventId: null, meetLink: null, conferenceId: null, title, start, end: endTime, timeZone }
+      logger.warn(`Calendar meeting saved locally: ${calendarError}`)
+    }
     const ledgerEntry = await ledger.add({
       userId: req.user.id,
       tool: 'schedule_event',
@@ -163,7 +178,15 @@ router.post('/meetings', async (req, res) => {
     emitToUser(req.user.id, 'task:created', meetingTask)
     emitToUser(req.user.id, 'ledger:updated', ledgerEntry)
     emitToUser(req.user.id, 'meeting:created', { ...meeting, title, start, end: endTime })
-    res.json({ success: true, meeting })
+    res.json({
+      success: true,
+      meeting,
+      // Not an error — the meeting IS scheduled inside Mneva either way.
+      // The client can use this to show a small "no Google Meet link —
+      // reconnect Calendar in Settings" notice instead of treating the
+      // whole action as failed.
+      calendarWarning: calendarError,
+    })
   } catch (err) {
     res.status(400).json({ success: false, error: err.message })
   }

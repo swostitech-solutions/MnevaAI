@@ -723,7 +723,7 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
                 body: { title, start: start.toISOString(), end: end.toISOString(), description, attendees: attendeeList },
       });
       if (!res.success) throw new Error(res.error || "Failed to create meeting");
-      onCreated(res.meeting);
+      onCreated(res.meeting, res.calendarWarning || null);
       setTitle(""); setDescription(""); setAttendees(""); setDuration("60");
       setSelectedDate(new Date()); setSelectedTime(new Date());
       onClose();
@@ -1575,7 +1575,7 @@ export default function AskAI({ navigation }) {
   };
 
   // ── Meeting created callback ───────────────────────────────────────────────
-  const handleMeetingCreated = (meeting) => {
+  const handleMeetingCreated = (meeting, calendarWarning) => {
     const start = meeting.start ? new Date(meeting.start) : null;
     const end   = meeting.end   ? new Date(meeting.end)   : null;
     const dateStr = start
@@ -1602,6 +1602,9 @@ export default function AskAI({ navigation }) {
       attendees ? `👥 ${attendees}` : null,
       desc      ? `📝 ${desc}` : null,
       meeting.meetLink ? `\n📹 ${meeting.meetLink}` : null,
+      (!meeting.meetLink && calendarWarning)
+        ? `\n⚠️ Saved in Mneva, but couldn't create the Google Meet link (${calendarWarning}). Try reconnecting Google Calendar in Settings → Integrations.`
+        : null,
     ].filter(Boolean).join("\n");
 
     addMessage({ id: String(Date.now()), sender: "ai", text: lines, ts: new Date().toISOString() });
