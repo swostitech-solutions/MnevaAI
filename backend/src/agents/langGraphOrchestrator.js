@@ -21,10 +21,18 @@ function detectDomain(messages = []) {
   const text = typeof lastText === 'string' ? lastText : JSON.stringify(lastText)
   const lower = text.toLowerCase()
 
+  // Our own internally-built prompts (Music/Sports/News/Discovery screens'
+  // own AI panels — see e.g. MusicDiscovery.js's "Call your web_search tool
+  // first..." wrapper for Trending/Charts) must never land on the document-
+  // search route below — a real user never types this exact phrase, so
+  // matching it is a safe, unambiguous bypass straight to the real AI
+  // (general → runAutonomyEngine, which actually has the web_search tool).
+  if (/\bcall your web_search tool\b/i.test(lower)) return 'general'
+
   // Personal questions about the user → general (has full profile in system prompt)
   if (/(what is my name|who am i|my name|my email|my plan|my account|my profile|tell me about me|about myself)/i.test(lower)) return 'general'
 
-  // Only route to search for explicit document/file/memory queries. "search"/
+  // Only route to search for explicit document/file queries. "search"/
   // "find"/"look up"/"query" alone used to be enough on their own — but those
   // are completely ordinary words in a normal request ("find me some good
   // songs", "search for comedy movies" in Media & Discovery's chat), so any
@@ -34,10 +42,14 @@ function detectDomain(messages = []) {
   // documents..." since there was never a document to recall in the first
   // place. Require an actual document/file-ish noun alongside the verb now;
   // "document"/"file"/"upload(ed)"/"attachment" stay strong enough to fire
-  // on their own.
+  // on their own. "memory" was deliberately left out of the noun list below —
+  // it collided with the web_search wrapper's own "never answer from memory"
+  // phrasing, sending THAT straight back into the search route it just
+  // bypassed above; genuine "what do you remember about X" questions are
+  // still answered fine by the general route, which already gets recentMemory.
   if (/(document|file|attachment|uploaded|my uploads?)\b/i.test(lower)) return 'search'
   if (/(search|find|look up|query|read|summarize|describe|explain|show me|tell me)/i.test(lower)
-    && /(document|file|note|memory|upload|saved|stored|photo|image|attachment)/i.test(lower)) return 'search'
+    && /(document|file|note|upload|saved|stored|photo|image|attachment)/i.test(lower)) return 'search'
   if (/what did i (upload|save|store)/i.test(lower)) return 'search'
 
   return 'general'
