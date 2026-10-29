@@ -212,7 +212,7 @@ export function requestedRecordTool(messages = []) {
   // real sentences put other words in between ("kitne family task hai" —
   // "kitne" and "hai" aren't next to each other) — the noun check below is
   // what keeps this from over-firing on unrelated small talk.
-  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what|who|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|list|count|kais[ae]|puch\w*|jaan\w*|information|accept|approve|reject|decline|complete|cancel|mark\s*(as\s*)?done|start|begin)\b/
+  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what|who|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|list|count|kais[ae]|puch\w*|jaan\w*|information|accept|approve|reject|decline|complete|cancel|mark\b.{0,20}\bdone|start|begin)\b/
   const noun = /\b(medications?|medicines?|dawa|dawai|dosage|doses?|refill|pets?|dogs?|cats?|puppy|puppies|kittens?|breed|tasks?|reminders?|subscriptions?|loans?|emis?|fd|fds|fixed deposits?|bills?|holdings?|portfolio|child|children|kids?|activity|activities|warranty|warranties|maintenance|appliances?|contacts?|gifts?|celebrations?|steps?|heart\s*rate|sleep|calories?|weight|height|bmi|vitals?|workout|distance|health\s*log|blood\s*pressure|spo2|oxygen|body\s*fat|muscle\s*mass|waist|water|protein|carbs?|cycle|father|dad|mom|mother|parents?|doctor)\b/
   return verb.test(text) && noun.test(text) ? 'list_records' : null
 }
@@ -2486,7 +2486,18 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   const requestedEmailTool_ = (requestedActionTool || requestedLookupTool || requestedDiaryTool) ? null : requestedEmailTool(messages)
   const requestedSearchTool = (requestedActionTool || requestedLookupTool || requestedDiaryTool || requestedEmailTool_) ? null : requestedWebSearchTool(messages)
   const latestUserText = String([...messages].reverse().find(m => m?.role === 'user')?.content || '').toLowerCase()
-  const wantsChange = !!requestedLookupTool && !/\bdetails?\b/.test(latestUserText)
+  // BUG FIX: this used to be `!!requestedLookupTool && !/\bdetails?\b/` —
+  // true for ANY message that triggered list_records, which includes every
+  // plain informational question ("what is X", "how many Y", "tell me Z"),
+  // not just genuine edit/delete requests. Once rule 26 correctly taught the
+  // model to just answer an info question in text (no update_record/
+  // delete_record call), THIS flag's own nudge below would immediately
+  // override that and inject "Now do it: call update_record or
+  // delete_record" anyway — producing exactly the "do you want update or
+  // delete?" non-answer this was supposed to prevent. Needs an actual
+  // change-intent verb present, not just any list_records-triggering one.
+  const changeVerb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|set|make|kar\s*do|kardo|kar\s*dena|update\s*kar\w*|accept|approve|reject|decline|complete|cancel|mark\b.{0,20}\bdone|start|begin)\b/
+  const wantsChange = !!requestedLookupTool && changeVerb.test(latestUserText) && !/\bdetails?\b/.test(latestUserText)
   let nudgedToAct = false
 
   if (topMemory.length) {
