@@ -1581,11 +1581,12 @@ agentRouter.post("/draft", async (req, res) => {
         messages: [
           {
             role: "system",
-            content: `You are ${userName}'s AI Chief of Staff, writing an email reply on their behalf. Write a complete, properly formatted professional email reply to the email below:
-- Start with a brief greeting to the sender on its own line (e.g. "Hi <first name>," \u2014 infer the name from the From header; if it's unclear, just use "Hi,").
-- Write the body in clear, concise paragraphs, with a blank line between paragraphs.
-- End with a sign-off on its own line ("Best regards," or "Best,"), followed by "${userName}" on the next line \u2014 always this exact name, never a placeholder.
-Keep the whole reply under 150 words total. Return ONLY the reply text \u2014 no subject line.${scheduleContext}`,
+            content: `You are ${userName}'s AI Chief of Staff, writing an email reply on their behalf. Read the actual email below first and match your reply's length and tone to IT \u2014 do not default to a long, formal template regardless of what the email actually says.
+- Start with a brief greeting to the sender on its own line (e.g. "Hi <first name>," \u2014 infer the name from the From header; if it's unclear, just use "Hi,"). Skip this only if the original email itself has no greeting and is a single short line.
+- A short/casual email (a one-liner, a quick "hi", a simple yes/no question) gets a short/casual reply back \u2014 a sentence or two, same tone, no padding. Only write multiple paragraphs when the original email itself raises multiple points that genuinely need addressing; never add paragraphs, context, or questions the original email didn't ask for just to make the reply look more complete.
+- End with a sign-off on its own line ("Best regards," or "Best,"), followed by "${userName}" on the next line \u2014 always this exact name, never a placeholder. For a very short/casual reply to an equally short/casual email, a brief sign-off like "Thanks," is fine too \u2014 it doesn't have to be "Best regards" every time.
+- The schedule/availability notes below (if any) exist ONLY for emails that actually ask about a meeting, call, or availability \u2014 if this email isn't about scheduling, ignore them completely and do not bring up the user's calendar at all.
+Keep the whole reply as short as the original email warrants \u2014 under 150 words is a ceiling for a substantial email, not a target to reach for every reply. Return ONLY the reply text \u2014 no subject line.${scheduleContext}`,
           },
           { role: "user", content },
         ],
@@ -1737,7 +1738,7 @@ dashboardRouter.get("/brief", async (req, res) => {
     let urgentEmails = [];
     let suggestedMeetings = [];
     try {
-      const { getUrgentEmails: _getUrgent, detectMeetingRequest } =
+      const { getUrgentEmails: _getUrgent, detectMeetingRequest, getEmailMeetingLink } =
         await import("../services/gmail.service.js");
       const { userStore: _us } = await import("../models/userStore.js");
       const _user = await _us.getById(req.user.id);
@@ -1759,6 +1760,15 @@ dashboardRouter.get("/brief", async (req, res) => {
         })
         .filter(Boolean)
         .slice(0, 3);
+      // Only for the final, already-short list: look at each email's actual
+      // body for a real meeting link (Zoom/Google Meet/Teams/etc.). When the
+      // sender already included one, approving this suggestion must use
+      // THEIR link, not a brand-new one Mneva would otherwise generate.
+      await Promise.all(
+        suggestedMeetings.map(async (m) => {
+          m.meetingLink = await getEmailMeetingLink(_user, m.emailId);
+        })
+      );
     } catch {
       urgentEmails = [];
       suggestedMeetings = [];
@@ -2857,15 +2867,13 @@ export const meetingsRouter = express.Router();
 // Called when user approves a suggested meeting from an urgent email
 meetingsRouter.post("/suggest-approve", async (req, res) => {
   try {
-    const { emailId, senderName, senderEmail, subject, start, end, title } =
+    const { emailId, senderName, senderEmail, subject, start, end, title, meetingLink } =
       req.body;
     if (!senderEmail || !start)
       return res
         .status(400)
         .json({ error: "senderEmail and start are required" });
 
-    const { createMeetingWithGoogleMeet } =
-      await import("../services/calendar.service.js");
     const startDt = new Date(start);
     if (isNaN(startDt.getTime()))
       return res.status(400).json({ error: "Invalid start datetime" });
@@ -2874,13 +2882,36 @@ meetingsRouter.post("/suggest-approve", async (req, res) => {
       : new Date(startDt.getTime() + 60 * 60 * 1000);
 
     const meetingTitle = title || `Meeting with ${senderName || senderEmail}`;
-    const meeting = await createMeetingWithGoogleMeet(req.user.id, {
-      title: meetingTitle,
-      start: startDt.toISOString(),
-      end: endDt.toISOString(),
-      description: `Meeting requested via email: "${subject || ""}"`,
-      attendees: [senderEmail],
-    });
+    let meeting;
+    if (meetingLink) {
+      // The original email already carried a real meeting link (Zoom/Google
+      // Meet/Teams/etc.) — Join must open THAT link, not a second, unrelated
+      // one Mneva would otherwise generate via createMeetingWithGoogleMeet.
+      const { createEventIfConnected } = await import("../services/calendar.service.js");
+      const ev = await createEventIfConnected(req.user.id, {
+        summary: meetingTitle,
+        description: `Meeting requested via email: "${subject || ""}"\n\nJoin: ${meetingLink}`,
+        start: { dateTime: startDt.toISOString() },
+        end: { dateTime: endDt.toISOString() },
+        attendees: [{ email: senderEmail }],
+      });
+      meeting = {
+        eventId: ev?.id || null,
+        htmlLink: ev?.htmlLink || null,
+        meetLink: meetingLink,
+        conferenceId: null,
+      };
+    } else {
+      const { createMeetingWithGoogleMeet } =
+        await import("../services/calendar.service.js");
+      meeting = await createMeetingWithGoogleMeet(req.user.id, {
+        title: meetingTitle,
+        start: startDt.toISOString(),
+        end: endDt.toISOString(),
+        description: `Meeting requested via email: "${subject || ""}"`,
+        attendees: [senderEmail],
+      });
+    }
 
     // Add to ledger
     const ledgerEntry = await ledger.add({

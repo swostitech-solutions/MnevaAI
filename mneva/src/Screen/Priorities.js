@@ -501,7 +501,7 @@ export default function Priorities({ navigation }) {
     if (t.status !== 'PENDING' || !isToday(t.createdAt, todayStart, todayEnd) || /^Meeting · /i.test(t.description || '')) return false;
     const isReminderTask = /^Reminder ·/i.test(t.description || '');
     return !isReminderTask || !calendarReminderTitles.has((t.title || '').trim().toLowerCase());
-  });
+  }).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   const todayReminders = reminders
     .filter(m => isToday(m.start, todayStart, todayEnd))
     .sort((a, b) => new Date(a.start) - new Date(b.start));
@@ -550,6 +550,17 @@ export default function Priorities({ navigation }) {
     .filter(it => it.date && new Date(it.date) > todayEnd)
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
+  // Reminders and AI-detected items both carry a real scheduled time for
+  // today, so they must interleave in actual time order — rendering them as
+  // two separate fixed blocks (as before) meant a 9am reminder could show
+  // BELOW a bill that's merely "due today" with no specific time. An
+  // AI-detected item with no time (e.g. a bill due today, no hour given) is
+  // placed first, same as an all-day calendar entry would be.
+  const todaySchedule = [
+    ...todayReminders.map(m => ({ kind: 'reminder', key: m.id, time: new Date(m.start).getTime(), data: m })),
+    ...autoToday.map(item => ({ kind: 'auto', key: item.id, time: item.date ? new Date(item.date).getTime() : -Infinity, data: item })),
+  ].sort((a, b) => a.time - b.time);
+
   const handleMeetingSuggest = async (emailId, action, suggestion) => {
     setMeetingActed(prev => ({ ...prev, [emailId]: action }));
     if (action === 'approve') {
@@ -565,6 +576,7 @@ export default function Priorities({ navigation }) {
             senderEmail: suggestion.senderEmail,
             subject: suggestion.subject,
             start: now.toISOString(),
+            meetingLink: suggestion.meetingLink || null,
           },
         });
       } catch {}
@@ -812,45 +824,37 @@ export default function Priorities({ navigation }) {
                 {pendingTasks.map(task => (
                   <TaskCard key={task.id} task={task} onCheck={handleCheckTask} styles={styles} />
                 ))}
-                {todayReminders.length > 0 && (
+                {todaySchedule.length > 0 && (
                   <>
                     <SectionHeader
-                      icon="bell" label="REMINDERS TODAY"
+                      icon="clock" label="TODAY'S SCHEDULE"
                       color={theme.warning}
                       tint={theme.isDark ? "rgba(255,184,77,0.16)" : "#FEF3C7"}
                       styles={styles}
                     />
-                    {todayReminders.map(m => (
-                      <MeetingCard
-                        key={m.id} m={m}
-                        done={doneMeetingIds.has(m.id)}
-                        confirmedPending={confirmedPendingIds.has(m.id)}
-                        onCheck={handleCheckMeeting}
-                        onCancel={handleCancelMeeting}
-                        onConfirmPending={handleConfirmPending}
-                        styles={styles}
-                        theme={theme}
-                      />
-                    ))}
-                  </>
-                )}
-                {autoToday.length > 0 && (
-                  <>
-                    <SectionHeader
-                      icon="cpu" label="AI DETECTED TODAY"
-                      color={theme.accentAlt}
-                      tint={theme.isDark ? "rgba(129,128,255,0.16)" : "#EEEDFE"}
-                      styles={styles}
-                    />
-                    {autoToday.map((item, i) => (
-                      <AutoTimelineRow
-                        key={item.id} item={item} isLast={i === autoToday.length - 1}
-                        done={doneAutoIds.has(item.id)}
-                        confirmedPending={confirmedAutoPendingIds.has(item.id)}
-                        onCheck={handleCheckAutoItem}
-                        onConfirmPending={handleConfirmAutoPending}
-                        styles={styles} theme={theme}
-                      />
+                    {todaySchedule.map((entry, i) => (
+                      entry.kind === 'reminder' ? (
+                        <MeetingCard
+                          key={entry.key} m={entry.data}
+                          done={doneMeetingIds.has(entry.key)}
+                          confirmedPending={confirmedPendingIds.has(entry.key)}
+                          onCheck={handleCheckMeeting}
+                          onCancel={handleCancelMeeting}
+                          onConfirmPending={handleConfirmPending}
+                          styles={styles}
+                          theme={theme}
+                        />
+                      ) : (
+                        <AutoTimelineRow
+                          key={entry.key} item={entry.data}
+                          isLast={i === todaySchedule.length - 1 || todaySchedule[i + 1].kind !== 'auto'}
+                          done={doneAutoIds.has(entry.key)}
+                          confirmedPending={confirmedAutoPendingIds.has(entry.key)}
+                          onCheck={handleCheckAutoItem}
+                          onConfirmPending={handleConfirmAutoPending}
+                          styles={styles} theme={theme}
+                        />
+                      )
                     ))}
                   </>
                 )}

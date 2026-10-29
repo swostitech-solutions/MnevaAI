@@ -381,7 +381,14 @@ export async function sendEmail(user, recipient, subject, body, { threadId, inRe
     headers.push(`In-Reply-To: ${inReplyTo}`)
     headers.push(`References: ${inReplyTo}`)
   }
-  headers.push('Content-Type: text/plain; charset=UTF-8', '', body)
+  // The headers above are joined with \r\n (RFC 5322 line endings), but the
+  // draft's own paragraph breaks are plain "\n" (from the AI / the user's
+  // edits) — joining a bare-\n body into a \r\n-delimited message is exactly
+  // why recipients saw the reply's paragraph breaks collapse or look
+  // misaligned in some mail clients, which only treat \r\n as a real line
+  // break. Normalize before building the raw message.
+  const normalizedBody = String(body || '').replace(/\r\n/g, '\n').replace(/\n/g, '\r\n')
+  headers.push('Content-Type: text/plain; charset=UTF-8', '', normalizedBody)
 
   const raw = Buffer.from(headers.join('\r\n')).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
@@ -402,17 +409,58 @@ const MEETING_KEYWORDS = [
   'discuss over a call', 'zoom call', 'google meet', 'teams call', 'video call',
   'interview', 'demo call', 'product demo', 'introductory call', 'intro call',
   'follow-up call', 'follow up call', 'check-in call', 'check in call',
+  // Generic calendar-invite phrasing — a real invite's short Gmail snippet
+  // often reads like one of these rather than any of the phrases above,
+  // which is why such emails were inconsistently missing from Priorities.
+  'invited you to', 'you\'re invited', 'meeting invite', 'calendar invitation',
+  'has invited you', 'scheduled a meeting', 'sent you a meeting invite', 'invite:',
 ]
+
+// Real meeting-platform links a calendar-invite email embeds in its body —
+// a much stronger, independent signal than the keyword list above, and
+// (critically) it's the ACTUAL link the sender meant for the recipient to
+// join, not a stand-in Mneva would otherwise generate of its own.
+const MEETING_LINK_REGEX = /https?:\/\/[^\s<>"')]*(?:zoom\.us\/j\/[^\s<>"')]*|meet\.google\.com\/[a-z-]+|teams\.microsoft\.com\/l\/meetup-join[^\s<>"')]*|teams\.live\.com\/meet[^\s<>"')]*|webex\.com\/[^\s<>"')]*|gotomeeting\.com\/join\/[^\s<>"')]*|whereby\.com\/[^\s<>"')]*)/i
+
+export function extractMeetingLink(text) {
+  if (!text) return null
+  const match = String(text).match(MEETING_LINK_REGEX)
+  return match ? match[0].replace(/[.,;]+$/, '') : null
+}
 
 export function detectMeetingRequest(subject, snippet, from) {
   const text = `${subject} ${snippet}`.toLowerCase()
   const hit = MEETING_KEYWORDS.find(kw => text.includes(kw))
-  if (!hit) return null
+  // A real meeting link right in the subject/snippet is itself sufficient,
+  // even with no keyword hit — some invite emails' auto-generated snippet
+  // doesn't contain any of the phrases above at all. The snippet can
+  // truncate the link though, so the authoritative one is fetched
+  // separately from the full body later (getEmailMeetingLink below) — this
+  // is only used to decide whether to treat the email as a meeting at all.
+  const snippetLink = extractMeetingLink(`${subject} ${snippet}`)
+  if (!hit && !snippetLink) return null
   // Extract sender name from "Name <email>" format
   const nameMatch = from.match(/^([^<]+)</)
   const senderName = nameMatch ? nameMatch[1].trim() : from.replace(/<.*>/, '').trim()
   const senderEmail = (from.match(/<([^>]+)>/) || [])[1] || from.trim()
-  return { senderName, senderEmail, keyword: hit }
+  return { senderName, senderEmail, keyword: hit || null }
+}
+
+// Fetches just the one message's own body (not the whole thread — that
+// heavier fetch belongs to getEmailBody, used by the mail-thread view) to
+// look for the real meeting link an invite email embedded. Called only for
+// the final, already-short list of suggested meetings, so the extra Gmail
+// round trip stays bounded.
+export async function getEmailMeetingLink(user, messageId) {
+  try {
+    const authClient = await getAuthenticatedGmailClient(user)
+    const gmail = google.gmail({ version: 'v1', auth: authClient })
+    const messageData = await gmail.users.messages.get({ userId: 'me', id: messageId, format: 'full' })
+    const text = decodeEmailBody(messageData.data.payload) || decodeEmailHtml(messageData.data.payload) || ''
+    return extractMeetingLink(text)
+  } catch {
+    return null
+  }
 }
 
 // Fallback keyword heuristic — used ONLY when the real AI classification
