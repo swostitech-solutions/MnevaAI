@@ -19,104 +19,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { apiFetch } from "../api/client";
 import { useTheme } from "../context/ThemeContext";
 
-// Movie data is fetched through the backend's /api/tmdb proxy (see
-// backend/src/routes/tmdb.js) so the TMDB API key stays server-side —
-// it must never be embedded in the client bundle.
-const TMDB_IMG = "https://image.tmdb.org/t/p/w342";
-
-// Section → language override
-const SECTION_LANG = {
-  bollywood: "hi",
-  regional:  null, // handled per-chip
-};
-
-// Chip → base TMDB query params (language injected per-section at fetch time)
-const CHIP_PARAMS = {
-  "This Week":      { type: "trending", window: "week" },
-  "This Month":     { type: "trending", window: "day" },
-  "All Time":       { type: "discover", sort_by: "vote_count.desc" },
-  "India":          { type: "discover", with_original_language: "hi" },
-  "Global":         { type: "trending", window: "week" },
-  "Action":         { type: "discover", with_genres: "28" },
-  "Romance":        { type: "discover", with_genres: "10749" },
-  "Comedy":         { type: "discover", with_genres: "35" },
-  "Drama":          { type: "discover", with_genres: "18" },
-  "Thriller":       { type: "discover", with_genres: "53" },
-  // Bollywood-specific (language forced via SECTION_LANG)
-  "BW Action":      { type: "discover", with_genres: "28", with_original_language: "hi" },
-  "BW Romance":     { type: "discover", with_genres: "10749", with_original_language: "hi" },
-  "BW Comedy":      { type: "discover", with_genres: "35", with_original_language: "hi" },
-  "BW Drama":       { type: "discover", with_genres: "18", with_original_language: "hi" },
-  "BW Thriller":    { type: "discover", with_genres: "53", with_original_language: "hi" },
-  // Hollywood-specific
-  "HW Action":      { type: "discover", with_genres: "28", with_original_language: "en" },
-  "HW Animation":   { type: "discover", with_genres: "16", with_original_language: "en" },
-  "Sci-Fi":         { type: "discover", with_genres: "878", with_original_language: "en" },
-  "Marvel":         { type: "discover", with_genres: "28", with_original_language: "en" },
-  "DC":             { type: "discover", with_genres: "28", with_original_language: "en" },
-  "Animation":      { type: "discover", with_genres: "16" },
-  "Horror":         { type: "discover", with_genres: "27" },
-  "Mystery":        { type: "discover", with_genres: "9648" },
-  "Documentary":    { type: "discover", with_genres: "99" },
-  "Biography":      { type: "discover", with_genres: "36" },
-  "Fantasy":        { type: "discover", with_genres: "14" },
-  "Netflix":        { type: "discover", with_genres: "18", sort_by: "popularity.desc" },
-  "Prime Video":    { type: "discover", with_genres: "28", sort_by: "popularity.desc" },
-  "Hotstar":        { type: "discover", with_original_language: "hi" },
-  "SonyLIV":        { type: "discover", with_original_language: "hi" },
-  "ZEE5":           { type: "discover", with_original_language: "hi" },
-  "Tamil":          { type: "discover", with_original_language: "ta" },
-  "Telugu":         { type: "discover", with_original_language: "te" },
-  "Malayalam":      { type: "discover", with_original_language: "ml" },
-  "Kannada":        { type: "discover", with_original_language: "kn" },
-  "Punjabi":        { type: "discover", with_original_language: "pa" },
-  "Oscar":          { type: "discover", sort_by: "vote_average.desc", "vote_count.gte": "500", with_original_language: "en" },
-  "Filmfare":       { type: "discover", sort_by: "vote_average.desc", with_original_language: "hi" },
-  "BAFTA":          { type: "discover", sort_by: "vote_average.desc", with_original_language: "en" },
-  "National Award": { type: "discover", sort_by: "vote_average.desc", with_original_language: "hi" },
-  "Cannes":         { type: "discover", sort_by: "vote_average.desc", "vote_count.gte": "200" },
-  "Disney":         { type: "discover", with_genres: "16", sort_by: "popularity.desc" },
-  "Pixar":          { type: "discover", with_genres: "16", sort_by: "vote_average.desc" },
-  "Family":         { type: "discover", with_genres: "10751" },
-  "Adventure":      { type: "discover", with_genres: "12" },
-};
-
-async function fetchTMDB(section, chip) {
-  const p = { ...(CHIP_PARAMS[chip] || { type: "trending", window: "week" }) };
-
-  // Inject section-level language if the chip doesn't already pin a language
-  const sectionLang = SECTION_LANG[section];
-  if (sectionLang && !p.with_original_language) {
-    p.with_original_language = sectionLang;
-  }
-
-  const { type, window: win, ...rest } = p;
-
-  let path;
-  if (type === "trending") {
-    // For bollywood trending, use discover instead so language filter applies
-    if (rest.with_original_language) {
-      const qs = new URLSearchParams({ sort_by: "popularity.desc", ...rest }).toString();
-      path = `/api/tmdb/discover?${qs}`;
-    } else {
-      const qs = new URLSearchParams(rest).toString();
-      path = `/api/tmdb/trending?window=${win || "week"}${qs ? `&${qs}` : ""}`;
-    }
-  } else {
-    const qs = new URLSearchParams({ sort_by: "popularity.desc", ...rest }).toString();
-    path = `/api/tmdb/discover?${qs}`;
-  }
-
-  const data = await apiFetch(path);
-  return (data.results || []).slice(0, 10).map(m => ({
-    title: m.title || m.name || "Unknown",
-    director: m.release_date?.slice(0, 4) || "",
-    year: m.vote_average ? `⭐ ${m.vote_average.toFixed(1)}` : "",
-    poster: m.poster_path ? `${TMDB_IMG}${m.poster_path}` : null,
-    overview: m.overview || "",
-  }));
-}
-
 const TAB_BAR_HEIGHT = 50;
 
 // ── Browse categories ────────────────────────────────────────────────────────
@@ -223,7 +125,7 @@ function MovieCard({ title, director, year, color, index, isSaved, onToggleSaved
 export { BROWSE, GROUPS, FALLBACK, parseMoviesFromAI, MovieCard, openYouTube };
 
 // ── AI Chat Panel ────────────────────────────────────────────────────────────
-function AIChatPanel({ onMoviesUpdate, currentContext }) {
+function AIChatPanel({ onMoviesUpdate, currentContext, onLoadingChange }) {
   const { theme } = useTheme();
   const panelStyles = createPanelStyles(theme);
   const [open, setOpen] = useState(false);
@@ -252,13 +154,21 @@ function AIChatPanel({ onMoviesUpdate, currentContext }) {
     setMessages(prev => [...prev, userMsg]);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     setLoading(true);
+    onLoadingChange?.(true);
 
     try {
-      const prompt = `You are Mneva AI movie assistant. The user is browsing ${currentContext}.
-Respond with a numbered list of 5-8 movie recommendations in this exact format:
+      // Every section here (Trending, Bollywood, Hollywood, a genre, a
+      // platform, an award) is about real movies that actually exist, not a
+      // mood-based recommendation, so every Movies query forces a real web
+      // search — unlike Music, which only does this for Trending/Charts.
+      // This replaces the TMDB grid entirely: TMDB_API_KEY was never
+      // configured in production, so that grid was permanently empty or
+      // stuck on a handful of hardcoded sample titles.
+      const prompt = `You are Mneva AI movie assistant. Call your web_search tool first to find real movies matching "${currentContext}" — search for "${currentContext} movies" and use only what you find; never invent titles from memory alone, since this must reflect real, current movies. Respond with a numbered list of 5-8 real movies in this exact format:
 1. Movie Title - Director Name · Year
 2. Movie Title - Director Name · Year
-Keep it concise. User request: ${content}`;
+...
+Keep it concise. If your search doesn't turn up enough real movies, return fewer rather than inventing any. User request: ${content}`;
 
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
@@ -279,8 +189,19 @@ Keep it concise. User request: ${content}`;
       }]);
     } finally {
       setLoading(false);
+      onLoadingChange?.(false);
     }
-  }, [input, loading, currentContext, onMoviesUpdate]);
+  }, [input, loading, currentContext, onMoviesUpdate, onLoadingChange]);
+
+  // Auto-query whenever the selected section/chip changes, so results load
+  // immediately without the user having to type anything — same pattern
+  // Music's Trending/Charts auto-query already uses.
+  useEffect(() => {
+    if (!currentContext) return;
+    const autoQuery = `Give me top movie recommendations for: ${currentContext}`;
+    sendMessage(autoQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentContext]);
 
   return (
     <View style={panelStyles.wrapper}>
@@ -353,39 +274,17 @@ export default function MovieDiscovery({ navigation }) {
   const [aiMovies, setAiMovies] = useState(null);
   const [aiLabel, setAiLabel] = useState(null);
   const [aiContext, setAiContext] = useState("Trending · This Week");
-  const [tmdbMovies, setTmdbMovies] = useState(null);
-  const [tmdbLoading, setTmdbLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const sectionTitle = BROWSE.find(b => b.id === section)?.title || "Movies";
   const sectionColors = BROWSE.find(b => b.id === section)?.colors || ["#6C47FF", "#4A2FCC"];
 
-  // Priority: AI override > TMDB > static fallback
-  const rawMovies = aiMovies
-    ? aiMovies
-    : tmdbMovies
-    ? tmdbMovies.map(m => [m.title, m.director, m.year, COVER_COLORS[0], m.poster, m.overview])
-    : (FALLBACK[selection] || FALLBACK["This Week"]);
+  // Priority: AI (web-sourced) results > static fallback, while the first
+  // auto-query for this selection is still in flight.
+  const rawMovies = aiMovies ? aiMovies : (FALLBACK[selection] || FALLBACK["This Week"]);
 
   // Normalise to [title, director, year, color, poster?, overview?]
   const movies = rawMovies.map(m => Array.isArray(m) ? m : [m.title, m.director, m.year, COVER_COLORS[0], m.poster, m.overview]);
-
-  const loadTMDB = useCallback(async (sec, chip) => {
-    setTmdbLoading(true);
-    setTmdbMovies(null);
-    try {
-      const results = await fetchTMDB(sec, chip);
-      if (results.length > 0) setTmdbMovies(results);
-    } catch {
-      // silently fall back to static data
-    } finally {
-      setTmdbLoading(false);
-    }
-  }, []);
-
-  // Load TMDB on mount and whenever section/chip changes
-  useEffect(() => {
-    loadTMDB(section, selection);
-  }, [section, selection]);
 
   const chooseSection = (id) => {
     setSection(id);
@@ -496,10 +395,10 @@ export default function MovieDiscovery({ navigation }) {
               <View style={{ flex: 1, marginRight: 10 }}>
                 <Text numberOfLines={1} style={styles.listTitle}>{(aiLabel || selection).replace(/^(BW|HW) /, "")}</Text>
                 <Text style={styles.listSub}>
-                  {aiMovies ? "✨ AI-curated picks" : tmdbMovies ? "🎬 Live from TMDB" : "Top picks for you"}
+                  {aiMovies ? "✨ AI-curated · live web search" : aiLoading ? "Searching the web…" : "Top picks for you"}
                 </Text>
               </View>
-              {tmdbLoading && <ActivityIndicator size="small" color={theme.accentAlt} style={{ marginRight: 8 }} />}
+              {aiLoading && <ActivityIndicator size="small" color={theme.accentAlt} style={{ marginRight: 8 }} />}
               {aiMovies && (
                 <TouchableOpacity onPress={() => { setAiMovies(null); setAiLabel(null); }}>
                   <Text style={styles.resetBtn}>Reset</Text>
@@ -531,7 +430,7 @@ export default function MovieDiscovery({ navigation }) {
         </ScrollView>
 
         {/* ── AI Chat Panel ── */}
-        <AIChatPanel onMoviesUpdate={handleAiMovies} currentContext={aiContext} />
+        <AIChatPanel onMoviesUpdate={handleAiMovies} currentContext={aiContext} onLoadingChange={setAiLoading} />
 
         {/* ── Bottom tab bar ── */}
         <View style={[styles.tabBar, { paddingBottom: 10 + insets.bottom }]}>
