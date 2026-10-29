@@ -6760,6 +6760,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as Speech from "expo-speech";
 import * as FileSystem from "expo-file-system/legacy";
+import * as LocalAuthentication from "expo-local-authentication";
 import { useTheme } from "../context/ThemeContext";
 import * as Location from "expo-location";
 import { getCurrentCoords } from "../services/location";
@@ -8507,11 +8508,38 @@ export default function Home({ navigation }) {
   };
 
   const handleAction = async (actionId, type) => {
+    // The payment-approval card now lives only here on the Dashboard (it used
+    // to also pop up as a blocking modal on the Ask AI screen, which handled
+    // this same biometric gate before approving — moved here so a ≥₹1000
+    // payment still asks for biometric confirmation no matter where it's
+    // approved from).
+    let biometricConfirmed = false;
+    if (type === "approve") {
+      const action = pendingActions.find((a) => a.id === actionId);
+      const amount = Number(action?.input?.amount) || 0;
+      if (action?.domain === "finance" && amount >= 1000) {
+        try {
+          const hasHardware = await LocalAuthentication.hasHardwareAsync();
+          const isEnrolled = hasHardware && (await LocalAuthentication.isEnrolledAsync());
+          if (hasHardware && isEnrolled) {
+            const result = await LocalAuthentication.authenticateAsync({
+              promptMessage: `Confirm payment of ₹${amount.toLocaleString("en-IN")}`,
+              cancelLabel: "Cancel",
+              disableDeviceFallback: false,
+            });
+            if (!result.success) return; // cancelled — card stays as-is, nothing acted
+            biometricConfirmed = true;
+          }
+        } catch {
+          return;
+        }
+      }
+    }
     setActedIds((prev) => ({ ...prev, [actionId]: type }));
     try {
       await apiFetch(`/api/agent/${type}`, {
         method: "POST",
-        body: { actionId },
+        body: { actionId, biometricConfirmed },
       });
     } catch {}
     setTimeout(() => {

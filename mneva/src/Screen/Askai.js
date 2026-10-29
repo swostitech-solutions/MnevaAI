@@ -30,7 +30,6 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as FileSystem from "expo-file-system/legacy";
-import * as LocalAuthentication from "expo-local-authentication";
 import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket } from "../services/socket";
 import { onAppDataRefresh } from '../services/dataRefresh';
@@ -915,8 +914,6 @@ export default function AskAI({ navigation }) {
   const [tabBarH, setTabBarH] = useState(0);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-  const [pendingAction, setPendingAction] = useState(null); // { id, summary, tool, domain, input }
-  const [approvingAction, setApprovingAction] = useState(false);
   const [liveTypingId, setLiveTypingId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editingText, setEditingText] = useState("");
@@ -925,7 +922,7 @@ export default function AskAI({ navigation }) {
   const aiLoadingRef = useRef(false);
   const initialHistoryPositioningRef = useRef(false);
   const hasRealHistoryRef = useRef(false);
-  const { on, emit } = useSocket();
+  const { on } = useSocket();
 
   // Date filter — browsing a past day's chat instead of the live tail.
   const [viewDate, setViewDate] = useState(null); // Date | null (null = live)
@@ -1158,42 +1155,15 @@ export default function AskAI({ navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 400);
   };
 
-  // Real backend-driven approval flow — a trust-level gate (Settings > Trust)
-  // defers a sensitive tool call (payment, email) into a PendingAction row
-  // instead of running it immediately, and these events are how that reaches
-  // this screen. Catches up on anything created before the socket connected
-  // (e.g. the app was closed), then stays live for new ones.
+  // Trust-level change notices still post into the chat — but the actual
+  // payment/action approve-or-deny card lives only on the Dashboard now
+  // (Home.js has its own pendingActions list + handleAction with the same
+  // biometric gate below). Popping a blocking modal here just because the
+  // chat screen happened to be the one that opened next felt like a random
+  // interruption disconnected from where the user actually goes to manage
+  // pending actions.
   useEffect(() => {
-    apiFetch('/api/agent/pending-actions').then((data) => {
-      const first = data?.actions?.[0];
-      if (first) setPendingAction({ id: first.id, tool: first.tool, domain: first.domain, summary: first.summary, input: first.input });
-    }).catch(() => {});
     const offs = [
-      on('action:pending', (data) => {
-        setPendingAction({ id: data.id, tool: data.tool, domain: data.domain, summary: data.summary, input: data.input });
-      }),
-      on('action:confirmed', ({ actionId }) => {
-        setPendingAction(prev => {
-          if (prev?.id !== actionId) return prev;
-          addMessage({ id: String(Date.now()), sender: 'ai', text: `✅ Done — ${prev.summary}`, ts: new Date().toISOString() });
-          return null;
-        });
-      }),
-      on('action:denied', ({ actionId }) => {
-        setPendingAction(prev => {
-          if (prev?.id !== actionId) return prev;
-          addMessage({ id: String(Date.now()), sender: 'ai', text: `❌ Cancelled — ${prev.summary}`, ts: new Date().toISOString() });
-          return null;
-        });
-      }),
-      on('action:failed', ({ actionId, error }) => {
-        setPendingAction(prev => {
-          if (prev?.id !== actionId) return prev;
-          if (error === 'biometric_required') return prev; // modal stays open; handleApprove already surfaced the prompt
-          addMessage({ id: String(Date.now()), sender: 'ai', text: `⚠️ Couldn't complete that action — please try again.`, ts: new Date().toISOString() });
-          return null;
-        });
-      }),
       on('trust:levelChanged', ({ level, previousLevel }) => {
         const text = level > previousLevel
           ? `🎯 Your trust level just went up to L${level} — I can act more independently in this area now.`
@@ -1611,38 +1581,6 @@ export default function AskAI({ navigation }) {
     persistMessage("assistant", lines);
   };
 
-  const handleApprove = async () => {
-    if (!pendingAction || approvingAction) return;
-    const amount = Number(pendingAction.input?.amount) || 0;
-    let biometricConfirmed = false;
-    if (pendingAction.domain === 'finance' && amount >= 1000) {
-      setApprovingAction(true);
-      try {
-        const hasHardware = await LocalAuthentication.hasHardwareAsync();
-        const isEnrolled = hasHardware && await LocalAuthentication.isEnrolledAsync();
-        if (hasHardware && isEnrolled) {
-          const result = await LocalAuthentication.authenticateAsync({
-            promptMessage: `Confirm payment of ₹${amount.toLocaleString('en-IN')}`,
-            cancelLabel: 'Cancel',
-            disableDeviceFallback: false,
-          });
-          if (!result.success) { setApprovingAction(false); return; }
-          biometricConfirmed = true;
-        }
-      } finally {
-        setApprovingAction(false);
-      }
-    }
-    // Real confirmation/failure arrives over the socket (action:confirmed /
-    // action:failed) and updates the chat then — this only sends the request.
-    emit('action:approve', { actionId: pendingAction.id, biometricConfirmed });
-  };
-
-  const handleDeny = () => {
-    if (!pendingAction) return;
-    emit('action:deny', { actionId: pendingAction.id });
-  };
-
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
@@ -1904,34 +1842,6 @@ export default function AskAI({ navigation }) {
           <Text style={styles.tabLabel}>PROFILE</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Action approve/deny card */}
-      {pendingAction && (
-        <Modal visible transparent animationType="fade" onRequestClose={handleDeny}>
-          <View style={styles.actionOverlay}>
-            <View style={styles.actionCard}>
-              <Text style={styles.actionTitle}>⚡ Action Required</Text>
-              <Text style={styles.actionSummary}>{pendingAction.summary}</Text>
-              <View style={styles.actionBtns}>
-                <TouchableOpacity style={styles.approveBtn} onPress={handleApprove} disabled={approvingAction}>
-                  {approvingAction ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <Feather name="check" size={15} color="#fff" />
-                      <Text style={styles.approveBtnText}>Approve</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.denyBtn} onPress={handleDeny} disabled={approvingAction}>
-                  <Feather name="x" size={15} color={theme.danger} />
-                  <Text style={styles.denyBtnText}>Deny</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
 
       <VoiceListeningOverlay
         visible={recording}
@@ -2229,30 +2139,6 @@ const createStyles = (theme) => StyleSheet.create({
   tabItem: { flex: 1, alignItems: "center" },
   tabLabel: { fontSize: 10, fontWeight: "700", color: theme.faint, marginTop: 4, letterSpacing: 0.3 },
   tabLabelActive: { color: theme.accent },
-
-  // ── Action card ────────────────────────────────────────────────────────────
-  actionOverlay: {
-    flex: 1, backgroundColor: theme.overlay,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  actionCard: {
-    width: 320, backgroundColor: theme.card, borderRadius: 20,
-    padding: 22, marginHorizontal: 20,
-  },
-  actionTitle: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 10 },
-  actionSummary: { fontSize: 13.5, color: theme.textSecondary, lineHeight: 20, marginBottom: 18 },
-  actionBtns: { flexDirection: 'row', gap: 10 },
-  approveBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 12,
-  },
-  approveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  denyBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : 'rgba(224,84,110,0.1)', borderRadius: 12, paddingVertical: 12,
-    borderWidth: 1, borderColor: theme.isDark ? 'rgba(241,113,134,0.4)' : 'rgba(224,84,110,0.3)',
-  },
-  denyBtnText: { color: theme.danger, fontSize: 13, fontWeight: '700' },
 
   // ── Meeting Modal ──────────────────────────────────────────────────────────
   pendingAttachRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: theme.card, borderRadius: 14, borderWidth: 1, borderColor: theme.border, padding: 8, marginBottom: 6 },
