@@ -133,6 +133,13 @@ const FIELD_TO_CATEGORY = Object.fromEntries(
 
 function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme, styles, editDate, editEntry }) {
   const isEditing = !!editDate;
+  // The sheet itself has no height cap — it just grows to fit its content,
+  // bottom-anchored — so once the keyboard opens there was nothing for it
+  // to scroll WITHIN; the fields below the keyboard's top edge were simply
+  // cut off with no way to reach them. Capping it to a share of the actual
+  // screen height gives the ScrollView added below a real scrollable area.
+  const { height: windowHeight } = useWindowDimensions();
+  const maxSheetHeight = windowHeight * 0.85;
   const [activeTab, setActiveTab] = useState('activity');
   const [form, setForm] = useState({});
   // Which fields the user has directly typed into (even to clear them) —
@@ -275,7 +282,7 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
         <View style={styles.sheetOverlay} />
       </TouchableWithoutFeedback>
       <KeyboardAvoidingView style={styles.sheetWrap} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <View style={[styles.sheetContent, { paddingBottom: 20 + bottomInset }]}>
+        <View style={[styles.sheetContent, { paddingBottom: 20 + bottomInset, maxHeight: maxSheetHeight }]}>
           <View style={styles.sheetHandle} />
 
           {/* Header */}
@@ -303,42 +310,47 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
             ))}
           </ScrollView>
 
-          {/* Fields for active category */}
-          <View style={styles.syncGrid}>
-            {fields.map(({ key, label, unit, keyboard }) => (
-              <View key={key} style={styles.syncField}>
-                <View style={styles.syncFieldLabel}>
-                  <Text style={[styles.syncFieldLabelText, { color: cat.color }]}>{label}</Text>
+          {/* Fields for active category — scrollable so the field being
+              typed into can always be scrolled into view above the
+              keyboard, instead of the whole sheet just getting squeezed by
+              KeyboardAvoidingView with no way to reach what's cut off. */}
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <View style={styles.syncGrid}>
+              {fields.map(({ key, label, unit, keyboard }) => (
+                <View key={key} style={styles.syncField}>
+                  <View style={styles.syncFieldLabel}>
+                    <Text style={[styles.syncFieldLabelText, { color: cat.color }]}>{label}</Text>
+                  </View>
+                  <View style={styles.syncInputRow}>
+                    <TextInput
+                      style={styles.syncInput}
+                      placeholder="—"
+                      placeholderTextColor={theme.disabled}
+                      keyboardType={keyboard}
+                      value={form[key] || ''}
+                      onChangeText={v => set(key, v)}
+                    />
+                    {!!unit && <Text style={styles.syncUnit}>{unit}</Text>}
+                  </View>
                 </View>
-                <View style={styles.syncInputRow}>
-                  <TextInput
-                    style={styles.syncInput}
-                    placeholder="—"
-                    placeholderTextColor={theme.disabled}
-                    keyboardType={keyboard}
-                    value={form[key] || ''}
-                    onChangeText={v => set(key, v)}
-                  />
-                  {!!unit && <Text style={styles.syncUnit}>{unit}</Text>}
-                </View>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
 
-          {!!error && <Text style={styles.syncError}>{error}</Text>}
+            {!!error && <Text style={styles.syncError}>{error}</Text>}
 
-          <TouchableOpacity
-            style={[styles.syncBtn, { backgroundColor: cat.color }, (loading || success) && { opacity: 0.7 }]}
-            onPress={handleSave}
-            disabled={loading || success}
-          >
-            {loading
-              ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : success
-                ? <><Feather name="check" size={16} color="#FFFFFF" /><Text style={styles.syncBtnText}>  Saved!</Text></>
-                : <><Feather name="save" size={16} color="#FFFFFF" /><Text style={styles.syncBtnText}>  Save {cat.label}</Text></>
-            }
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.syncBtn, { backgroundColor: cat.color }, (loading || success) && { opacity: 0.7 }]}
+              onPress={handleSave}
+              disabled={loading || success}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color="#FFFFFF" />
+                : success
+                  ? <><Feather name="check" size={16} color="#FFFFFF" /><Text style={styles.syncBtnText}>  Saved!</Text></>
+                  : <><Feather name="save" size={16} color="#FFFFFF" /><Text style={styles.syncBtnText}>  Save {cat.label}</Text></>
+              }
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
