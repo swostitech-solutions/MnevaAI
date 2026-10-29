@@ -461,7 +461,24 @@ export default function Priorities({ navigation }) {
     // ledger:updated fires after every AI tool call — use it as a reliable
     // fallback trigger so reminders show even if task:created was missed
     const offLedger  = on('ledger:updated', () => setTimeout(() => loadData(true), 800));
-    return () => { offTask?.(); offMeeting?.(); offFamilyTask?.(); offLedger?.(); };
+    // BUG FIX: deleting a loan/EMI/subscription/bill/FD/portfolio holding
+    // (or expense) never refreshed autoSummary here — finance's delete
+    // routes don't log to the ledger (so ledger:updated never fires for
+    // them either), and this screen wasn't listening for their own
+    // :deleted events. A deleted loan's "EMI due" card in AI DETECTED kept
+    // showing until the next 30s poll or screen refocus. Covers the create/
+    // update events too, so a new/edited due date shows up live as well.
+    const financeEvents = [
+      'loan:created', 'loan:updated', 'loan:deleted',
+      'emi:created', 'emi:updated', 'emi:deleted',
+      'subscription:created', 'subscription:updated', 'subscription:deleted',
+      'bill:created', 'bill:updated', 'bill:deleted',
+      'fd:created', 'fd:updated', 'fd:deleted',
+      'portfolio:created', 'portfolio:updated', 'portfolio:deleted',
+      'expense:created', 'expense:updated', 'expense:deleted',
+    ];
+    const offsFinance = financeEvents.map(evt => on(evt, refresh));
+    return () => { offTask?.(); offMeeting?.(); offFamilyTask?.(); offLedger?.(); offsFinance.forEach(off => off?.()); };
   }, [on, loadData]);
 
   // Polling fallback — re-sync every 30s in case socket events were missed
