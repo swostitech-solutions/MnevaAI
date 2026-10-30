@@ -82,6 +82,7 @@ model User {
   expenses                  Expense[]
   reminderSchedules         ReminderSchedule[]
   callContacts              CallContact[]
+  emailInsights             EmailInsight[]
 
   conversations Conversation[]
   agents        Agent[]
@@ -884,4 +885,34 @@ model CallContact {
 
   @@unique([userId, phoneNumber])
   @@index([userId])
+}
+
+// One row per follow-up or commitment the daily Gmail scan (see
+// emailInsightScanner.js) found in the user's sent mail — "you asked X for
+// something 3 days ago, no reply" (type follow_up) or "you told X you'd do
+// something" (type commitment). Deliberately NOT reusing PendingAction —
+// that model is shaped around an AI tool call awaiting approval
+// (tool/domain/input), while this is a detection surfaced for the user to
+// dismiss or, for a commitment, turn into a real Task on confirm.
+model EmailInsight {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String // 'follow_up' | 'commitment'
+  messageId String // Gmail message id the insight was found in
+  threadId  String?
+  subject   String
+  // follow_up: who the ask was sent to and hasn't replied.
+  // commitment: who the promise was made to.
+  recipient String?
+  snippet   String // the actual line the detection is based on
+  sentAt    DateTime // when that email was sent
+  dueText   String? // commitment only — a deadline phrase if the email stated one, e.g. "by Friday"
+  status    String    @default("pending") // pending | dismissed | actioned | resolved
+  taskId    String? // set once a commitment is confirmed into a Task
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId, type])
+  @@index([userId, status])
 }

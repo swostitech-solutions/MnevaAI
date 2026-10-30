@@ -2220,6 +2220,67 @@ commsRouter.post("/emails/:id/send", async (req, res) => {
   }
 });
 
+// GET /api/comms/insights — the daily Gmail scan's results (see
+// emailInsights.queue.js): follow-ups still waiting on a reply, and
+// commitments the user made that haven't become a Task yet. Priorities'
+// FOLLOW-UPS DUE / COMMITMENTS TO CONFIRM sections just read this straight
+// — the scan itself already did the AI classification + reply-checking,
+// so this is a plain DB read, no live Gmail/AI call on every page open.
+commsRouter.get("/insights", async (req, res) => {
+  try {
+    const rows = await prisma.emailInsight.findMany({
+      where: { userId: req.user.id, status: "pending" },
+      orderBy: { sentAt: "asc" },
+      take: 20,
+    });
+    res.json({
+      followUps: rows.filter((r) => r.type === "follow_up"),
+      commitments: rows.filter((r) => r.type === "commitment"),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/comms/insights/:id/dismiss — "not a real follow-up/commitment,
+// stop showing it" — never recreated since the scan skips any messageId
+// that already has a row for that type.
+commsRouter.post("/insights/:id/dismiss", async (req, res) => {
+  try {
+    const row = await prisma.emailInsight.findUnique({ where: { id: req.params.id } });
+    if (!row || row.userId !== req.user.id) return res.status(404).json({ error: "Not found" });
+    await prisma.emailInsight.update({ where: { id: row.id }, data: { status: "dismissed" } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/comms/insights/:id/confirm — commitment only: the user
+// confirmed this is a real to-do, so turn it into an actual Task (same
+// model Priorities' TODAY tab already tracks) instead of leaving it as a
+// detection the user has to remember on their own.
+commsRouter.post("/insights/:id/confirm", async (req, res) => {
+  try {
+    const row = await prisma.emailInsight.findUnique({ where: { id: req.params.id } });
+    if (!row || row.userId !== req.user.id) return res.status(404).json({ error: "Not found" });
+    if (row.type !== "commitment") return res.status(400).json({ error: "Only a commitment can be confirmed into a task" });
+    const title = row.recipient ? `${row.snippet} (to ${row.recipient})` : row.snippet;
+    const task = await prisma.task.create({
+      data: {
+        userId: req.user.id,
+        title: title.slice(0, 200),
+        description: `From your email "${row.subject}"${row.dueText ? ` — ${row.dueText}` : ""}`,
+        status: "PENDING",
+      },
+    });
+    await prisma.emailInsight.update({ where: { id: row.id }, data: { status: "actioned", taskId: task.id } });
+    res.json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // health.js
 export const healthRouter = express.Router();
 healthRouter.get("/metrics", async (req, res) => {

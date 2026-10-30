@@ -496,6 +496,10 @@ export default function Priorities({ navigation }) {
   const [urgentEmails, setUrgentEmails] = useState([]);
   const [suggestedMeetings, setSuggestedMeetings] = useState([]);
   const [meetingActed, setMeetingActed] = useState({});
+  // Daily Gmail scan results (emailInsights.queue.js) — follow-ups with no
+  // reply yet, and commitments the user made that could become a task.
+  const [emailInsights, setEmailInsights] = useState({ followUps: [], commitments: [] });
+  const [insightActed, setInsightActed] = useState({});
   const [autoSummary, setAutoSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -564,6 +568,7 @@ export default function Priorities({ navigation }) {
     // added a full extra serial round-trip to every screen load.
     const briefPromise = apiFetch("/api/dashboard/brief").catch(() => null);
     const summaryPromise = apiFetch("/api/dashboard/full-summary").catch(() => null);
+    const insightsPromise = apiFetch("/api/comms/insights").catch(() => null);
     try {
       // These feeds are supplemental to tasks.  Do not blank the whole
       // Priorities screen when Calendar or the meeting-completion feed is
@@ -595,7 +600,25 @@ export default function Priorities({ navigation }) {
       hasRealSummaryRef.current = true;
       setAutoSummary(summary);
     }
+    const insights = await insightsPromise;
+    if (insights) setEmailInsights({ followUps: insights.followUps || [], commitments: insights.commitments || [] });
   }, []);
+
+  const handleDismissInsight = async (id) => {
+    setInsightActed((prev) => ({ ...prev, [id]: true }));
+    try { await apiFetch(`/api/comms/insights/${id}/dismiss`, { method: "POST" }); } catch {}
+    setEmailInsights((prev) => ({
+      followUps: prev.followUps.filter((i) => i.id !== id),
+      commitments: prev.commitments.filter((i) => i.id !== id),
+    }));
+  };
+
+  const handleConfirmCommitment = async (id) => {
+    setInsightActed((prev) => ({ ...prev, [id]: true }));
+    try { await apiFetch(`/api/comms/insights/${id}/confirm`, { method: "POST" }); } catch {}
+    setEmailInsights((prev) => ({ ...prev, commitments: prev.commitments.filter((i) => i.id !== id) }));
+    loadData(true);
+  };
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => onAppDataRefresh(() => loadData(true)), [loadData]);
@@ -912,7 +935,7 @@ export default function Priorities({ navigation }) {
             {activeTab === "TODAY" && (
               <>
                 <WrapupCard styles={styles} theme={theme} />
-                {pendingTasks.length === 0 && todayReminders.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && autoToday.length === 0 && (
+                {pendingTasks.length === 0 && todayReminders.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && autoToday.length === 0 && emailInsights.followUps.length === 0 && emailInsights.commitments.length === 0 && (
                   <View style={styles.emptyWrap}>
                     <Feather name="check-circle" size={28} color={theme.disabled} />
                     <Text style={styles.emptyText}>All clear for today!</Text>
@@ -992,6 +1015,85 @@ export default function Priorities({ navigation }) {
                         </View>
                       </View>
                     ))}
+                  </>
+                )}
+                {/* Follow-up tracker — sent emails still waiting on a reply (daily Gmail scan) */}
+                {emailInsights.followUps.length > 0 && (
+                  <>
+                    <SectionHeader
+                      icon="clock" label="FOLLOW-UPS DUE"
+                      color={theme.warning}
+                      tint={theme.isDark ? "rgba(255,184,77,0.16)" : "#FEF3C7"}
+                      styles={styles}
+                    />
+                    {emailInsights.followUps.map((item) => {
+                      const daysAgo = Math.max(1, Math.floor((Date.now() - new Date(item.sentAt).getTime()) / 86400000));
+                      const acted = insightActed[item.id];
+                      return (
+                        <View key={item.id} style={styles.meetSuggestCard}>
+                          <View style={styles.meetSuggestIconWrap}>
+                            <Feather name="mail" size={16} color={theme.warning} />
+                          </View>
+                          <View style={styles.meetSuggestBody}>
+                            <Text style={styles.meetSuggestTitle} numberOfLines={1}>{item.subject}</Text>
+                            <Text style={styles.meetSuggestFrom} numberOfLines={1}>
+                              {item.recipient ? `To ${item.recipient} · ` : ""}{daysAgo} day{daysAgo === 1 ? "" : "s"} ago, no reply
+                            </Text>
+                            {!!item.snippet && <Text style={styles.meetSuggestSubject} numberOfLines={1}>"{item.snippet}"</Text>}
+                            {!acted ? (
+                              <TouchableOpacity style={styles.meetSuggestDenyBtn} onPress={() => handleDismissInsight(item.id)}>
+                                <Feather name="check" size={13} color={theme.danger} />
+                                <Text style={styles.meetSuggestDenyText}>Dismiss</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <Text style={[styles.meetSuggestActed, { color: theme.faint }]}>✓ Dismissed</Text>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
+                {/* Commitment finder — promises made in sent emails, confirm to turn into a task */}
+                {emailInsights.commitments.length > 0 && (
+                  <>
+                    <SectionHeader
+                      icon="check-circle" label="COMMITMENTS TO CONFIRM"
+                      color={theme.accent}
+                      tint={theme.isDark ? "rgba(52,199,123,0.16)" : "#EFFDF6"}
+                      styles={styles}
+                    />
+                    {emailInsights.commitments.map((item) => {
+                      const acted = insightActed[item.id];
+                      return (
+                        <View key={item.id} style={styles.meetSuggestCard}>
+                          <View style={styles.meetSuggestIconWrap}>
+                            <Feather name="send" size={16} color={theme.accent} />
+                          </View>
+                          <View style={styles.meetSuggestBody}>
+                            <Text style={styles.meetSuggestTitle} numberOfLines={1}>{item.subject}</Text>
+                            <Text style={styles.meetSuggestFrom} numberOfLines={1}>
+                              {item.recipient ? `To ${item.recipient}` : "Commitment"}{item.dueText ? ` · ${item.dueText}` : ""}
+                            </Text>
+                            {!!item.snippet && <Text style={styles.meetSuggestSubject} numberOfLines={1}>"{item.snippet}"</Text>}
+                            {!acted ? (
+                              <View style={styles.meetSuggestBtnRow}>
+                                <TouchableOpacity style={styles.meetSuggestDenyBtn} onPress={() => handleDismissInsight(item.id)}>
+                                  <Feather name="x" size={13} color={theme.danger} />
+                                  <Text style={styles.meetSuggestDenyText}>Skip</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.meetSuggestApproveBtn} onPress={() => handleConfirmCommitment(item.id)}>
+                                  <Feather name="plus" size={13} color="#FFFFFF" />
+                                  <Text style={styles.meetSuggestApproveText}>Add as Task</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <Text style={[styles.meetSuggestActed, { color: theme.accent }]}>✓ Added</Text>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
                   </>
                 )}
                 {pendingTasks.map(task => (

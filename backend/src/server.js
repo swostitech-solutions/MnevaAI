@@ -69,6 +69,7 @@ import { startDailyDigestWorker, scheduleDailyDigest } from "./queues/dailyDiges
 import { startAdvanceReminderWorker, scheduleAdvanceReminderScan } from "./queues/advanceReminder.queue.js";
 import { startProactiveSuggestionsWorker, scheduleProactiveSuggestionsScan } from "./queues/proactiveSuggestions.queue.js";
 import { startCallLogReminderWorker, scheduleCallLogReminderScan } from "./queues/callLogReminder.queue.js";
+import { startEmailInsightsWorker, scheduleEmailInsightsScan } from "./queues/emailInsights.queue.js";
 import { isOpenAIConfigured } from "./agents/autonomyEngine.js";
 import { applyModelCompat } from "./services/openaiCompat.js";
 import { backfillLedgerChain } from "./services/ledgerBackfill.js";
@@ -651,6 +652,8 @@ server.on("listening", () => {
         await scheduleProactiveSuggestionsScan();
         activeWorkers.push(startCallLogReminderWorker());
         await scheduleCallLogReminderScan();
+        activeWorkers.push(startEmailInsightsWorker());
+        await scheduleEmailInsightsScan();
         logger.info("✅ BullMQ workers started");
       } catch (error) {
         logger.warn(`⚠️ Could not start BullMQ workers: ${error.message}`);

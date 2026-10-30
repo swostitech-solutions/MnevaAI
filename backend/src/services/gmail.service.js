@@ -344,6 +344,11 @@ export async function getEmailBody(user, messageId) {
   return {
     subject: getHeaderValue(messageData.data.payload.headers, 'Subject'),
     from: getHeaderValue(messageData.data.payload.headers, 'From'),
+    // The recipient of THIS specific message — matters for a message the
+    // user sent themselves (emailInsightScanner reads this as "who did I
+    // send this to"), since the thread's other messages may be addressed
+    // to a different set of people (reply-all, cc changes, etc.).
+    to: getHeaderValue(messageData.data.payload.headers, 'To'),
     body: decodeEmailBody(messageData.data.payload),
     // Real HTML, when the message has one — lets the client render actual
     // banners/images/formatting (via WebView) instead of always falling back
@@ -581,6 +586,78 @@ export async function classifyEmailsUrgency(emails) {
     const score = scoreEmailByKeywords(e.subject, e.snippet, e.from)
     return [e.id, { urgent: score >= 2, score, reason: null }]
   }))
+}
+
+// Used by emailInsights.queue.js's daily scan — reads emails the user SENT
+// (not received) and finds two independent things per email: a FOLLOW-UP
+// (the user asked for something and it genuinely expects a reply) and a
+// COMMITMENT (the user promised to do something). An email can be both,
+// either or neither. No keyword-scoring fallback like classifyUrgencyWithAI
+// has — unlike urgency (useful even from rough keyword heuristics), a false
+// "you promised X" is actively misleading, so this returns null (skip the
+// batch entirely) rather than ever guessing without the AI call.
+export async function classifySentEmailsForInsights(emails) {
+  if (!Array.isArray(emails) || !emails.length) return null
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey || apiKey.includes('replace') || !apiKey.startsWith('sk-')) return null
+  try {
+    const payload = applyModelCompat({
+      model: process.env.OPENAI_MODEL || 'gpt-5-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You read emails a busy professional SENT to other people (not received). For each one, detect two independent things. (1) isFollowUp: the sender clearly asked the recipient for something concrete — information, a document, a decision, an action — in a way that genuinely expects a reply. Not a pleasantry, FYI, or rhetorical question. (2) isCommitment: the sender promised or committed to do something for the recipient (send/complete/get back to them by some point), something that could reasonably become a to-do for the sender. Only mark true for a clear, concrete case — be conservative, most emails are neither. followUpSnippet/commitmentSnippet is the exact relevant sentence (<=140 chars), empty string if not applicable. commitmentDueText is a short deadline phrase the sender stated, e.g. "by Friday" or "next week" — empty string if none was stated.',
+        },
+        {
+          role: 'user',
+          content: `Classify each sent email:\n${JSON.stringify(emails.map(e => ({ id: e.id, subject: e.subject, body: e.body })))}`,
+        },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'sent_email_insights',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              results: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    isFollowUp: { type: 'boolean' },
+                    followUpSnippet: { type: 'string' },
+                    isCommitment: { type: 'boolean' },
+                    commitmentSnippet: { type: 'string' },
+                    commitmentDueText: { type: 'string' },
+                  },
+                  required: ['id', 'isFollowUp', 'followUpSnippet', 'isCommitment', 'commitmentSnippet', 'commitmentDueText'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['results'],
+            additionalProperties: false,
+          },
+        },
+      },
+    }, { temperature: 0, maxTokens: 2000 })
+
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload),
+    })
+    if (!resp.ok) return null
+    const data = await resp.json()
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}')
+    if (!Array.isArray(parsed.results)) return null
+    return new Map(parsed.results.map(r => [r.id, r]))
+  } catch {
+    return null
+  }
 }
 
 // Fetch today's unread primary emails and return only the genuinely urgent
