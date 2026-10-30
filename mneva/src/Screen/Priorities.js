@@ -223,6 +223,27 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onCancel, onConfirmPe
   // inline complete/didn't-happen choice, right on the card, instead of
   // marking it done outright or popping a plain OS alert.
   const [showChoice, setShowChoice] = useState(false);
+  // Tapping the card body (not the checkbox/Join button) expands the "full
+  // picture" for this meeting right in place — who's attending, the user's
+  // last email threads with them, and documents relevant to the title. The
+  // most "chief of staff" context cheaply available, fetched once on first
+  // expand and cached on this card for the rest of its life.
+  const [showContext, setShowContext] = useState(false);
+  const [context, setContext] = useState(null);
+  const [contextLoading, setContextLoading] = useState(false);
+
+  const toggleContext = () => {
+    setShowContext((prev) => !prev);
+    if (context || contextLoading) return;
+    setContextLoading(true);
+    const params = new URLSearchParams();
+    if (attendees.length) params.set('attendees', attendees.join(','));
+    if (m.title) params.set('title', m.title);
+    apiFetch(`/api/calendar/meeting-context?${params.toString()}`)
+      .then((res) => setContext(res || { attendees: [], threads: [], docs: [] }))
+      .catch(() => setContext({ attendees: [], threads: [], docs: [] }))
+      .finally(() => setContextLoading(false));
+  };
 
   return (
     <View style={[styles.meetCard, done && styles.cardDone, awaitingConfirmation && styles.meetCardOverdue]}>
@@ -240,7 +261,7 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onCancel, onConfirmPe
             {done && <Feather name="check" size={13} color="#FFFFFF" />}
           </TouchableOpacity>
         )}
-        <View style={styles.meetBody}>
+        <TouchableOpacity style={styles.meetBody} activeOpacity={0.7} onPress={toggleContext}>
           <View style={styles.meetTopRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1, marginRight: 8 }}>
               <Feather name={isReminder ? 'bell' : 'video'} size={13} color={isReminder ? theme.warning : theme.danger} />
@@ -254,6 +275,7 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onCancel, onConfirmPe
                 <Text style={styles.joinBtnText}>Join</Text>
               </TouchableOpacity>
             )}
+            <Feather name={showContext ? 'chevron-up' : 'chevron-down'} size={16} color={theme.disabled} style={{ marginLeft: 6 }} />
           </View>
           <View style={styles.meetMetaRow}>
             <Feather name="clock" size={11} color={theme.faint} />
@@ -268,8 +290,57 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onCancel, onConfirmPe
           {!!m.description && (
             <Text style={styles.meetDesc} numberOfLines={2}>{m.description}</Text>
           )}
-        </View>
+        </TouchableOpacity>
       </View>
+
+      {showContext && (
+        <View style={styles.contextWrap}>
+          {contextLoading ? (
+            <Text style={styles.contextEmpty}>Loading…</Text>
+          ) : (
+            <>
+              <View style={styles.contextSection}>
+                <Text style={styles.contextLabel}>WHO'S ATTENDING</Text>
+                {attendees.length ? (
+                  <Text style={styles.contextBody}>{attendees.join(", ")}</Text>
+                ) : (
+                  <Text style={styles.contextEmpty}>No attendees listed.</Text>
+                )}
+              </View>
+
+              <View style={styles.contextSection}>
+                <Text style={styles.contextLabel}>LAST THREADS WITH THEM</Text>
+                {!attendees.length ? (
+                  <Text style={styles.contextEmpty}>No attendees to look up.</Text>
+                ) : context?.gmailConnected === false ? (
+                  <Text style={styles.contextEmpty}>Connect Gmail in Settings to see related threads.</Text>
+                ) : context?.threads?.length ? (
+                  context.threads.map((t) => (
+                    <View key={t.id} style={styles.contextThread}>
+                      <Text style={styles.contextThreadSubject} numberOfLines={1}>{t.subject}</Text>
+                      <Text style={styles.contextThreadMeta} numberOfLines={1}>{t.from}</Text>
+                      {!!t.snippet && <Text style={styles.contextThreadSnippet} numberOfLines={2}>{t.snippet}</Text>}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.contextEmpty}>No recent emails with these attendees.</Text>
+                )}
+              </View>
+
+              <View style={styles.contextSection}>
+                <Text style={styles.contextLabel}>RELEVANT DOCS</Text>
+                {context?.docs?.length ? (
+                  context.docs.map((d, idx) => (
+                    <Text key={idx} style={styles.contextDoc} numberOfLines={2}>{d.text}</Text>
+                  ))
+                ) : (
+                  <Text style={styles.contextEmpty}>Nothing relevant found in your documents.</Text>
+                )}
+              </View>
+            </>
+          )}
+        </View>
+      )}
 
       {awaitingConfirmation && (
         <View style={styles.confirmRow}>
@@ -1051,6 +1122,17 @@ const createStyles = (theme) => StyleSheet.create({
   meetDesc: { fontSize: 12, color: theme.faint, marginTop: 4, lineHeight: 17 },
   joinBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: theme.accent, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
   joinBtnText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+
+  contextWrap: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border, gap: 12 },
+  contextSection: { gap: 4 },
+  contextLabel: { fontSize: 10.5, fontWeight: "800", color: theme.faint, letterSpacing: 0.6 },
+  contextBody: { fontSize: 12.5, color: theme.textSecondary, lineHeight: 18 },
+  contextEmpty: { fontSize: 12, color: theme.faint, fontStyle: "italic" },
+  contextThread: { backgroundColor: theme.surfaceAlt, borderRadius: 10, padding: 8, marginTop: 2 },
+  contextThreadSubject: { fontSize: 12.5, fontWeight: "700", color: theme.text },
+  contextThreadMeta: { fontSize: 11, color: theme.faint, marginTop: 1 },
+  contextThreadSnippet: { fontSize: 11.5, color: theme.textSecondary, marginTop: 3, lineHeight: 16 },
+  contextDoc: { fontSize: 12, color: theme.textSecondary, backgroundColor: theme.surfaceAlt, borderRadius: 10, padding: 8, marginTop: 2, lineHeight: 17 },
 
   // Past-due Yes/No confirmation — the agent proactively asks whether a
   // reminder/meeting whose time has already passed actually happened,

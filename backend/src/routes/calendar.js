@@ -249,6 +249,55 @@ router.get('/meetings', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// GET /api/calendar/meeting-context?attendees=a@x.com,b@y.com&title=...
+// The "tap a meeting for the full picture" view on Priorities — who's
+// attending (echoed back from the query), the user's last Gmail threads
+// with those attendees (from:X OR to:X per attendee), and documents
+// relevant to the meeting's title (reuses the same memory recall the
+// document-search chat route uses). Every attendee not already known is
+// just a dead-end lookup, not an error, so this always returns 200 with
+// best-effort sections rather than failing the whole card over one missing
+// piece — Gmail not being connected, or no attendees being listed, still
+// shows whatever sections it does have data for.
+router.get('/meeting-context', async (req, res) => {
+  try {
+    const userId = req.user.id
+    const attendees = String(req.query.attendees || '')
+      .split(',').map(s => s.trim()).filter(Boolean)
+    const title = String(req.query.title || '').trim()
+
+    const [threadsOutcome, docsOutcome] = await Promise.allSettled([
+      (async () => {
+        if (!attendees.length) return { connected: true, threads: [] }
+        const user = await userStore.getById(userId)
+        if (!user?.preferences?.gmail?.tokens?.refresh_token) return { connected: false, threads: [] }
+        const { searchEmails } = await import('../services/gmail.service.js')
+        const q = attendees.map(email => `(from:${email} OR to:${email})`).join(' OR ')
+        const threads = await searchEmails(user, q, 6)
+        return { connected: true, threads }
+      })(),
+      (async () => {
+        if (!title) return []
+        const { memoryService } = await import('../services/memory.service.js')
+        const results = await memoryService.recall(title, userId, 5)
+        return results
+          .map(r => ({
+            text: String(r.payload?.text || r.payload?.content || '').slice(0, 200),
+            type: r.payload?.type || null,
+          }))
+          .filter(d => d.text)
+      })(),
+    ])
+
+    res.json({
+      attendees,
+      gmailConnected: threadsOutcome.status === 'fulfilled' ? threadsOutcome.value.connected : false,
+      threads: threadsOutcome.status === 'fulfilled' ? threadsOutcome.value.threads : [],
+      docs: docsOutcome.status === 'fulfilled' ? docsOutcome.value : [],
+    })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // POST /api/calendar/meetings/:id/end-call — force-ends the live Meet call
 // for everyone still on it (not just this device). Manual-trigger first:
 // see the UNVERIFIED note on endActiveMeetConference in calendar.service.js
