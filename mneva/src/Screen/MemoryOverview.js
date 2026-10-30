@@ -310,10 +310,6 @@ export default function MemoryOverview({ navigation }) {
                   ))}
                 </View>
               ) : null}
-              <TouchableOpacity style={styles.editProfileBtn} onPress={() => navigation?.navigate?.('AIProfile')} activeOpacity={0.75}>
-                <Text style={styles.editProfileBtnText}>Edit profile</Text>
-                <Feather name="chevron-right" size={15} color={theme.accent} />
-              </TouchableOpacity>
             </View>
 
             {/* AI memories */}
@@ -491,9 +487,6 @@ const createStyles = (theme) => StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   chip: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6 },
   chipText: { fontSize: 12, fontWeight: '600', color: theme.textSecondary },
-
-  editProfileBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: theme.surfaceAlt },
-  editProfileBtnText: { fontSize: 13, fontWeight: '700', color: theme.accent },
 
   rowDivider: { borderBottomWidth: 1, borderBottomColor: theme.border },
 
