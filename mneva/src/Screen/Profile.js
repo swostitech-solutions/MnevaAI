@@ -57,6 +57,14 @@ const SETTINGS_ROWS = [
     screen: "AIProfile",
   },
   {
+    id: "memory",
+    title: "Memory",
+    value: "What Mneva knows about you",
+    icon: "bookmark",
+    iconColor: "#615FF8",
+    screen: "MemoryOverview",
+  },
+  {
     id: "contacts",
     title: "Contacts",
     value: "Google Contacts sync",

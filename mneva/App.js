@@ -53,6 +53,7 @@ import SportsDiscovery from "./src/Screen/SportsDiscovery";
 import NewsDiscovery from "./src/Screen/NewsDiscovery";
 import NewsStory from "./src/Screen/NewsStory";
 import AIProfile from "./src/Screen/AIProfile";
+import MemoryOverview from "./src/Screen/MemoryOverview";
 import Settings from "./src/Screen/Settings";
 import Subscription from "./src/Screen/Subscription";
 import Search from "./src/Screen/Search";
@@ -551,6 +552,7 @@ function AppInner() {
             component={ConnectedAccounts}
           />
           <Stack.Screen name="AIProfile" component={AIProfile} />
+          <Stack.Screen name="MemoryOverview" component={MemoryOverview} />
           <Stack.Screen name="Settings" component={Settings} />
           <Stack.Screen name="Subscription" component={Subscription} />
           <Stack.Screen name="Search" component={Search} />

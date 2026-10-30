@@ -1989,6 +1989,98 @@ dashboardRouter.get("/sidebar-counts", async (req, res) => {
   }
 });
 
+// GET /api/dashboard/memory-overview — everything Mneva knows about the
+// user in one place (Profile → Memory screen): the onboarding profile
+// answers, the free-text aiMemories notes the AI has picked up along the
+// way (synced from family/pet/family-item actions — see onboarding.js,
+// family.js, pet.js, familyItems.js), and a summary count per module across
+// Finance/Health/Family. Deliberately summary-only (count + one headline
+// number per module, not full record lists) — the mobile screen taps
+// through to each module's own existing screen for full detail.
+dashboardRouter.get("/memory-overview", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [
+      profile,
+      loanAgg, emiAgg, subAgg, billCount, fdAgg, portfolioAgg, expenseAgg,
+      familyTaskCount, familyTaskPending, petCount, medCount, familyItemCount,
+      userRow,
+    ] = await Promise.all([
+      prisma.userProfile.findUnique({ where: { userId } }),
+      prisma.loan.aggregate({ where: { userId }, _count: true, _sum: { outstandingAmount: true } }),
+      prisma.emi.aggregate({ where: { userId }, _count: true, _sum: { emiAmount: true } }),
+      prisma.subscription.aggregate({ where: { userId, status: 'Active' }, _count: true, _sum: { amount: true } }),
+      prisma.bill.count({ where: { userId } }),
+      prisma.fixedDeposit.aggregate({ where: { userId }, _count: true, _sum: { principalAmount: true } }),
+      prisma.portfolioHolding.aggregate({ where: { userId }, _count: true, _sum: { currentValue: true } }),
+      prisma.expense.aggregate({ where: { userId, date: { gte: startOfMonth } }, _count: true, _sum: { amount: true } }),
+      prisma.familyTask.count({ where: { OR: [{ creatorId: userId }, { assigneeId: userId }] } }),
+      prisma.familyTask.count({ where: { OR: [{ creatorId: userId }, { assigneeId: userId }], status: 'PENDING_ACCEPTANCE' } }),
+      prisma.pet.count({ where: { userId } }),
+      prisma.parentMedication.count({ where: { userId } }),
+      prisma.familyItem.count({ where: { userId } }),
+      userStore.getById(userId),
+    ]);
+
+    const healthLog = userRow?.preferences?.healthLog || {};
+    const loggedDates = Object.keys(healthLog).sort().reverse();
+    // aiMemories entries always carry updatedAt, but writers disagree on
+    // array order (family.js/pet.js/familyItems.js unshift newest-first,
+    // onboarding.js's /memory route appends instead) — sort by updatedAt
+    // ourselves rather than trusting array position, so this is always
+    // actually newest-first regardless of which writer touched it last.
+    const memories = Array.isArray(profile?.aiMemories)
+      ? [...profile.aiMemories]
+          .sort((a, b) => new Date(b?.updatedAt || 0) - new Date(a?.updatedAt || 0))
+          .slice(0, 30)
+      : [];
+
+    res.json({
+      profile: {
+        nickname: profile?.nickname || null,
+        occupation: profile?.occupation || null,
+        company: profile?.company || null,
+        city: profile?.city || null,
+        country: profile?.country || null,
+        topGoal: profile?.topGoal || null,
+        goals: profile?.goals || [],
+        interests: profile?.interests || [],
+        aiPersonality: profile?.aiPersonality || 'Friendly',
+        memoryEnabled: profile?.enableMemory ?? true,
+        completionPct: profile?.completionPct || 0,
+      },
+      memories,
+      modules: {
+        finance: {
+          loans: { count: loanAgg._count, totalOutstanding: loanAgg._sum.outstandingAmount || 0 },
+          emis: { count: emiAgg._count, totalMonthly: emiAgg._sum.emiAmount || 0 },
+          subscriptions: { count: subAgg._count, totalMonthly: subAgg._sum.amount || 0 },
+          bills: { count: billCount },
+          fixedDeposits: { count: fdAgg._count, totalPrincipal: fdAgg._sum.principalAmount || 0 },
+          portfolioHoldings: { count: portfolioAgg._count, totalValue: portfolioAgg._sum.currentValue || 0 },
+          expenses: { count: expenseAgg._count, totalThisMonth: expenseAgg._sum.amount || 0 },
+        },
+        health: {
+          loggedDays: loggedDates.length,
+          lastLoggedDate: loggedDates[0] || null,
+        },
+        family: {
+          familyTasks: { count: familyTaskCount, pending: familyTaskPending },
+          pets: { count: petCount },
+          parentMedications: { count: medCount },
+          familyItems: { count: familyItemCount },
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 dashboardRouter.get("/stats", async (req, res) => {
   const [actionsTotal, actionsAuto, trustScore] = await Promise.all([
     prisma.agentLedger.count({ where: { userId: req.user.id } }),
