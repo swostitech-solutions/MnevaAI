@@ -199,6 +199,38 @@ const RECORD_RENDERERS = {
   },
 };
 
+// Internal ids/joins that mean nothing to the user if shown raw (a UUID has
+// no on-screen meaning) — left out of the full-detail view below.
+const ID_LIKE_FIELDS = new Set([
+  'id', 'userId', 'creatorId', 'assigneeId', 'connectionId', 'petId', 'pet_id', 'attachmentDocId',
+]);
+
+function prettifyFieldValue(key, value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (Array.isArray(value)) {
+    const clean = value.filter((v) => v !== null && v !== undefined && v !== '');
+    return clean.length ? clean.join(', ') : null;
+  }
+  if (typeof value === 'object') return null; // nested objects (checklist/comments/data) — not generically renderable
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') {
+    return /amount|price|value|fee|premium|balance|outstanding|payable|charged|principal|earned/i.test(key) ? fmtMoney(value) : String(value);
+  }
+  return fmtDate(value) || String(value);
+}
+
+// Every field on a record, label + value, for the "tap a card to see full
+// details" expansion — family_item's actual fields live inside its `data`
+// object (the record itself is just domain/type/done wrapping that), so
+// that one reads from there instead of the record's own top-level keys.
+function fullRecordDetails(record, moduleKey) {
+  const source = moduleKey === 'family_item' && record.data && typeof record.data === 'object' ? record.data : record;
+  return Object.entries(source)
+    .filter(([k]) => !ID_LIKE_FIELDS.has(k))
+    .map(([k, v]) => [titleCase(k), prettifyFieldValue(k, v)])
+    .filter(([, v]) => v !== null);
+}
+
 export default function MemoryOverview({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -237,6 +269,14 @@ export default function MemoryOverview({ navigation }) {
         });
       return prevRecords;
     });
+  }, []);
+
+  // Tapping one record card within an expanded module shows that single
+  // record's full field list — keyed by "rowKey:recordId" so each card
+  // expands independently.
+  const [expandedRecords, setExpandedRecords] = useState({});
+  const toggleRecord = useCallback((fullKey) => {
+    setExpandedRecords((prev) => ({ ...prev, [fullKey]: !prev[fullKey] }));
   }, []);
 
   const loadData = useCallback(async (isRefresh = false) => {
@@ -349,6 +389,7 @@ export default function MemoryOverview({ navigation }) {
                   isLast={idx === FINANCE_ROWS.length - 1}
                   isExpanded={!!expanded[row.key]} isLoading={!!moduleLoading[row.key]}
                   records={moduleRecords[row.key]} onToggle={toggleModule}
+                  expandedRecords={expandedRecords} onToggleRecord={toggleRecord}
                 />
               ))}
             </View>
@@ -365,6 +406,7 @@ export default function MemoryOverview({ navigation }) {
                   isLast={idx === HEALTH_ROWS.length - 1}
                   isExpanded={!!expanded[row.key]} isLoading={!!moduleLoading[row.key]}
                   records={moduleRecords[row.key]} onToggle={toggleModule}
+                  expandedRecords={expandedRecords} onToggleRecord={toggleRecord}
                 />
               ))}
             </View>
@@ -381,6 +423,7 @@ export default function MemoryOverview({ navigation }) {
                   isLast={idx === FAMILY_ROWS.length - 1}
                   isExpanded={!!expanded[row.key]} isLoading={!!moduleLoading[row.key]}
                   records={moduleRecords[row.key]} onToggle={toggleModule}
+                  expandedRecords={expandedRecords} onToggleRecord={toggleRecord}
                 />
               ))}
             </View>
@@ -417,8 +460,10 @@ export default function MemoryOverview({ navigation }) {
 
 // Tapping the row expands it in place — fetches and shows every record for
 // that module, read-only, right here on this screen. No navigation to the
-// real (editable) module screen happens from this page.
-function ModuleRow({ row, modules, styles, theme, isLast, isExpanded, isLoading, records, onToggle }) {
+// real (editable) module screen happens from this page. Tapping one of
+// those record cards expands IT in place too, showing every field on that
+// record (not just the summary line) — still the same card, just taller.
+function ModuleRow({ row, modules, styles, theme, isLast, isExpanded, isLoading, records, onToggle, expandedRecords, onToggleRecord }) {
   const subtitle = modules ? row.value(modules) : '—';
   const renderRecord = RECORD_RENDERERS[row.module];
   return (
@@ -447,12 +492,35 @@ function ModuleRow({ row, modules, styles, theme, isLast, isExpanded, isLoading,
           ) : (
             records.map((rec, idx) => {
               const { title, subtitle: recSubtitle, meta } = renderRecord ? renderRecord(rec) : { title: 'Record', meta: [] };
+              const recordKey = `${row.key}:${rec.id || idx}`;
+              const recordOpen = !!expandedRecords[recordKey];
+              const details = recordOpen ? fullRecordDetails(rec, row.module) : [];
               return (
-                <View key={rec.id || idx} style={styles.recordCard}>
-                  <Text style={styles.recordTitle}>{title}</Text>
-                  {recSubtitle ? <Text style={styles.recordSubtitle}>{recSubtitle}</Text> : null}
-                  {meta && meta.length ? <Text style={styles.recordMeta}>{meta.join(' · ')}</Text> : null}
-                </View>
+                <TouchableOpacity
+                  key={recordKey}
+                  style={styles.recordCard}
+                  activeOpacity={0.75}
+                  onPress={() => onToggleRecord(recordKey)}
+                >
+                  <View style={styles.recordCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.recordTitle}>{title}</Text>
+                      {recSubtitle ? <Text style={styles.recordSubtitle}>{recSubtitle}</Text> : null}
+                      {meta && meta.length ? <Text style={styles.recordMeta}>{meta.join(' · ')}</Text> : null}
+                    </View>
+                    <Feather name={recordOpen ? 'chevron-up' : 'chevron-down'} size={15} color={theme.faint} />
+                  </View>
+                  {recordOpen && (
+                    <View style={styles.recordDetails}>
+                      {details.length ? details.map(([label, value]) => (
+                        <View key={label} style={styles.recordDetailRow}>
+                          <Text style={styles.recordDetailLabel}>{label}</Text>
+                          <Text style={styles.recordDetailValue}>{value}</Text>
+                        </View>
+                      )) : <Text style={styles.emptyHint}>No further details.</Text>}
+                    </View>
+                  )}
+                </TouchableOpacity>
               );
             })
           )}
@@ -504,9 +572,15 @@ const createStyles = (theme) => StyleSheet.create({
 
   recordList: { paddingLeft: 46, paddingBottom: 10, gap: 8 },
   recordCard: { backgroundColor: theme.surfaceAlt, borderRadius: 12, padding: 10 },
+  recordCardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   recordTitle: { fontSize: 13, fontWeight: '700', color: theme.text },
   recordSubtitle: { fontSize: 12, color: theme.textSecondary, marginTop: 2 },
   recordMeta: { fontSize: 11.5, color: theme.faint, marginTop: 4 },
+
+  recordDetails: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border, gap: 6 },
+  recordDetailRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  recordDetailLabel: { fontSize: 12, color: theme.faint, flex: 1 },
+  recordDetailValue: { fontSize: 12, fontWeight: '600', color: theme.textSecondary, flex: 1.2, textAlign: 'right' },
 
   tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center', gap: 4 },
