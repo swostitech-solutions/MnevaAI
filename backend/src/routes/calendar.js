@@ -16,6 +16,23 @@ function hasJoinableMeetingLink(link) {
   return typeof link === 'string' && /^https?:\/\/\S+$/i.test(link.trim())
 }
 
+// "Today" for the wrap-up endpoint below needs to mean the user's actual
+// calendar day, not whatever timezone the server process happens to be
+// running in. Asia/Kolkata has no DST (always a fixed UTC+5:30), so a plain
+// offset is exact here — unlike most timezones, this never needs a real
+// tz library to get right. The app's whole product is India-first (see
+// autonomyEngine.js's "Use Indian context" rule), so this is the one
+// timezone day boundaries are computed in.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+function istDayBounds(daysAgo = 0) {
+  const nowIst = new Date(Date.now() + IST_OFFSET_MS)
+  const y = nowIst.getUTCFullYear(), m = nowIst.getUTCMonth(), d = nowIst.getUTCDate() - daysAgo
+  return {
+    start: new Date(Date.UTC(y, m, d, 0, 0, 0, 0) - IST_OFFSET_MS),
+    end: new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - IST_OFFSET_MS),
+  }
+}
+
 export async function calendarCallbackHandler(req, res) {
   try {
     const { code, state } = req.query
@@ -193,58 +210,64 @@ router.post('/meetings', async (req, res) => {
 })
 
 // GET /api/calendar/meetings — returns scheduled meetings from notifications + live calendar events
+// Pull from notifications (source of truth for meetings and reminders
+// created via Mneva, including locally saved entries when Calendar is not
+// connected). Shared by GET /meetings and the wrap-up endpoint below, so
+// both see the exact same dedup/parse logic instead of two copies drifting
+// apart.
+export async function getMeetingsForUser(userId, { take = 20 } = {}) {
+  const { prisma } = await import('../config/prisma.js')
+  const notifs = await prisma.notification.findMany({
+    where: {
+      userId,
+      OR: [
+        { title: { contains: 'Meeting scheduled' } },
+        { title: '🔔 Reminder set' },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    take,
+  })
+  // A retry can create two identical in-app notification rows. Deduplicate
+  // by the actual scheduled item, not just a Google event id (reminders and
+  // local meetings deliberately have no event id).
+  const itemsBySchedule = new Map();
+  for (const n of notifs) {
+    let parsed = {};
+    try { parsed = JSON.parse(n.message) } catch {}
+    const title = n.title === '🔔 Reminder set'
+      ? (parsed.preview || 'Reminder')
+      : n.title.replace(/^📅 Meeting scheduled: /, '')
+    const key = `${title.trim().toLowerCase()}:${parsed.start || n.createdAt.toISOString()}`;
+    const existing = itemsBySchedule.get(key)
+    // Prefer the original reminder record over the Calendar mirror left by
+    // older app versions, so its category remains correct.
+    if (!existing || parsed.source === 'reminder') itemsBySchedule.set(key, n)
+  }
+  const dedupedNotifs = [...itemsBySchedule.values()];
+  return dedupedNotifs.map(n => {
+    let parsed = {}
+    try { parsed = JSON.parse(n.message) } catch {}
+    return {
+      id: n.id,
+      title: n.title === '🔔 Reminder set' ? (parsed.preview || 'Reminder') : n.title.replace(/^📅 Meeting scheduled: /, ''),
+      kind: parsed.source === 'reminder' || !hasJoinableMeetingLink(parsed.meetLink)
+        ? 'reminder'
+        : 'meeting',
+      start: parsed.start || null,
+      end: parsed.end || null,
+      meetLink: parsed.meetLink || null,
+      description: parsed.description || null,
+      attendees: parsed.attendees || [],
+      eventId: parsed.eventId || null,
+      conferenceId: parsed.conferenceId || null,
+    }
+  }).filter(m => m.start)
+}
+
 router.get('/meetings', async (req, res) => {
   try {
-    const { prisma } = await import('../config/prisma.js')
-    // Pull from notifications (source of truth for meetings and reminders
-    // created via Mneva, including locally saved entries when Calendar is not
-    // connected).
-    const notifs = await prisma.notification.findMany({
-      where: {
-        userId: req.user.id,
-        OR: [
-          { title: { contains: 'Meeting scheduled' } },
-          { title: '🔔 Reminder set' },
-        ],
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    })
-    // A retry can create two identical in-app notification rows. Deduplicate
-    // by the actual scheduled item, not just a Google event id (reminders and
-    // local meetings deliberately have no event id).
-    const itemsBySchedule = new Map();
-    for (const n of notifs) {
-      let parsed = {};
-      try { parsed = JSON.parse(n.message) } catch {}
-      const title = n.title === '🔔 Reminder set'
-        ? (parsed.preview || 'Reminder')
-        : n.title.replace(/^📅 Meeting scheduled: /, '')
-      const key = `${title.trim().toLowerCase()}:${parsed.start || n.createdAt.toISOString()}`;
-      const existing = itemsBySchedule.get(key)
-      // Prefer the original reminder record over the Calendar mirror left by
-      // older app versions, so its category remains correct.
-      if (!existing || parsed.source === 'reminder') itemsBySchedule.set(key, n)
-    }
-    const dedupedNotifs = [...itemsBySchedule.values()];
-    const meetings = dedupedNotifs.map(n => {
-      let parsed = {}
-      try { parsed = JSON.parse(n.message) } catch {}
-      return {
-        id: n.id,
-        title: n.title === '🔔 Reminder set' ? (parsed.preview || 'Reminder') : n.title.replace(/^📅 Meeting scheduled: /, ''),
-        kind: parsed.source === 'reminder' || !hasJoinableMeetingLink(parsed.meetLink)
-          ? 'reminder'
-          : 'meeting',
-        start: parsed.start || null,
-        end: parsed.end || null,
-        meetLink: parsed.meetLink || null,
-        description: parsed.description || null,
-        attendees: parsed.attendees || [],
-        eventId: parsed.eventId || null,
-        conferenceId: parsed.conferenceId || null,
-      }
-    }).filter(m => m.start)
+    const meetings = await getMeetingsForUser(req.user.id)
     res.json(meetings)
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -294,6 +317,73 @@ router.get('/meeting-context', async (req, res) => {
       gmailConnected: threadsOutcome.status === 'fulfilled' ? threadsOutcome.value.connected : false,
       threads: threadsOutcome.status === 'fulfilled' ? threadsOutcome.value.threads : [],
       docs: docsOutcome.status === 'fulfilled' ? docsOutcome.value : [],
+    })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// GET /api/calendar/wrapup?period=day|week — Priorities' "end-of-day
+// wrap-up" / "weekly review" card: a short, computed (no AI call needed)
+// summary of what got done vs what's still carrying over, from the exact
+// same Task + meeting/reminder data Priorities.js already tracks
+// client-side (status, the meeting_done:/meeting_cancelled: sentinel task
+// rows) — just aggregated here instead of per-render on the client.
+router.get('/wrapup', async (req, res) => {
+  try {
+    const userId = req.user.id
+    const period = req.query.period === 'week' ? 'week' : 'day'
+    const todayBounds = istDayBounds(0)
+    const rangeStart = period === 'week' ? istDayBounds(6).start : todayBounds.start
+    const rangeEnd = todayBounds.end
+
+    const [tasksInRange, doneMarkers, cancelledMarkers, meetings] = await Promise.all([
+      prisma.task.findMany({ where: { userId, createdAt: { gte: rangeStart, lte: rangeEnd } } }),
+      prisma.task.findMany({ where: { userId, title: { startsWith: 'meeting_done:' } } }),
+      prisma.task.findMany({ where: { userId, title: { startsWith: 'meeting_cancelled:' } } }),
+      getMeetingsForUser(userId, { take: 100 }),
+    ])
+
+    const doneMeetingIds = new Set(doneMarkers.map(t => t.title.replace('meeting_done:', '')))
+    const cancelledMeetingIds = new Set(cancelledMarkers.map(t => t.title.replace('meeting_cancelled:', '')))
+
+    // Real freeform tasks only — the meeting_done:/meeting_cancelled:
+    // sentinel rows and the reminder/meeting "shadow" task rows (same
+    // exclusion Priorities.js's own pendingTasks uses) aren't things the
+    // user actually typed as a task.
+    const realTasks = tasksInRange.filter(t =>
+      !/^meeting_(done|cancelled):/i.test(t.title) &&
+      !/^(Reminder|Meeting) ·/i.test(t.description || '')
+    )
+    const tasksDone = realTasks.filter(t => t.status === 'COMPLETED')
+    const tasksCarrying = realTasks.filter(t => t.status !== 'COMPLETED')
+
+    const meetingsInRange = meetings.filter(m => {
+      const t = new Date(m.start).getTime()
+      return t >= rangeStart.getTime() && t <= rangeEnd.getTime()
+    })
+    const now = Date.now()
+    const meetingsDone = meetingsInRange.filter(m => doneMeetingIds.has(m.id) || cancelledMeetingIds.has(m.id))
+    // "Carrying over" only applies to something still ahead that hasn't
+    // been marked done/cancelled — a past one nobody confirmed yet is
+    // "awaiting confirmation" (Priorities.js's own separate state), not
+    // something to list as carrying into the next day/week.
+    const meetingsCarrying = meetingsInRange.filter(m =>
+      !doneMeetingIds.has(m.id) && !cancelledMeetingIds.has(m.id) && new Date(m.start).getTime() >= now
+    )
+
+    res.json({
+      period,
+      rangeStart: rangeStart.toISOString(),
+      rangeEnd: rangeEnd.toISOString(),
+      completed: {
+        count: tasksDone.length + meetingsDone.length,
+        tasks: tasksDone.map(t => t.title),
+        meetings: meetingsDone.map(m => m.title),
+      },
+      carryingOver: {
+        count: tasksCarrying.length + meetingsCarrying.length,
+        tasks: tasksCarrying.map(t => t.title),
+        meetings: meetingsCarrying.map(m => m.title),
+      },
     })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

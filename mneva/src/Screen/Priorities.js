@@ -396,6 +396,90 @@ function MeetingCard({ m, done, confirmedPending, onCheck, onCancel, onConfirmPe
   );
 }
 
+// End-of-day wrap-up / weekly review — a short, computed summary of what
+// got done and what's carrying over. Defaults open on weekday evenings
+// (6 PM+) and weekends (where it defaults to the weekly view instead), but
+// stays reachable as a collapsed pill the rest of the time by tapping it —
+// "auto-show in the evening" and "manual access anytime" are the same card,
+// just a different default open/closed state.
+function WrapupCard({ styles, theme }) {
+  const now = new Date();
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  const isEvening = now.getHours() >= 18;
+  const [period, setPeriod] = useState(isWeekend ? 'week' : 'day');
+  const [open, setOpen] = useState(isWeekend || isEvening);
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState({});
+
+  const load = useCallback((p) => {
+    if (data[p] || loading[p]) return;
+    setLoading((prev) => ({ ...prev, [p]: true }));
+    apiFetch(`/api/calendar/wrapup?period=${p}`)
+      .then((res) => setData((prev) => ({ ...prev, [p]: res })))
+      .catch(() => setData((prev) => ({ ...prev, [p]: { completed: { count: 0, tasks: [], meetings: [] }, carryingOver: { count: 0, tasks: [], meetings: [] } } })))
+      .finally(() => setLoading((prev) => ({ ...prev, [p]: false })));
+  }, [data, loading]);
+
+  useEffect(() => { if (open) load(period); }, [open, period, load]);
+
+  const current = data[period];
+  const completedItems = current ? [...current.completed.tasks, ...current.completed.meetings] : [];
+  const carryingItems = current ? [...current.carryingOver.tasks, ...current.carryingOver.meetings] : [];
+
+  return (
+    <View style={styles.wrapupCard}>
+      <TouchableOpacity style={styles.wrapupHeader} activeOpacity={0.7} onPress={() => setOpen((prev) => !prev)}>
+        <View style={styles.wrapupIconWrap}>
+          <Feather name="sunset" size={15} color={theme.accentAlt} />
+        </View>
+        <Text style={styles.wrapupTitle}>{period === 'week' ? "This Week's Review" : "Today's Wrap-up"}</Text>
+        <View style={{ flex: 1 }} />
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={18} color={theme.disabled} />
+      </TouchableOpacity>
+
+      {open && (
+        <View style={styles.wrapupBody}>
+          <View style={styles.wrapupChipRow}>
+            <TouchableOpacity
+              style={[styles.wrapupChip, period === 'day' && styles.wrapupChipActive]}
+              onPress={() => setPeriod('day')}
+            >
+              <Text style={[styles.wrapupChipText, period === 'day' && styles.wrapupChipTextActive]}>Today</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.wrapupChip, period === 'week' && styles.wrapupChipActive]}
+              onPress={() => setPeriod('week')}
+            >
+              <Text style={[styles.wrapupChipText, period === 'week' && styles.wrapupChipTextActive]}>This Week</Text>
+            </TouchableOpacity>
+          </View>
+
+          {loading[period] || !current ? (
+            <Text style={styles.wrapupEmpty}>Loading…</Text>
+          ) : completedItems.length === 0 && carryingItems.length === 0 ? (
+            <Text style={styles.wrapupEmpty}>Nothing tracked yet for {period === 'week' ? 'this week' : 'today'}.</Text>
+          ) : (
+            <>
+              <View style={styles.wrapupSection}>
+                <Text style={styles.wrapupSectionLabel}>✅ COMPLETED ({current.completed.count})</Text>
+                {completedItems.length ? completedItems.slice(0, 6).map((title, idx) => (
+                  <Text key={idx} style={styles.wrapupItem} numberOfLines={1}>• {title}</Text>
+                )) : <Text style={styles.wrapupEmpty}>Nothing completed yet.</Text>}
+              </View>
+              <View style={styles.wrapupSection}>
+                <Text style={styles.wrapupSectionLabel}>↻ CARRYING OVER ({current.carryingOver.count})</Text>
+                {carryingItems.length ? carryingItems.slice(0, 6).map((title, idx) => (
+                  <Text key={idx} style={styles.wrapupItem} numberOfLines={1}>• {title}</Text>
+                )) : <Text style={styles.wrapupEmpty}>Nothing carrying over — all clear!</Text>}
+              </View>
+            </>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function Priorities({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -827,6 +911,7 @@ export default function Priorities({ navigation }) {
             {/* TODAY tab */}
             {activeTab === "TODAY" && (
               <>
+                <WrapupCard styles={styles} theme={theme} />
                 {pendingTasks.length === 0 && todayReminders.length === 0 && urgentEmails.length === 0 && suggestedMeetings.length === 0 && autoToday.length === 0 && (
                   <View style={styles.emptyWrap}>
                     <Feather name="check-circle" size={28} color={theme.disabled} />
@@ -1104,6 +1189,22 @@ const createStyles = (theme) => StyleSheet.create({
   // Section pill (replaces the old plain-text divider)
   sectionPill: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 12, marginTop: 6 },
   sectionPillText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
+
+  // End-of-day wrap-up / weekly review card
+  wrapupCard: { backgroundColor: theme.card, borderRadius: 16, borderWidth: 1, borderColor: theme.border, marginBottom: 14, overflow: "hidden" },
+  wrapupHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 13 },
+  wrapupIconWrap: { width: 28, height: 28, borderRadius: 9, backgroundColor: theme.isDark ? "rgba(129,128,255,0.16)" : "#EEEDFE", alignItems: "center", justifyContent: "center" },
+  wrapupTitle: { fontSize: 14, fontWeight: "700", color: theme.text },
+  wrapupBody: { paddingHorizontal: 14, paddingBottom: 14, gap: 12 },
+  wrapupChipRow: { flexDirection: "row", gap: 8 },
+  wrapupChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: theme.surfaceAlt },
+  wrapupChipActive: { backgroundColor: theme.accent },
+  wrapupChipText: { fontSize: 12, fontWeight: "700", color: theme.muted },
+  wrapupChipTextActive: { color: "#FFFFFF" },
+  wrapupSection: { gap: 3 },
+  wrapupSectionLabel: { fontSize: 11, fontWeight: "800", color: theme.faint, letterSpacing: 0.4, marginBottom: 2 },
+  wrapupItem: { fontSize: 12.5, color: theme.textSecondary, lineHeight: 18 },
+  wrapupEmpty: { fontSize: 12.5, color: theme.faint, fontStyle: "italic" },
 
   // Meeting card — same row layout as task card
   meetCard: {
