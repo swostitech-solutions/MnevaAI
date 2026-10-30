@@ -2081,6 +2081,44 @@ dashboardRouter.get("/memory-overview", async (req, res) => {
   }
 });
 
+// GET /api/dashboard/memory-overview/records?module=loan — the Memory
+// screen's "tap a row to expand in place" detail view. Reuses the exact
+// same listRecords() the AI's list_records tool calls (routes the request
+// through the real module route handler via callRoute), so what's shown
+// here is always identical to what that module's own screen would show —
+// just read-only, no edit/delete wired up. family_item has no single
+// module-wide list — list_records needs one family_domain at a time — so
+// with no family_domain given this fetches and merges all four domains.
+dashboardRouter.get("/memory-overview/records", async (req, res) => {
+  try {
+    const { listRecords } = await import("../services/recordOps.js");
+    const userId = req.user.id;
+    const moduleName = req.query.module;
+    if (!moduleName) return res.status(400).json({ error: "module is required" });
+
+    if (moduleName === "family_item" && !req.query.family_domain) {
+      const domains = ["children", "home", "celebration", "calendar"];
+      const results = await Promise.all(
+        domains.map((family_domain) => listRecords(userId, { module: "family_item", family_domain }))
+      );
+      const records = results.flatMap((r, i) =>
+        (r.records || []).map((rec) => ({ ...rec, family_domain: domains[i] }))
+      );
+      return res.json({ success: true, module: moduleName, count: records.length, records });
+    }
+
+    const result = await listRecords(userId, {
+      module: moduleName,
+      family_domain: req.query.family_domain,
+      pet_id: req.query.pet_id,
+    });
+    if (!result.success) return res.status(400).json(result);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 dashboardRouter.get("/stats", async (req, res) => {
   const [actionsTotal, actionsAuto, trustScore] = await Promise.all([
     prisma.agentLedger.count({ where: { userId: req.user.id } }),

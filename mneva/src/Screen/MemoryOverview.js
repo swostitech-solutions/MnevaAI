@@ -19,68 +19,185 @@ const fmtDate = (d) => {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const titleCase = (s) => String(s || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 // Row definitions per module — value() reads from the /api/dashboard/
-// memory-overview response and returns the subtitle line; screen is where
-// tapping the row navigates (the real module screen with full detail,
-// since this page is a summary-only overview, not a second place to edit
-// the same data).
+// memory-overview summary response for the collapsed subtitle; module is
+// the recordOps.js MODULES key, used to fetch full read-only detail inline
+// (see RECORD_RENDERERS below) when the row is tapped to expand — no
+// navigation to the real edit screens happens from this page.
 const FINANCE_ROWS = [
   {
-    key: 'loans', label: 'Loans', icon: 'briefcase', color: '#4FA6E8', screen: 'LoanScreen',
+    key: 'loans', label: 'Loans', icon: 'briefcase', color: '#4FA6E8', module: 'loan',
     value: (m) => m.loans.count ? `${plural(m.loans.count, 'loan')} · ${fmtMoney(m.loans.totalOutstanding)} outstanding` : 'No loans added',
   },
   {
-    key: 'emis', label: 'EMIs', icon: 'credit-card', color: '#F5A623', screen: 'EmiScreen',
+    key: 'emis', label: 'EMIs', icon: 'credit-card', color: '#F5A623', module: 'emi',
     value: (m) => m.emis.count ? `${plural(m.emis.count, 'EMI')} · ${fmtMoney(m.emis.totalMonthly)}/month` : 'No EMIs added',
   },
   {
-    key: 'subscriptions', label: 'Subscriptions', icon: 'repeat', color: '#9B72FF', screen: 'SubscriptionScreen',
+    key: 'subscriptions', label: 'Subscriptions', icon: 'repeat', color: '#9B72FF', module: 'subscription',
     value: (m) => m.subscriptions.count ? `${plural(m.subscriptions.count, 'active')} · ${fmtMoney(m.subscriptions.totalMonthly)}/month` : 'No active subscriptions',
   },
   {
-    key: 'bills', label: 'Bills', icon: 'file-text', color: '#E0546E', screen: 'BillScreen',
+    key: 'bills', label: 'Bills', icon: 'file-text', color: '#E0546E', module: 'bill',
     value: (m) => m.bills.count ? plural(m.bills.count, 'bill') + ' tracked' : 'No bills added',
   },
   {
-    key: 'fixedDeposits', label: 'Fixed Deposits', icon: 'lock', color: '#06B6D4', screen: 'FDScreen',
+    key: 'fixedDeposits', label: 'Fixed Deposits', icon: 'lock', color: '#06B6D4', module: 'fixed_deposit',
     value: (m) => m.fixedDeposits.count ? `${plural(m.fixedDeposits.count, 'FD')} · ${fmtMoney(m.fixedDeposits.totalPrincipal)} invested` : 'No fixed deposits added',
   },
   {
-    key: 'portfolioHoldings', label: 'Portfolio', icon: 'trending-up', color: '#615FF8', screen: 'PortfolioScreen',
+    key: 'portfolioHoldings', label: 'Portfolio', icon: 'trending-up', color: '#615FF8', module: 'portfolio_holding',
     value: (m) => m.portfolioHoldings.count ? `${plural(m.portfolioHoldings.count, 'holding')} · ${fmtMoney(m.portfolioHoldings.totalValue)} value` : 'No holdings added',
   },
   {
-    key: 'expenses', label: 'Expenses', icon: 'shopping-bag', color: '#1F9A5A', screen: 'ExpenseScreen',
+    key: 'expenses', label: 'Expenses', icon: 'shopping-bag', color: '#1F9A5A', module: 'expense',
     value: (m) => m.expenses.count ? `${plural(m.expenses.count, 'expense')} this month · ${fmtMoney(m.expenses.totalThisMonth)} spent` : 'No expenses logged this month',
   },
 ];
 
 const HEALTH_ROWS = [
   {
-    key: 'healthLog', label: 'Health Log', icon: 'activity', color: '#E0546E', screen: 'Health',
+    key: 'healthLog', label: 'Health Log', icon: 'activity', color: '#E0546E', module: 'health_log',
     value: (m) => m.loggedDays ? `${plural(m.loggedDays, 'day')} logged · last on ${fmtDate(m.lastLoggedDate)}` : 'No health data logged yet',
   },
 ];
 
 const FAMILY_ROWS = [
   {
-    key: 'familyTasks', label: 'Family Tasks', icon: 'check-square', color: '#1F9A5A', screen: 'FamilyTasks',
+    key: 'familyTasks', label: 'Family Tasks', icon: 'check-square', color: '#1F9A5A', module: 'family_task',
     value: (m) => m.familyTasks.count ? `${plural(m.familyTasks.count, 'task')}${m.familyTasks.pending ? ` · ${m.familyTasks.pending} pending` : ''}` : 'No family tasks yet',
   },
   {
-    key: 'pets', label: 'Pet Care', icon: 'heart', color: '#F5A623', screen: 'PetCare',
+    key: 'pets', label: 'Pet Care', icon: 'heart', color: '#F5A623', module: 'pet',
     value: (m) => m.pets.count ? plural(m.pets.count, 'pet') + ' tracked' : 'No pets added',
   },
   {
-    key: 'parentMedications', label: 'Parent Medication', icon: 'activity', color: '#E0546E', screen: 'ParentMedication',
+    key: 'parentMedications', label: 'Parent Medication', icon: 'activity', color: '#E0546E', module: 'parent_medication',
     value: (m) => m.parentMedications.count ? plural(m.parentMedications.count, 'medication') + ' tracked' : 'No medications added',
   },
   {
-    key: 'familyItems', label: 'Home, Kids & Celebrations', icon: 'grid', color: '#9B72FF', screen: 'Family',
+    key: 'familyItems', label: 'Home, Kids & Celebrations', icon: 'grid', color: '#9B72FF', module: 'family_item',
     value: (m) => m.familyItems.count ? plural(m.familyItems.count, 'item') + ' saved' : 'No items added',
   },
 ];
+
+// Turns one raw record (exactly what the real module screen would show —
+// listRecords() runs the same route handler) into a small read-only card:
+// a title, an optional subtitle, and up to a few meta lines.
+const RECORD_RENDERERS = {
+  loan: (r) => ({
+    title: r.name || 'Loan',
+    subtitle: [r.loanType, r.lenderName].filter(Boolean).join(' · '),
+    meta: [
+      r.outstandingAmount != null && `Outstanding: ${fmtMoney(r.outstandingAmount)}`,
+      r.status && `Status: ${r.status}`,
+      fmtDate(r.nextEmiDate) && `Next EMI: ${fmtDate(r.nextEmiDate)}`,
+    ].filter(Boolean),
+  }),
+  emi: (r) => ({
+    title: r.name || 'EMI',
+    subtitle: [r.emiType, r.provider].filter(Boolean).join(' · '),
+    meta: [
+      r.emiAmount != null && `${fmtMoney(r.emiAmount)}/month`,
+      (r.installmentsPaid != null && r.numberOfInstallments != null) && `${r.installmentsPaid}/${r.numberOfInstallments} paid`,
+      fmtDate(r.nextPaymentDate) && `Next: ${fmtDate(r.nextPaymentDate)}`,
+    ].filter(Boolean),
+  }),
+  subscription: (r) => ({
+    title: r.name || 'Subscription',
+    subtitle: r.category,
+    meta: [
+      r.amount != null && `${fmtMoney(r.amount)}/${String(r.billingCycle || 'month').toLowerCase()}`,
+      r.status && `Status: ${r.status}`,
+      fmtDate(r.nextBillingDate) && `Next billing: ${fmtDate(r.nextBillingDate)}`,
+    ].filter(Boolean),
+  }),
+  bill: (r) => ({
+    title: r.name || 'Bill',
+    subtitle: r.category,
+    meta: [
+      (r.expectedAmount ?? r.lastBillAmount) != null && fmtMoney(r.expectedAmount ?? r.lastBillAmount),
+      fmtDate(r.dueDate) && `Due: ${fmtDate(r.dueDate)}`,
+      r.status && `Status: ${r.status}`,
+    ].filter(Boolean),
+  }),
+  fixed_deposit: (r) => ({
+    title: r.name || 'Fixed Deposit',
+    subtitle: r.bankName,
+    meta: [
+      r.principalAmount != null && `Principal: ${fmtMoney(r.principalAmount)}`,
+      fmtDate(r.maturityDate) && `Matures: ${fmtDate(r.maturityDate)}`,
+      r.status && `Status: ${r.status}`,
+    ].filter(Boolean),
+  }),
+  portfolio_holding: (r) => ({
+    title: r.name || 'Holding',
+    subtitle: [r.type, r.platform].filter(Boolean).join(' · '),
+    meta: [
+      r.currentValue != null && `Value: ${fmtMoney(r.currentValue)}`,
+      r.investedAmount != null && `Invested: ${fmtMoney(r.investedAmount)}`,
+    ].filter(Boolean),
+  }),
+  expense: (r) => ({
+    title: r.name || r.category || 'Expense',
+    subtitle: (r.name && r.category) ? r.category : null,
+    meta: [
+      r.amount != null && fmtMoney(r.amount),
+      r.paymentMethod,
+      fmtDate(r.date) && fmtDate(r.date),
+    ].filter(Boolean),
+  }),
+  health_log: (r) => {
+    const meta = [
+      r.steps != null && `${r.steps} steps`,
+      r.weight != null && `${r.weight} kg`,
+      r.sleep != null && `${r.sleep}h sleep`,
+      r.heartRate != null && `${r.heartRate} bpm`,
+      r.calories != null && `${r.calories} kcal`,
+    ].filter(Boolean);
+    return { title: fmtDate(r.date) || r.date, subtitle: null, meta: meta.length ? meta : ['No details logged'] };
+  },
+  family_task: (r) => ({
+    title: r.title || 'Task',
+    subtitle: r.category,
+    meta: [
+      r.status && `Status: ${titleCase(r.status)}`,
+      r.priority && `Priority: ${r.priority}`,
+      r.dueDate && `Due: ${r.dueDate}`,
+    ].filter(Boolean),
+  }),
+  pet: (r) => ({
+    title: r.name || 'Pet',
+    subtitle: [r.species, r.breed].filter(Boolean).join(' · '),
+    meta: [
+      r.sex && `Sex: ${r.sex}`,
+      r.weight != null && `Weight: ${r.weight}`,
+    ].filter(Boolean),
+  }),
+  parent_medication: (r) => ({
+    title: r.medName || 'Medication',
+    subtitle: [r.parent, r.dosage].filter(Boolean).join(' · '),
+    meta: [
+      r.frequency && `Frequency: ${r.frequency}`,
+      r.refillDate && `Refill: ${r.refillDate}`,
+      r.doctor && `Doctor: ${r.doctor}`,
+    ].filter(Boolean),
+  }),
+  family_item: (r) => {
+    const data = r.data && typeof r.data === 'object' ? r.data : {};
+    const meta = Object.entries(data)
+      .filter(([, v]) => v !== null && v !== undefined && v !== '')
+      .slice(0, 4)
+      .map(([k, v]) => `${titleCase(k)}: ${Array.isArray(v) ? v.join(', ') : v}`);
+    return {
+      title: titleCase(r.type) || 'Item',
+      subtitle: r.family_domain ? titleCase(r.family_domain) : null,
+      meta,
+    };
+  },
+};
 
 export default function MemoryOverview({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -94,6 +211,33 @@ export default function MemoryOverview({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAllMemories, setShowAllMemories] = useState(false);
+  // Inline expand state for module rows — tapping a row shows its full,
+  // read-only record list right here instead of navigating to the real
+  // (editable) module screen. Keyed by row.key; records/loading are fetched
+  // lazily on first expand and cached for the rest of this screen's life.
+  const [expanded, setExpanded] = useState({});
+  const [moduleRecords, setModuleRecords] = useState({});
+  const [moduleLoading, setModuleLoading] = useState({});
+
+  const toggleModule = useCallback(async (row) => {
+    const key = row.key;
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+    setModuleRecords((prevRecords) => {
+      if (prevRecords[key] !== undefined) return prevRecords;
+      setModuleLoading((prev) => ({ ...prev, [key]: true }));
+      apiFetch(`/api/dashboard/memory-overview/records?module=${row.module}`)
+        .then((res) => {
+          setModuleRecords((prev) => ({ ...prev, [key]: Array.isArray(res?.records) ? res.records : [] }));
+        })
+        .catch(() => {
+          setModuleRecords((prev) => ({ ...prev, [key]: [] }));
+        })
+        .finally(() => {
+          setModuleLoading((prev) => ({ ...prev, [key]: false }));
+        });
+      return prevRecords;
+    });
+  }, []);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -204,7 +348,12 @@ export default function MemoryOverview({ navigation }) {
                 <Text style={styles.cardTitle}>Finance</Text>
               </View>
               {FINANCE_ROWS.map((row, idx) => (
-                <ModuleRow key={row.key} row={row} modules={modules?.finance} navigation={navigation} styles={styles} theme={theme} isLast={idx === FINANCE_ROWS.length - 1} />
+                <ModuleRow
+                  key={row.key} row={row} modules={modules?.finance} styles={styles} theme={theme}
+                  isLast={idx === FINANCE_ROWS.length - 1}
+                  isExpanded={!!expanded[row.key]} isLoading={!!moduleLoading[row.key]}
+                  records={moduleRecords[row.key]} onToggle={toggleModule}
+                />
               ))}
             </View>
 
@@ -215,7 +364,12 @@ export default function MemoryOverview({ navigation }) {
                 <Text style={styles.cardTitle}>Health</Text>
               </View>
               {HEALTH_ROWS.map((row, idx) => (
-                <ModuleRow key={row.key} row={row} modules={modules?.health} navigation={navigation} styles={styles} theme={theme} isLast={idx === HEALTH_ROWS.length - 1} />
+                <ModuleRow
+                  key={row.key} row={row} modules={modules?.health} styles={styles} theme={theme}
+                  isLast={idx === HEALTH_ROWS.length - 1}
+                  isExpanded={!!expanded[row.key]} isLoading={!!moduleLoading[row.key]}
+                  records={moduleRecords[row.key]} onToggle={toggleModule}
+                />
               ))}
             </View>
 
@@ -226,7 +380,12 @@ export default function MemoryOverview({ navigation }) {
                 <Text style={styles.cardTitle}>Family</Text>
               </View>
               {FAMILY_ROWS.map((row, idx) => (
-                <ModuleRow key={row.key} row={row} modules={modules?.family} navigation={navigation} styles={styles} theme={theme} isLast={idx === FAMILY_ROWS.length - 1} />
+                <ModuleRow
+                  key={row.key} row={row} modules={modules?.family} styles={styles} theme={theme}
+                  isLast={idx === FAMILY_ROWS.length - 1}
+                  isExpanded={!!expanded[row.key]} isLoading={!!moduleLoading[row.key]}
+                  records={moduleRecords[row.key]} onToggle={toggleModule}
+                />
               ))}
             </View>
           </>
@@ -260,23 +419,50 @@ export default function MemoryOverview({ navigation }) {
   );
 }
 
-function ModuleRow({ row, modules, navigation, styles, theme, isLast }) {
+// Tapping the row expands it in place — fetches and shows every record for
+// that module, read-only, right here on this screen. No navigation to the
+// real (editable) module screen happens from this page.
+function ModuleRow({ row, modules, styles, theme, isLast, isExpanded, isLoading, records, onToggle }) {
   const subtitle = modules ? row.value(modules) : '—';
+  const renderRecord = RECORD_RENDERERS[row.module];
   return (
-    <TouchableOpacity
-      style={[styles.moduleRow, !isLast && styles.rowDivider]}
-      activeOpacity={0.7}
-      onPress={() => navigation?.navigate?.(row.screen)}
-    >
-      <View style={[styles.moduleIconWrap, { backgroundColor: `${row.color}1A` }]}>
-        <Feather name={row.icon} size={16} color={row.color} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.moduleLabel}>{row.label}</Text>
-        <Text style={styles.moduleValue} numberOfLines={1}>{subtitle}</Text>
-      </View>
-      <Feather name="chevron-right" size={18} color={theme.disabled} />
-    </TouchableOpacity>
+    <View style={!isLast && !isExpanded && styles.rowDivider}>
+      <TouchableOpacity
+        style={styles.moduleRow}
+        activeOpacity={0.7}
+        onPress={() => onToggle(row)}
+      >
+        <View style={[styles.moduleIconWrap, { backgroundColor: `${row.color}1A` }]}>
+          <Feather name={row.icon} size={16} color={row.color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.moduleLabel}>{row.label}</Text>
+          <Text style={styles.moduleValue} numberOfLines={1}>{subtitle}</Text>
+        </View>
+        <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={theme.disabled} />
+      </TouchableOpacity>
+
+      {isExpanded && (
+        <View style={[styles.recordList, !isLast && styles.rowDivider]}>
+          {isLoading ? (
+            <Text style={styles.emptyHint}>Loading…</Text>
+          ) : !records || !records.length ? (
+            <Text style={styles.emptyHint}>Nothing saved here yet.</Text>
+          ) : (
+            records.map((rec, idx) => {
+              const { title, subtitle: recSubtitle, meta } = renderRecord ? renderRecord(rec) : { title: 'Record', meta: [] };
+              return (
+                <View key={rec.id || idx} style={styles.recordCard}>
+                  <Text style={styles.recordTitle}>{title}</Text>
+                  {recSubtitle ? <Text style={styles.recordSubtitle}>{recSubtitle}</Text> : null}
+                  {meta && meta.length ? <Text style={styles.recordMeta}>{meta.join(' · ')}</Text> : null}
+                </View>
+              );
+            })
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -322,6 +508,12 @@ const createStyles = (theme) => StyleSheet.create({
   moduleIconWrap: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   moduleLabel: { fontSize: 13.5, fontWeight: '700', color: theme.text },
   moduleValue: { fontSize: 12, color: theme.faint, marginTop: 2 },
+
+  recordList: { paddingLeft: 46, paddingBottom: 10, gap: 8 },
+  recordCard: { backgroundColor: theme.surfaceAlt, borderRadius: 12, padding: 10 },
+  recordTitle: { fontSize: 13, fontWeight: '700', color: theme.text },
+  recordSubtitle: { fontSize: 12, color: theme.textSecondary, marginTop: 2 },
+  recordMeta: { fontSize: 11.5, color: theme.faint, marginTop: 4 },
 
   tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center', gap: 4 },
