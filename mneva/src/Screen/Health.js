@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, useWindowDimensions, Modal, TextInput,
   TouchableWithoutFeedback, KeyboardAvoidingView, Platform,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, findNodeHandle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -154,6 +154,15 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  // A plain ScrollView never scrolls the focused TextInput above the
+  // keyboard on its own (that auto-behavior only exists on iOS, and even
+  // there it's unreliable once KeyboardAvoidingView is also resizing the
+  // container) — so on Android especially, whichever field the user taps
+  // was ending up hidden behind the keyboard with no way to see what they
+  // were typing. Measuring the field's own position and scrolling it into
+  // view on focus fixes that on both platforms.
+  const scrollRef = useRef(null);
+  const fieldRefs = useRef({});
 
   useEffect(() => {
     if (!visible) return;
@@ -276,6 +285,22 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   const cat = LOG_CATEGORIES.find(c => c.key === activeTab);
   const fields = CATEGORY_FIELDS[activeTab] || [];
 
+  // Delay lets the keyboard's open animation (and KeyboardAvoidingView's
+  // resulting resize) actually start first, so the measured position
+  // reflects the post-keyboard layout instead of the pre-keyboard one.
+  const scrollFieldIntoView = (key) => {
+    setTimeout(() => {
+      const node = fieldRefs.current[key];
+      const scrollHandle = findNodeHandle(scrollRef.current);
+      if (!node || !scrollHandle) return;
+      node.measureLayout(
+        scrollHandle,
+        (_x, y) => scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true }),
+        () => {},
+      );
+    }, 120);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
@@ -314,10 +339,10 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
               typed into can always be scrolled into view above the
               keyboard, instead of the whole sheet just getting squeezed by
               KeyboardAvoidingView with no way to reach what's cut off. */}
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.syncGrid}>
               {fields.map(({ key, label, unit, keyboard }) => (
-                <View key={key} style={styles.syncField}>
+                <View key={key} ref={el => { fieldRefs.current[key] = el; }} style={styles.syncField}>
                   <View style={styles.syncFieldLabel}>
                     <Text style={[styles.syncFieldLabelText, { color: cat.color }]}>{label}</Text>
                   </View>
@@ -329,6 +354,7 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
                       keyboardType={keyboard}
                       value={form[key] || ''}
                       onChangeText={v => set(key, v)}
+                      onFocus={() => scrollFieldIntoView(key)}
                     />
                     {!!unit && <Text style={styles.syncUnit}>{unit}</Text>}
                   </View>
