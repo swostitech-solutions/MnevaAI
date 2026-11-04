@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated, Platform,
+  Linking, ActivityIndicator, useWindowDimensions, RefreshControl, Animated, Platform, Alert,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -781,11 +781,29 @@ export default function Priorities({ navigation }) {
     }, 800);
   };
 
-  const handleCheckTask = async (task) => {
-    const newStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED";
+  const setTaskStatus = async (task, newStatus) => {
+    if (task.status === newStatus) return;
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
     try { await apiFetch(`/api/tasks/${task.id}`, { method: "PATCH", body: { status: newStatus } }); }
     catch { setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: task.status } : t)); }
+  };
+
+  // Tapping the radio circle used to toggle Pending<->Completed directly —
+  // one tap and it was already in Today's Wrap-up with no way to catch a
+  // mis-tap. Now it opens a small Pending/Completed picker instead, so
+  // marking something done is a deliberate choice, not a side effect of the
+  // tap landing on the circle.
+  const handleCheckTask = (task) => {
+    Alert.alert(
+      task.title,
+      'Mark this task as:',
+      [
+        { text: 'Pending', onPress: () => setTaskStatus(task, 'PENDING') },
+        { text: 'Completed', onPress: () => setTaskStatus(task, 'COMPLETED') },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true },
+    );
   };
 
   const handleCheckMeeting = async (m) => {
