@@ -37,6 +37,7 @@ export default function OneDriveScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [connected, setConnected]   = useState(null);
   const [filter, setFilter]         = useState('all');
+  const [loadError, setLoadError]   = useState(null);
 
   const hasRealDataRef = useRef(false);
 
@@ -54,7 +55,11 @@ export default function OneDriveScreen({ navigation }) {
       const res = await apiFetch(`/api/outlook/files?type=${type}`);
       hasRealDataRef.current = true;
       setFiles(res.files || []);
-    } catch { setFiles([]); }
+      setLoadError(null);
+    } catch (err) {
+      setFiles([]);
+      setLoadError(err?.message || 'Could not load your files right now.');
+    }
     finally { setLoading(false); setRefreshing(false); }
   }, [filter]);
 
@@ -177,8 +182,9 @@ export default function OneDriveScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadFiles(); }} tintColor={ACCENT} colors={[ACCENT]} />}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Feather name="hard-drive" size={32} color={theme.disabled} />
-              <Text style={styles.emptyText}>No files found</Text>
+              <Feather name={loadError ? 'alert-circle' : 'hard-drive'} size={32} color={theme.disabled} />
+              <Text style={styles.emptyText}>{loadError || 'No files found'}</Text>
+              {!!loadError && <Text style={styles.emptyHint}>Pull down to try again</Text>}
             </View>
           }
           renderItem={({ item }) => {
@@ -229,7 +235,8 @@ const createStyles = (theme) => StyleSheet.create({
   fileName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 3 },
   fileMeta: { fontSize: 12, color: theme.faint },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 10 },
-  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
+  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600', textAlign: 'center', paddingHorizontal: 32 },
+  emptyHint: { fontSize: 12, color: theme.disabled },
   connectScreen: { flex: 1, alignItems: 'center', paddingHorizontal: 28 },
   connectIcon: { width: 80, height: 80, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 32, marginBottom: 20 },
   connectTitle: { fontSize: 26, fontWeight: '800', color: theme.text, marginBottom: 10 },

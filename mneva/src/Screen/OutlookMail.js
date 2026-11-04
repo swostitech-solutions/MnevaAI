@@ -25,6 +25,7 @@ export default function OutlookMailScreen({ navigation }) {
   const [filter, setFilter]         = useState('all');
   const [openEmail, setOpenEmail]   = useState(null);
   const [openLoading, setOpenLoading] = useState(false);
+  const [loadError, setLoadError]   = useState(null);
 
   const hasRealDataRef = useRef(false);
 
@@ -42,7 +43,11 @@ export default function OutlookMailScreen({ navigation }) {
       const res = await apiFetch(`/api/outlook/emails?filter=${f}`);
       hasRealDataRef.current = true;
       setEmails(res.emails || []);
-    } catch { setEmails([]); }
+      setLoadError(null);
+    } catch (err) {
+      setEmails([]);
+      setLoadError(err?.message || 'Could not load your inbox right now.');
+    }
     finally { setLoading(false); setRefreshing(false); }
   }, [filter]);
 
@@ -173,8 +178,9 @@ export default function OutlookMailScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadEmails(); }} tintColor={ACCENT} colors={[ACCENT]} />}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Feather name="mail" size={32} color={theme.disabled} />
-              <Text style={styles.emptyText}>No emails found</Text>
+              <Feather name={loadError ? 'alert-circle' : 'mail'} size={32} color={theme.disabled} />
+              <Text style={styles.emptyText}>{loadError || 'No emails found'}</Text>
+              {!!loadError && <Text style={styles.emptyHint}>Pull down to try again</Text>}
             </View>
           }
           renderItem={({ item }) => (
@@ -248,7 +254,8 @@ const createStyles = (theme) => StyleSheet.create({
   emailSubjectUnread: { fontWeight: '800' },
   emailPreview: { fontSize: 12, color: theme.faint },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 10 },
-  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600' },
+  emptyText: { fontSize: 14, color: theme.faint, fontWeight: '600', textAlign: 'center', paddingHorizontal: 32 },
+  emptyHint: { fontSize: 12, color: theme.disabled },
   connectScreen: { flex: 1, alignItems: 'center', paddingHorizontal: 28 },
   connectIcon: { width: 80, height: 80, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 32, marginBottom: 20 },
   connectTitle: { fontSize: 26, fontWeight: '800', color: theme.text, marginBottom: 10 },

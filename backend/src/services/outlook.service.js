@@ -246,18 +246,24 @@ const OFFICE_EXTENSIONS = {
 }
 
 export async function listDriveFiles(user, type = 'all', limit = 50) {
-  const params = new URLSearchParams({
-    $top: String(Math.min(limit, 100)),
-    $select: 'id,name,file,folder,webUrl,lastModifiedDateTime,size',
-    $orderby: 'lastModifiedDateTime desc',
-  })
-  const data = await graphFetch(user, `/me/drive/root/children?${params.toString()}`)
-  let files = (data.value || []).filter(f => f.file) // skip folders
+  // /me/drive/root/children only lists items sitting directly in the
+  // OneDrive ROOT folder — but Word/Excel/PowerPoint's own "Save"/"Save As"
+  // (and the OneDrive app's default upload location) normally save into a
+  // subfolder like "Documents", not root. A file created that way was
+  // silently invisible here even though it genuinely existed on the
+  // account — this looked exactly like "nothing I create ever shows up".
+  // /me/drive/recent returns whatever the user has actually been
+  // creating/opening across the WHOLE drive regardless of which folder it's
+  // in, which is what this screen is actually meant to answer.
+  const data = await graphFetch(user, '/me/drive/recent')
+  let files = (data.value || [])
+    .map(f => (f.remoteItem ? { ...f.remoteItem, id: f.id } : f))
+    .filter(f => f.file) // skip folders
 
   const exts = OFFICE_EXTENSIONS[type]
   if (exts) files = files.filter(f => exts.some(ext => f.name?.toLowerCase().endsWith(ext)))
 
-  return files.map(f => ({
+  return files.slice(0, limit).map(f => ({
     id: f.id,
     name: f.name,
     url: f.webUrl,
