@@ -369,6 +369,46 @@ export async function getEmailBody(user, messageId) {
   }
 }
 
+// A plain-text email shows every "\n" in the body as a literal hard line
+// break, not a soft wrap the recipient's screen reflows — so whenever the
+// text handed to sendEmail has a sentence or bullet manually cut partway
+// through with a "\n" (the LLM drafting it does this despite being told not
+// to in autonomyEngine.js/_allRoutes.js — prompt instructions are followed
+// most of the time, not every time), the sent email shows a line that stops
+// short mid-sentence and jumps to the next, on every device. This is the
+// backstop that makes it true regardless of what the draft looks like by
+// the time it gets here: a line is treated as a wrapped continuation of the
+// line above it (and rejoined with a space instead of a break) only when it
+// doesn't start a new bullet and doesn't look like the start of a new
+// sentence/line — i.e. it starts lowercase, with "I" (always capitalized
+// even mid-sentence), or with a lowercase conjunction/article. A genuine
+// short standalone line like a "Best,\nName" sign-off always starts
+// uppercase, so it's left alone.
+const BULLET_LINE_RE = /^\s*(?:[•*-]|\d+[.)])\s+/
+const CONTINUATION_WORD_RE = /^(and|but|or|nor|so|because|which|who|whose|whom|that|to|of|in|on|for|with|as|the|a|an|this|these|those|it|its|if|when|while|until|unless)\b/i
+function looksLikeWrapContinuation(line) {
+  const t = line.trim()
+  if (!t) return false
+  if (/^[a-z]/.test(t)) return true
+  if (/^I(?:['’ ]|$)/.test(t)) return true
+  return CONTINUATION_WORD_RE.test(t)
+}
+export function collapseHardWrappedLines(text) {
+  if (!text) return text
+  const lines = String(text).split('\n')
+  const out = []
+  for (const line of lines) {
+    if (line.trim() === '') { out.push(''); continue }
+    const prev = out.length ? out[out.length - 1] : null
+    if (prev && prev.trim() !== '' && !BULLET_LINE_RE.test(line) && looksLikeWrapContinuation(line)) {
+      out[out.length - 1] = prev.replace(/\s+$/, '') + ' ' + line.trim()
+    } else {
+      out.push(line)
+    }
+  }
+  return out.join('\n')
+}
+
 // `threadId`/`inReplyTo` (the original message's RFC822 Message-ID, from
 // getEmailBody) are optional — when given, this sends as a genuine reply in
 // the same Gmail thread instead of a new, disconnected email. threadId alone
@@ -392,7 +432,7 @@ export async function sendEmail(user, recipient, subject, body, { threadId, inRe
   // why recipients saw the reply's paragraph breaks collapse or look
   // misaligned in some mail clients, which only treat \r\n as a real line
   // break. Normalize before building the raw message.
-  const normalizedBody = String(body || '').replace(/\r\n/g, '\n').replace(/\n/g, '\r\n')
+  const normalizedBody = collapseHardWrappedLines(String(body || '')).replace(/\r\n/g, '\n').replace(/\n/g, '\r\n')
   headers.push('Content-Type: text/plain; charset=UTF-8', '', normalizedBody)
 
   const raw = Buffer.from(headers.join('\r\n')).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')

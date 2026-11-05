@@ -1277,6 +1277,7 @@ import {
   getEmailBody,
   sendEmail,
   searchEmails,
+  collapseHardWrappedLines,
 } from "../services/gmail.service.js";
 import { createEventIfConnected } from "../services/calendar.service.js";
 import multer from "multer";
@@ -1594,7 +1595,7 @@ Keep the whole reply as short as the original email warrants \u2014 under 150 wo
       }, { temperature: 0.4 })),
     });
     const data = await r.json().catch(() => ({}));
-    const draft = data.choices?.[0]?.message?.content?.trim() || "";
+    const draft = collapseHardWrappedLines(data.choices?.[0]?.message?.content?.trim() || "");
     res.json({ draft });
   } catch (err) {
     res.status(500).json({ error: err.message });

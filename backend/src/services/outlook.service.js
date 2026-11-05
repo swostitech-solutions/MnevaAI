@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma.js'
 import { createOAuthState, verifyOAuthState } from './oauthState.js'
+import { collapseHardWrappedLines } from './gmail.service.js'
 
 // Microsoft Graph covers Outlook Mail, Outlook Calendar, OneDrive, and
 // Word/Excel/PowerPoint (which are just files living on OneDrive) and
@@ -194,7 +195,7 @@ export async function sendEmail(user, recipient, subject, body) {
     body: JSON.stringify({
       message: {
         subject,
-        body: { contentType: 'Text', content: body },
+        body: { contentType: 'Text', content: collapseHardWrappedLines(String(body || '')) },
         toRecipients: [{ emailAddress: { address: recipient } }],
       },
     }),
