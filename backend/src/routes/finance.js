@@ -134,6 +134,81 @@ export function emiDataFromLoan(loan) {
   }
 }
 
+// How many EMI due dates have passed since the first one, for a given
+// frequency — there's no record of which installments were actually paid
+// (the app has no payment-tracking event), so this date-based count is the
+// best available stand-in for "how many has the user paid by now".
+function elapsedInstallments(startDate, totalInstallments, frequency, asOf) {
+  const start = new Date(startDate)
+  if (isNaN(start.getTime()) || asOf < start) return 0
+  let elapsed
+  // ">" not ">=" below: the due date landing ON asOf (including the very
+  // first one, when asOf === startDate) is "due today", not yet overdue, so
+  // it isn't counted as paid — a loan that starts today has 0 elapsed, not 1.
+  if (frequency === 'Bi-weekly') {
+    elapsed = Math.floor((asOf - start) / (14 * 24 * 60 * 60 * 1000))
+  } else if (frequency === 'Quarterly') {
+    elapsed = (asOf.getFullYear() - start.getFullYear()) * 4 + Math.floor((asOf.getMonth() - start.getMonth()) / 3) + (asOf.getDate() > start.getDate() ? 1 : 0)
+  } else { // Monthly (default)
+    elapsed = (asOf.getFullYear() - start.getFullYear()) * 12 + (asOf.getMonth() - start.getMonth()) + (asOf.getDate() > start.getDate() ? 1 : 0)
+  }
+  return Math.min(Math.max(elapsed, 0), totalInstallments)
+}
+
+const round2 = (n) => Math.round(n * 100) / 100
+
+// Remaining principal after `n` elapsed installments — reducing-balance
+// amortization (the same math a bank statement uses) when an interest rate
+// applies, flat-rate straight-line otherwise. `principal`/`emiAmount` are
+// the loan's/EMI's own originalAmount-or-financedAmount and emiAmount.
+function calculatePendingPrincipal({ principal, emiAmount, interestRatePercent, totalInstallments, startDate, frequency, useFlatRate }, asOf = new Date()) {
+  if (!(principal > 0) || !(totalInstallments > 0)) return principal || 0
+  const n = elapsedInstallments(startDate, totalInstallments, frequency, asOf)
+  if (n <= 0) return round2(principal)
+  if (n >= totalInstallments) return 0
+  if (useFlatRate) return round2(principal * (1 - n / totalInstallments))
+  const r = Number(interestRatePercent || 0) / 12 / 100
+  if (!r) return round2(Math.max(0, principal - emiAmount * n))
+  const factor = Math.pow(1 + r, n)
+  return round2(Math.max(0, principal * factor - emiAmount * ((factor - 1) / r)))
+}
+
+// The loan's own "Current Outstanding Amount" field only reflects reality if
+// the user re-types it by hand every time they pay an EMI — most people
+// never do, so Ask AI answering "how much pending amount do I have to pay"
+// straight from that field kept returning the same stale number (often just
+// the original loan amount from when it was first created). This instead
+// derives today's actual remaining principal purely from the loan's own
+// numbers (how many EMI due dates have passed since it started), so the
+// answer updates on its own as time passes.
+export function calculateLoanPendingAmount(loan, asOf = new Date()) {
+  if (loan.status === 'Closed') return 0
+  return calculatePendingPrincipal({
+    principal: loan.originalAmount,
+    emiAmount: loan.emiAmount,
+    interestRatePercent: loan.interestRate,
+    totalInstallments: loan.numberOfEmis,
+    startDate: loan.emiStartDate,
+    frequency: loan.emiFrequency,
+    useFlatRate: loan.interestCalculation === 'Flat Rate',
+  }, asOf)
+}
+
+// Same idea for a standalone EMI plan (no bank Loan involved) — financedAmount
+// is its principal, and it has no interestCalculation field so reducing-balance
+// math is used whenever a rate is present, flat subtraction otherwise.
+export function calculateEmiPendingAmount(emi, asOf = new Date()) {
+  if (emi.status === 'Completed' || emi.status === 'Cancelled') return 0
+  return calculatePendingPrincipal({
+    principal: emi.financedAmount,
+    emiAmount: emi.emiAmount,
+    interestRatePercent: emi.interestRate,
+    totalInstallments: emi.numberOfInstallments,
+    startDate: emi.startDate,
+    frequency: emi.frequency,
+  }, asOf)
+}
+
 // ── Loans ────────────────────────────────────────────────────────────────────
 
 financeRouter.get('/loans', async (req, res) => {
@@ -142,7 +217,7 @@ financeRouter.get('/loans', async (req, res) => {
       where: { userId: req.user.id },
       orderBy: { createdAt: 'desc' },
     })
-    res.json({ loans })
+    res.json({ loans: loans.map((l) => ({ ...l, pendingAmount: calculateLoanPendingAmount(l) })) })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
@@ -286,7 +361,7 @@ financeRouter.get('/emis', async (req, res) => {
       where: { userId: req.user.id },
       orderBy: { createdAt: 'desc' },
     })
-    res.json({ emis })
+    res.json({ emis: emis.map((e) => ({ ...e, pendingAmount: calculateEmiPendingAmount(e) })) })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
