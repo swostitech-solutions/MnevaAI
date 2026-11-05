@@ -1268,7 +1268,7 @@ import {
   researcherAgent,
 } from "../agents/registry.js";
 import { memoryService } from "../services/memory.service.js";
-import { ledger } from "../services/ledgerService.js";
+import { ledger, changedFields } from "../services/ledgerService.js";
 import { userStore } from "../models/userStore.js";
 import { prisma } from "../config/prisma.js";
 import { transcribeAudio } from "../services/transcription.service.js";
@@ -2569,7 +2569,7 @@ healthRouter.post("/sync", async (req, res) => {
     ledger.add({
       userId: req.user.id,
       tool: "health_data_synced",
-      input: { fields: Object.keys(req.body || {}) },
+      input: { fields: changedFields(existing, req.body || {}) },
       result: { date: today },
       status: "completed",
     }).catch(() => {});
@@ -2665,7 +2665,7 @@ healthRouter.put("/log/:date", async (req, res) => {
     ledger.add({
       userId: req.user.id,
       tool: "health_log_updated",
-      input: { date, fields: Object.keys(body) },
+      input: { date, fields: changedFields(existing, body) },
       result: { date },
       status: "completed",
     }).catch(() => {});

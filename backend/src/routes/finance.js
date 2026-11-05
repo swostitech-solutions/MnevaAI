@@ -1,6 +1,6 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
-import { ledger } from '../services/ledgerService.js'
+import { ledger, changedFields } from '../services/ledgerService.js'
 
 export const financeRouter = express.Router()
 
@@ -286,7 +286,7 @@ financeRouter.patch('/loans/:id', async (req, res) => {
       ? await prisma.emi.update({ where: { id: existingEmi.id }, data: emiDataFromLoan(loan) })
       : await prisma.emi.create({ data: emiDataFromLoan(loan) })
     emit(req.app.get('io'), req.user.id, existingEmi ? 'emi:updated' : 'emi:created', linkedEmi)
-    ledger.add({ userId: req.user.id, tool: 'loan_updated', input: { fields: Object.keys(b) }, result: { loanId: loan.id }, status: 'completed' }).catch(() => {})
+    ledger.add({ userId: req.user.id, tool: 'loan_updated', input: { fields: changedFields(existing, patch) }, result: { loanId: loan.id }, status: 'completed' }).catch(() => {})
 
     res.json({ loan })
   } catch (err) { res.status(500).json({ error: err.message }) }
@@ -376,39 +376,37 @@ financeRouter.patch('/emis/:id', async (req, res) => {
     // truth for it, so changes go through PATCH /loans/:id instead.
     if (existing.loanId) return res.status(400).json({ error: 'This EMI is linked to a loan — edit the loan instead.' })
     const b = req.body
-    const emi = await prisma.emi.update({
-      where: { id: req.params.id },
-      data: {
-        ...(b.name !== undefined && { name: b.name.trim() }),
-        ...(b.emiType !== undefined && { emiType: b.emiType }),
-        ...(b.provider !== undefined && { provider: b.provider.trim() }),
-        ...(b.description !== undefined && { description: toStr(b.description) }),
-        ...(b.totalAmount !== undefined && { totalAmount: toFloat(b.totalAmount) }),
-        ...(b.downPayment !== undefined && { downPayment: toFloat(b.downPayment) }),
-        ...(b.financedAmount !== undefined && { financedAmount: toFloat(b.financedAmount) }),
-        ...(b.emiAmount !== undefined && { emiAmount: toFloat(b.emiAmount) }),
-        ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
-        ...(b.processingFee !== undefined && { processingFee: toFloat(b.processingFee) }),
-        ...(b.totalPayable !== undefined && { totalPayable: toFloat(b.totalPayable) }),
-        ...(b.numberOfInstallments !== undefined && { numberOfInstallments: toInt(b.numberOfInstallments) }),
-        ...(b.installmentsPaid !== undefined && { installmentsPaid: toInt(b.installmentsPaid) }),
-        ...(b.installmentsRemaining !== undefined && { installmentsRemaining: toInt(b.installmentsRemaining) }),
-        ...(b.startDate !== undefined && { startDate: b.startDate }),
-        ...(b.nextPaymentDate !== undefined && { nextPaymentDate: toDate(b.nextPaymentDate) }),
-        ...(b.endDate !== undefined && { endDate: toDate(b.endDate) }),
-        ...(b.frequency !== undefined && { frequency: b.frequency }),
-        ...(b.paymentMethod !== undefined && { paymentMethod: toStr(b.paymentMethod) }),
-        ...(b.autoDebit !== undefined && { autoDebit: toBool(b.autoDebit) }),
-        ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
-        ...(b.paymentDay !== undefined && { paymentDay: toInt(b.paymentDay) }),
-        ...(b.status !== undefined && { status: b.status }),
-        ...(b.productName !== undefined && { productName: toStr(b.productName) }),
-        ...(b.orderReference !== undefined && { orderReference: toStr(b.orderReference) }),
-        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
-      },
-    })
+    const patch = {
+      ...(b.name !== undefined && { name: b.name.trim() }),
+      ...(b.emiType !== undefined && { emiType: b.emiType }),
+      ...(b.provider !== undefined && { provider: b.provider.trim() }),
+      ...(b.description !== undefined && { description: toStr(b.description) }),
+      ...(b.totalAmount !== undefined && { totalAmount: toFloat(b.totalAmount) }),
+      ...(b.downPayment !== undefined && { downPayment: toFloat(b.downPayment) }),
+      ...(b.financedAmount !== undefined && { financedAmount: toFloat(b.financedAmount) }),
+      ...(b.emiAmount !== undefined && { emiAmount: toFloat(b.emiAmount) }),
+      ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
+      ...(b.processingFee !== undefined && { processingFee: toFloat(b.processingFee) }),
+      ...(b.totalPayable !== undefined && { totalPayable: toFloat(b.totalPayable) }),
+      ...(b.numberOfInstallments !== undefined && { numberOfInstallments: toInt(b.numberOfInstallments) }),
+      ...(b.installmentsPaid !== undefined && { installmentsPaid: toInt(b.installmentsPaid) }),
+      ...(b.installmentsRemaining !== undefined && { installmentsRemaining: toInt(b.installmentsRemaining) }),
+      ...(b.startDate !== undefined && { startDate: b.startDate }),
+      ...(b.nextPaymentDate !== undefined && { nextPaymentDate: toDate(b.nextPaymentDate) }),
+      ...(b.endDate !== undefined && { endDate: toDate(b.endDate) }),
+      ...(b.frequency !== undefined && { frequency: b.frequency }),
+      ...(b.paymentMethod !== undefined && { paymentMethod: toStr(b.paymentMethod) }),
+      ...(b.autoDebit !== undefined && { autoDebit: toBool(b.autoDebit) }),
+      ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
+      ...(b.paymentDay !== undefined && { paymentDay: toInt(b.paymentDay) }),
+      ...(b.status !== undefined && { status: b.status }),
+      ...(b.productName !== undefined && { productName: toStr(b.productName) }),
+      ...(b.orderReference !== undefined && { orderReference: toStr(b.orderReference) }),
+      ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+    }
+    const emi = await prisma.emi.update({ where: { id: req.params.id }, data: patch })
     emit(req.app.get('io'), req.user.id, 'emi:updated', emi)
-    ledger.add({ userId: req.user.id, tool: 'emi_updated', input: { fields: Object.keys(b) }, result: { emiId: emi.id }, status: 'completed' }).catch(() => {})
+    ledger.add({ userId: req.user.id, tool: 'emi_updated', input: { fields: changedFields(existing, patch) }, result: { emiId: emi.id }, status: 'completed' }).catch(() => {})
     res.json({ emi })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -482,34 +480,32 @@ financeRouter.patch('/subscriptions/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const b = req.body
-    const subscription = await prisma.subscription.update({
-      where: { id: req.params.id },
-      data: {
-        ...(b.name !== undefined && { name: b.name.trim() }),
-        ...(b.category !== undefined && { category: b.category }),
-        ...(b.provider !== undefined && { provider: toStr(b.provider) }),
-        ...(b.description !== undefined && { description: toStr(b.description) }),
-        ...(b.amount !== undefined && { amount: toFloat(b.amount) }),
-        ...(b.currency !== undefined && { currency: b.currency }),
-        ...(b.billingCycle !== undefined && { billingCycle: b.billingCycle }),
-        ...(b.tax !== undefined && { tax: toFloat(b.tax) }),
-        ...(b.totalCharged !== undefined && { totalCharged: toFloat(b.totalCharged) }),
-        ...(b.startDate !== undefined && { startDate: b.startDate }),
-        ...(b.nextBillingDate !== undefined && { nextBillingDate: toDate(b.nextBillingDate) }),
-        ...(b.renewalDate !== undefined && { renewalDate: toDate(b.renewalDate) }),
-        ...(b.cancellationDate !== undefined && { cancellationDate: toDate(b.cancellationDate) }),
-        ...(b.paymentMethod !== undefined && { paymentMethod: toStr(b.paymentMethod) }),
-        ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
-        ...(b.autoRenewal !== undefined && { autoRenewal: toBool(b.autoRenewal) }),
-        ...(b.status !== undefined && { status: b.status }),
-        ...(b.trialPeriod !== undefined && { trialPeriod: toBool(b.trialPeriod) }),
-        ...(b.trialEndDate !== undefined && { trialEndDate: toDate(b.trialEndDate) }),
-        ...(b.reminderBeforeRenewal !== undefined && { reminderBeforeRenewal: toInt(b.reminderBeforeRenewal) }),
-        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
-      },
-    })
+    const patch = {
+      ...(b.name !== undefined && { name: b.name.trim() }),
+      ...(b.category !== undefined && { category: b.category }),
+      ...(b.provider !== undefined && { provider: toStr(b.provider) }),
+      ...(b.description !== undefined && { description: toStr(b.description) }),
+      ...(b.amount !== undefined && { amount: toFloat(b.amount) }),
+      ...(b.currency !== undefined && { currency: b.currency }),
+      ...(b.billingCycle !== undefined && { billingCycle: b.billingCycle }),
+      ...(b.tax !== undefined && { tax: toFloat(b.tax) }),
+      ...(b.totalCharged !== undefined && { totalCharged: toFloat(b.totalCharged) }),
+      ...(b.startDate !== undefined && { startDate: b.startDate }),
+      ...(b.nextBillingDate !== undefined && { nextBillingDate: toDate(b.nextBillingDate) }),
+      ...(b.renewalDate !== undefined && { renewalDate: toDate(b.renewalDate) }),
+      ...(b.cancellationDate !== undefined && { cancellationDate: toDate(b.cancellationDate) }),
+      ...(b.paymentMethod !== undefined && { paymentMethod: toStr(b.paymentMethod) }),
+      ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
+      ...(b.autoRenewal !== undefined && { autoRenewal: toBool(b.autoRenewal) }),
+      ...(b.status !== undefined && { status: b.status }),
+      ...(b.trialPeriod !== undefined && { trialPeriod: toBool(b.trialPeriod) }),
+      ...(b.trialEndDate !== undefined && { trialEndDate: toDate(b.trialEndDate) }),
+      ...(b.reminderBeforeRenewal !== undefined && { reminderBeforeRenewal: toInt(b.reminderBeforeRenewal) }),
+      ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+    }
+    const subscription = await prisma.subscription.update({ where: { id: req.params.id }, data: patch })
     emit(req.app.get('io'), req.user.id, 'subscription:updated', subscription)
-    ledger.add({ userId: req.user.id, tool: 'subscription_updated', input: { fields: Object.keys(b) }, result: { subscriptionId: subscription.id }, status: 'completed' }).catch(() => {})
+    ledger.add({ userId: req.user.id, tool: 'subscription_updated', input: { fields: changedFields(existing, patch) }, result: { subscriptionId: subscription.id }, status: 'completed' }).catch(() => {})
     res.json({ subscription })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -586,38 +582,36 @@ financeRouter.patch('/bills/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const b = req.body
-    const bill = await prisma.bill.update({
-      where: { id: req.params.id },
-      data: {
-        ...(b.name !== undefined && { name: b.name.trim() }),
-        ...(b.category !== undefined && { category: b.category }),
-        ...(b.provider !== undefined && { provider: toStr(b.provider) }),
-        ...(b.accountNumber !== undefined && { accountNumber: toStr(b.accountNumber) }),
-        ...(b.description !== undefined && { description: toStr(b.description) }),
-        ...(b.expectedAmount !== undefined && { expectedAmount: toFloat(b.expectedAmount) }),
-        ...(b.lastBillAmount !== undefined && { lastBillAmount: toFloat(b.lastBillAmount) }),
-        ...(b.minAmount !== undefined && { minAmount: toFloat(b.minAmount) }),
-        ...(b.maxAmount !== undefined && { maxAmount: toFloat(b.maxAmount) }),
-        ...(b.currency !== undefined && { currency: b.currency }),
-        ...(b.billingCycle !== undefined && { billingCycle: b.billingCycle }),
-        ...(b.billDate !== undefined && { billDate: toDate(b.billDate) }),
-        ...(b.dueDate !== undefined && { dueDate: b.dueDate }),
-        ...(b.nextDueDate !== undefined && { nextDueDate: toDate(b.nextDueDate) }),
-        ...(b.gracePeriod !== undefined && { gracePeriod: toInt(b.gracePeriod) }),
-        ...(b.paymentMethod !== undefined && { paymentMethod: toStr(b.paymentMethod) }),
-        ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
-        ...(b.autoPay !== undefined && { autoPay: toBool(b.autoPay) }),
-        ...(b.autoPayDate !== undefined && { autoPayDate: toDate(b.autoPayDate) }),
-        ...(b.status !== undefined && { status: b.status }),
-        ...(b.lateFee !== undefined && { lateFee: toFloat(b.lateFee) }),
-        ...(b.tax !== undefined && { tax: toFloat(b.tax) }),
-        ...(b.reminderDays !== undefined && { reminderDays: toInt(b.reminderDays) }),
-        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
-        ...(b.attachmentDocId !== undefined && { attachmentDocId: toStr(b.attachmentDocId) }),
-      },
-    })
+    const patch = {
+      ...(b.name !== undefined && { name: b.name.trim() }),
+      ...(b.category !== undefined && { category: b.category }),
+      ...(b.provider !== undefined && { provider: toStr(b.provider) }),
+      ...(b.accountNumber !== undefined && { accountNumber: toStr(b.accountNumber) }),
+      ...(b.description !== undefined && { description: toStr(b.description) }),
+      ...(b.expectedAmount !== undefined && { expectedAmount: toFloat(b.expectedAmount) }),
+      ...(b.lastBillAmount !== undefined && { lastBillAmount: toFloat(b.lastBillAmount) }),
+      ...(b.minAmount !== undefined && { minAmount: toFloat(b.minAmount) }),
+      ...(b.maxAmount !== undefined && { maxAmount: toFloat(b.maxAmount) }),
+      ...(b.currency !== undefined && { currency: b.currency }),
+      ...(b.billingCycle !== undefined && { billingCycle: b.billingCycle }),
+      ...(b.billDate !== undefined && { billDate: toDate(b.billDate) }),
+      ...(b.dueDate !== undefined && { dueDate: b.dueDate }),
+      ...(b.nextDueDate !== undefined && { nextDueDate: toDate(b.nextDueDate) }),
+      ...(b.gracePeriod !== undefined && { gracePeriod: toInt(b.gracePeriod) }),
+      ...(b.paymentMethod !== undefined && { paymentMethod: toStr(b.paymentMethod) }),
+      ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
+      ...(b.autoPay !== undefined && { autoPay: toBool(b.autoPay) }),
+      ...(b.autoPayDate !== undefined && { autoPayDate: toDate(b.autoPayDate) }),
+      ...(b.status !== undefined && { status: b.status }),
+      ...(b.lateFee !== undefined && { lateFee: toFloat(b.lateFee) }),
+      ...(b.tax !== undefined && { tax: toFloat(b.tax) }),
+      ...(b.reminderDays !== undefined && { reminderDays: toInt(b.reminderDays) }),
+      ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+      ...(b.attachmentDocId !== undefined && { attachmentDocId: toStr(b.attachmentDocId) }),
+    }
+    const bill = await prisma.bill.update({ where: { id: req.params.id }, data: patch })
     emit(req.app.get('io'), req.user.id, 'bill:updated', bill)
-    ledger.add({ userId: req.user.id, tool: 'bill_updated', input: { fields: Object.keys(b) }, result: { billId: bill.id }, status: 'completed' }).catch(() => {})
+    ledger.add({ userId: req.user.id, tool: 'bill_updated', input: { fields: changedFields(existing, patch) }, result: { billId: bill.id }, status: 'completed' }).catch(() => {})
     res.json({ bill })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -675,22 +669,20 @@ financeRouter.patch('/expenses/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const b = req.body
-    const expense = await prisma.expense.update({
-      where: { id: req.params.id },
-      data: {
-        ...(b.name !== undefined && { name: toStr(b.name) }),
-        ...(b.amount !== undefined && { amount: toFloat(b.amount) }),
-        ...(b.category !== undefined && { category: toStr(b.category) }),
-        ...(b.paymentMethod !== undefined && { paymentMethod: b.paymentMethod }),
-        ...(b.note !== undefined && { note: toStr(b.note) }),
-        ...(b.date !== undefined && { date: new Date(b.date) }),
-      },
-    })
+    const patch = {
+      ...(b.name !== undefined && { name: toStr(b.name) }),
+      ...(b.amount !== undefined && { amount: toFloat(b.amount) }),
+      ...(b.category !== undefined && { category: toStr(b.category) }),
+      ...(b.paymentMethod !== undefined && { paymentMethod: b.paymentMethod }),
+      ...(b.note !== undefined && { note: toStr(b.note) }),
+      ...(b.date !== undefined && { date: new Date(b.date) }),
+    }
+    const expense = await prisma.expense.update({ where: { id: req.params.id }, data: patch })
     emit(req.app.get('io'), req.user.id, 'expense:updated', expense)
     ledger.add({
       userId: req.user.id,
       tool: 'expense_updated',
-      input: { fields: Object.keys(b) },
+      input: { fields: changedFields(existing, patch) },
       result: { expenseId: expense.id },
       status: 'completed',
     }).catch(() => {})
@@ -775,33 +767,31 @@ financeRouter.patch('/fixed-deposits/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const b = req.body
-    const fixedDeposit = await prisma.fixedDeposit.update({
-      where: { id: req.params.id },
-      data: {
-        ...(b.name !== undefined && { name: b.name.trim() }),
-        ...(b.bankName !== undefined && { bankName: b.bankName.trim() }),
-        ...(b.accountNumber !== undefined && { accountNumber: toStr(b.accountNumber) }),
-        ...(b.status !== undefined && { status: b.status }),
-        ...(b.principalAmount !== undefined && { principalAmount: toFloat(b.principalAmount) }),
-        ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
-        ...(b.compoundingFrequency !== undefined && { compoundingFrequency: b.compoundingFrequency }),
-        ...(b.interestPayout !== undefined && { interestPayout: b.interestPayout }),
-        ...(b.startDate !== undefined && { startDate: b.startDate }),
-        ...(b.maturityDate !== undefined && { maturityDate: b.maturityDate }),
-        ...(b.tenureMonths !== undefined && { tenureMonths: toInt(b.tenureMonths) }),
-        ...(b.maturityAmount !== undefined && { maturityAmount: toFloat(b.maturityAmount) }),
-        ...(b.interestEarned !== undefined && { interestEarned: toFloat(b.interestEarned) }),
-        ...(b.autoRenewal !== undefined && { autoRenewal: toBool(b.autoRenewal) }),
-        ...(b.nominee !== undefined && { nominee: toStr(b.nominee) }),
-        ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
-        ...(b.prematureWithdrawalAllowed !== undefined && { prematureWithdrawalAllowed: toBool(b.prematureWithdrawalAllowed) }),
-        ...(b.prematureWithdrawalPenalty !== undefined && { prematureWithdrawalPenalty: toFloat(b.prematureWithdrawalPenalty) }),
-        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
-        ...(b.attachmentDocId !== undefined && { attachmentDocId: toStr(b.attachmentDocId) }),
-      },
-    })
+    const patch = {
+      ...(b.name !== undefined && { name: b.name.trim() }),
+      ...(b.bankName !== undefined && { bankName: b.bankName.trim() }),
+      ...(b.accountNumber !== undefined && { accountNumber: toStr(b.accountNumber) }),
+      ...(b.status !== undefined && { status: b.status }),
+      ...(b.principalAmount !== undefined && { principalAmount: toFloat(b.principalAmount) }),
+      ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
+      ...(b.compoundingFrequency !== undefined && { compoundingFrequency: b.compoundingFrequency }),
+      ...(b.interestPayout !== undefined && { interestPayout: b.interestPayout }),
+      ...(b.startDate !== undefined && { startDate: b.startDate }),
+      ...(b.maturityDate !== undefined && { maturityDate: b.maturityDate }),
+      ...(b.tenureMonths !== undefined && { tenureMonths: toInt(b.tenureMonths) }),
+      ...(b.maturityAmount !== undefined && { maturityAmount: toFloat(b.maturityAmount) }),
+      ...(b.interestEarned !== undefined && { interestEarned: toFloat(b.interestEarned) }),
+      ...(b.autoRenewal !== undefined && { autoRenewal: toBool(b.autoRenewal) }),
+      ...(b.nominee !== undefined && { nominee: toStr(b.nominee) }),
+      ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
+      ...(b.prematureWithdrawalAllowed !== undefined && { prematureWithdrawalAllowed: toBool(b.prematureWithdrawalAllowed) }),
+      ...(b.prematureWithdrawalPenalty !== undefined && { prematureWithdrawalPenalty: toFloat(b.prematureWithdrawalPenalty) }),
+      ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+      ...(b.attachmentDocId !== undefined && { attachmentDocId: toStr(b.attachmentDocId) }),
+    }
+    const fixedDeposit = await prisma.fixedDeposit.update({ where: { id: req.params.id }, data: patch })
     emit(req.app.get('io'), req.user.id, 'fd:updated', fixedDeposit)
-    ledger.add({ userId: req.user.id, tool: 'fixed_deposit_updated', input: { fields: Object.keys(b) }, result: { fdId: fixedDeposit.id }, status: 'completed' }).catch(() => {})
+    ledger.add({ userId: req.user.id, tool: 'fixed_deposit_updated', input: { fields: changedFields(existing, patch) }, result: { fdId: fixedDeposit.id }, status: 'completed' }).catch(() => {})
     res.json({ fixedDeposit })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -863,23 +853,21 @@ financeRouter.patch('/portfolio/holdings/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Not found' })
     if (existing.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const b = req.body
-    const holding = await prisma.portfolioHolding.update({
-      where: { id: req.params.id },
-      data: {
-        ...(b.name !== undefined && { name: b.name.trim() }),
-        ...(b.type !== undefined && { type: b.type }),
-        ...(b.platform !== undefined && { platform: toStr(b.platform) }),
-        ...(b.quantity !== undefined && { quantity: toFloat(b.quantity) }),
-        ...(b.avgBuyPrice !== undefined && { avgBuyPrice: toFloat(b.avgBuyPrice) }),
-        ...(b.currentPrice !== undefined && { currentPrice: toFloat(b.currentPrice) }),
-        ...(b.investedAmount !== undefined && { investedAmount: toFloat(b.investedAmount) }),
-        ...(b.currentValue !== undefined && { currentValue: toFloat(b.currentValue) }),
-        ...(b.purchaseDate !== undefined && { purchaseDate: toDate(b.purchaseDate) }),
-        ...(b.notes !== undefined && { notes: toStr(b.notes) }),
-      },
-    })
+    const patch = {
+      ...(b.name !== undefined && { name: b.name.trim() }),
+      ...(b.type !== undefined && { type: b.type }),
+      ...(b.platform !== undefined && { platform: toStr(b.platform) }),
+      ...(b.quantity !== undefined && { quantity: toFloat(b.quantity) }),
+      ...(b.avgBuyPrice !== undefined && { avgBuyPrice: toFloat(b.avgBuyPrice) }),
+      ...(b.currentPrice !== undefined && { currentPrice: toFloat(b.currentPrice) }),
+      ...(b.investedAmount !== undefined && { investedAmount: toFloat(b.investedAmount) }),
+      ...(b.currentValue !== undefined && { currentValue: toFloat(b.currentValue) }),
+      ...(b.purchaseDate !== undefined && { purchaseDate: toDate(b.purchaseDate) }),
+      ...(b.notes !== undefined && { notes: toStr(b.notes) }),
+    }
+    const holding = await prisma.portfolioHolding.update({ where: { id: req.params.id }, data: patch })
     emit(req.app.get('io'), req.user.id, 'portfolio:updated', holding)
-    ledger.add({ userId: req.user.id, tool: 'portfolio_holding_updated', input: { fields: Object.keys(b) }, result: { holdingId: holding.id }, status: 'completed' }).catch(() => {})
+    ledger.add({ userId: req.user.id, tool: 'portfolio_holding_updated', input: { fields: changedFields(existing, patch) }, result: { holdingId: holding.id }, status: 'completed' }).catch(() => {})
     res.json({ holding })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

@@ -1,7 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { sendPushToUser } from '../services/pushService.js'
-import { ledger } from '../services/ledgerService.js'
+import { ledger, changedFields } from '../services/ledgerService.js'
 import { emitToUser } from '../services/realtime.js'
 
 export const familyRouter = express.Router()
@@ -244,18 +244,15 @@ familyRouter.patch('/tasks/:id', async (req, res) => {
     if (title !== undefined && !title.trim()) return res.status(400).json({ error: 'title cannot be empty' })
     if (dueDate !== undefined && isPastDueDate(dueDate)) return res.status(400).json({ error: 'Due date cannot be in the past — please pick today or a future date.' })
 
-    const updated = await prisma.familyTask.update({
-      where: { id: req.params.id },
-      data: {
-        ...(title       !== undefined && { title: title.trim() }),
-        ...(description !== undefined && { description: description?.trim() || null }),
-        ...(priority     !== undefined && { priority }),
-        ...(category     !== undefined && { category: category || null }),
-        ...(dueDate       !== undefined && { dueDate: dueDate || null }),
-        ...(recurrence   !== undefined && { recurrence: recurrence || 'None' }),
-      },
-      include: taskInclude,
-    })
+    const patch = {
+      ...(title       !== undefined && { title: title.trim() }),
+      ...(description !== undefined && { description: description?.trim() || null }),
+      ...(priority     !== undefined && { priority }),
+      ...(category     !== undefined && { category: category || null }),
+      ...(dueDate       !== undefined && { dueDate: dueDate || null }),
+      ...(recurrence   !== undefined && { recurrence: recurrence || 'None' }),
+    }
+    const updated = await prisma.familyTask.update({ where: { id: req.params.id }, data: patch, include: taskInclude })
     const formatted = fmtTask(updated)
     const io = req.app.get('io')
     emit(io, task.creatorId,  'family:task:updated', formatted)
@@ -263,7 +260,7 @@ familyRouter.patch('/tasks/:id', async (req, res) => {
     ledger.add({
       userId: myId,
       tool: 'family_task_edited',
-      input: { title: formatted.title, changedFields: Object.keys(req.body || {}) },
+      input: { title: formatted.title, changedFields: changedFields(task, patch) },
       result: { taskId: updated.id },
       status: 'completed',
     }).catch(() => {})
@@ -498,30 +495,28 @@ familyRouter.patch('/parent-medications/:id', async (req, res) => {
     if (med.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
     const { medName, dosage, frequency, mealTime, parent, startDate, duration, doctor, notes, refillDate, doseTimes, active } = req.body
     if (doctor !== undefined && !isValidDoctorName(String(doctor || '').trim())) return res.status(400).json({ error: 'Doctor name can only contain letters' })
-    const updated = await prisma.parentMedication.update({
-      where: { id: req.params.id },
-      data: {
-        ...(medName    !== undefined && { medName: medName.trim() }),
-        ...(dosage     !== undefined && { dosage: dosage.trim() }),
-        ...(frequency  !== undefined && { frequency }),
-        ...(mealTime   !== undefined && { mealTime: mealTime || null }),
-        ...(parent     !== undefined && { parent }),
-        ...(startDate  !== undefined && { startDate: startDate?.trim() || null }),
-        ...(duration   !== undefined && { duration: duration?.trim() || null }),
-        ...(doctor     !== undefined && { doctor: doctor?.trim() || null }),
-        ...(notes      !== undefined && { notes: notes?.trim() || null }),
-        ...(refillDate !== undefined && { refillDate: refillDate?.trim() || null }),
-        ...(doseTimes  !== undefined && { doseTimes: cleanDoseTimes(doseTimes) }),
-        ...(active     !== undefined && { active: Boolean(active) }),
-      },
-    })
+    const patch = {
+      ...(medName    !== undefined && { medName: medName.trim() }),
+      ...(dosage     !== undefined && { dosage: dosage.trim() }),
+      ...(frequency  !== undefined && { frequency }),
+      ...(mealTime   !== undefined && { mealTime: mealTime || null }),
+      ...(parent     !== undefined && { parent }),
+      ...(startDate  !== undefined && { startDate: startDate?.trim() || null }),
+      ...(duration   !== undefined && { duration: duration?.trim() || null }),
+      ...(doctor     !== undefined && { doctor: doctor?.trim() || null }),
+      ...(notes      !== undefined && { notes: notes?.trim() || null }),
+      ...(refillDate !== undefined && { refillDate: refillDate?.trim() || null }),
+      ...(doseTimes  !== undefined && { doseTimes: cleanDoseTimes(doseTimes) }),
+      ...(active     !== undefined && { active: Boolean(active) }),
+    }
+    const updated = await prisma.parentMedication.update({ where: { id: req.params.id }, data: patch })
     await syncMedMemory(req.user.id, prisma)
     const formatted = fmtMed(updated)
     emit(req.app.get('io'), req.user.id, 'parent_med:updated', formatted)
     ledger.add({
       userId: req.user.id,
       tool: 'parent_medication_updated',
-      input: { medName: formatted.medName, changedFields: Object.keys(req.body || {}) },
+      input: { medName: formatted.medName, changedFields: changedFields(med, patch) },
       result: { medicationId: updated.id },
       status: 'completed',
     }).catch(() => {})

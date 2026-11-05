@@ -1,7 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { sendPushToUser } from '../services/pushService.js'
-import { ledger } from '../services/ledgerService.js'
+import { ledger, changedFields } from '../services/ledgerService.js'
 
 export const petRouter = express.Router()
 
@@ -111,35 +111,33 @@ petRouter.patch('/:id', async (req, res) => {
             vaccines, medications, allergies, vet, feeding, groomings, exercises } = req.body
     const invalid = validatePetFields({ name: name?.trim(), breed, microchip, weight, height })
     if (invalid) return res.status(400).json({ error: invalid })
-    const updated = await prisma.pet.update({
-      where: { id: req.params.id },
-      data: {
-        ...(name          !== undefined && { name: name.trim() }),
-        ...(species       !== undefined && { species }),
-        ...(breed         !== undefined && { breed: breed?.trim() || null }),
-        ...(sex           !== undefined && { sex: sex || null }),
-        ...(dob           !== undefined && { dob: dob?.trim() || null }),
-        ...(microchip     !== undefined && { microchip: microchip?.trim() || null }),
-        ...(weight        !== undefined && { weight: weight?.trim() || null }),
-        ...(height        !== undefined && { height: height?.trim() || null }),
-        ...(coatType      !== undefined && { coatType: coatType || null }),
-        ...(colorMarkings !== undefined && { colorMarkings: colorMarkings?.trim() || null }),
-        ...(vaccines      !== undefined && { vaccines }),
-        ...(medications   !== undefined && { medications }),
-        ...(allergies     !== undefined && { allergies }),
-        ...(vet           !== undefined && { vet }),
-        ...(feeding       !== undefined && { feeding }),
-        ...(groomings     !== undefined && { groomings }),
-        ...(exercises     !== undefined && { exercises }),
-      },
-    })
+    const patch = {
+      ...(name          !== undefined && { name: name.trim() }),
+      ...(species       !== undefined && { species }),
+      ...(breed         !== undefined && { breed: breed?.trim() || null }),
+      ...(sex           !== undefined && { sex: sex || null }),
+      ...(dob           !== undefined && { dob: dob?.trim() || null }),
+      ...(microchip     !== undefined && { microchip: microchip?.trim() || null }),
+      ...(weight        !== undefined && { weight: weight?.trim() || null }),
+      ...(height        !== undefined && { height: height?.trim() || null }),
+      ...(coatType      !== undefined && { coatType: coatType || null }),
+      ...(colorMarkings !== undefined && { colorMarkings: colorMarkings?.trim() || null }),
+      ...(vaccines      !== undefined && { vaccines }),
+      ...(medications   !== undefined && { medications }),
+      ...(allergies     !== undefined && { allergies }),
+      ...(vet           !== undefined && { vet }),
+      ...(feeding       !== undefined && { feeding }),
+      ...(groomings     !== undefined && { groomings }),
+      ...(exercises     !== undefined && { exercises }),
+    }
+    const updated = await prisma.pet.update({ where: { id: req.params.id }, data: patch })
     await syncPetMemory(req.user.id, prisma)
     const formatted = fmtPet(updated)
     emit(req.app.get('io'), req.user.id, 'pet:updated', formatted)
     ledger.add({
       userId: req.user.id,
       tool: 'pet_updated',
-      input: { name: formatted.name, changedFields: Object.keys(req.body || {}) },
+      input: { name: formatted.name, changedFields: changedFields(pet, patch) },
       result: { petId: updated.id },
       status: 'completed',
     }).catch(() => {})

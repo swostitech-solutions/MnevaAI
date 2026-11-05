@@ -5,6 +5,39 @@ import { getToolMeta } from './ledgerTaxonomy.js'
 
 const MAX_SEQ_RETRIES = 3
 
+// An update's Twin Diary entry should name only the field(s) the value
+// actually changed for, not every key the client happened to send — an
+// edit screen that submits its whole form on every save (most of them do)
+// would otherwise log every field on the form as "changed" even when the
+// user only touched one. Compares each candidate field's value against the
+// record as it was BEFORE this update, not just whether the key is present
+// in the request body.
+function ledgerValuesEqual(a, b) {
+  if (a === b) return true
+  if (a == null || b == null) return a == b
+  if (a instanceof Date || b instanceof Date) {
+    const ta = new Date(a).getTime()
+    const tb = new Date(b).getTime()
+    return !isNaN(ta) && !isNaN(tb) && ta === tb
+  }
+  if (typeof a === 'number' || typeof b === 'number') return Number(a) === Number(b)
+  // Objects/arrays (a pet's vaccines list, a family item's JSON fields, …)
+  // must compare by content — String(obj) is always the useless literal
+  // "[object Object]" for every plain object, which would make this always
+  // report "unchanged" no matter how different two objects actually are.
+  if (typeof a === 'object' || typeof b === 'object') {
+    try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false }
+  }
+  return String(a) === String(b)
+}
+// `existing` is the record as fetched before the update; `patch` is the
+// (already validated/coerced) object actually passed to prisma's `update`
+// — only the keys present in `patch` are considered, and only the ones
+// whose value actually differs from `existing` make it into the result.
+export function changedFields(existing, patch) {
+  return Object.keys(patch || {}).filter((k) => !ledgerValuesEqual(existing?.[k], patch[k]))
+}
+
 class LedgerService {
   // Appends one entry to the caller's hash chain: reads the last entry
   // (by seq) inside a transaction, hashes the new entry over ALL of its
