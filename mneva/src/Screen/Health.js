@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, useWindowDimensions, Modal, TextInput,
   TouchableWithoutFeedback, KeyboardAvoidingView, Platform,
-  ActivityIndicator, Alert, findNodeHandle,
+  ActivityIndicator, Alert, findNodeHandle, Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -139,7 +139,29 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   // cut off with no way to reach them. Capping it to a share of the actual
   // screen height gives the ScrollView added below a real scrollable area.
   const { height: windowHeight } = useWindowDimensions();
-  const maxSheetHeight = windowHeight * 0.85;
+  // KeyboardAvoidingView's own auto-resize (the `behavior="height"` below)
+  // does NOT reliably fire on Android when it's inside a <Modal> — the
+  // Modal renders in its own separate native window, which is the actual
+  // reason this sheet kept intermittently leaving the focused field behind
+  // the keyboard even after a previous fix: that fix guessed at a resize
+  // (via a fixed timeout) that sometimes never happened, or happened later
+  // than guessed, instead of reacting to a real signal. Tracking the
+  // keyboard's own height directly sidesteps that: these events fire
+  // reliably regardless of which window the focused TextInput lives in, so
+  // the sheet's own max height is shrunk by exactly that much on Android,
+  // guaranteeing the scrollable area really does have room above the
+  // keyboard instead of hoping the OS resized it.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'android' ? 'keyboardDidShow' : 'keyboardWillShow', (e) => {
+      setKeyboardHeight(e.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener(Platform.OS === 'android' ? 'keyboardDidHide' : 'keyboardWillHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+  const maxSheetHeight = windowHeight * 0.85 - (Platform.OS === 'android' ? keyboardHeight : 0);
   const [activeTab, setActiveTab] = useState('activity');
   const [form, setForm] = useState({});
   // Which fields the user has directly typed into (even to clear them) —
@@ -163,6 +185,7 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   // view on focus fixes that on both platforms.
   const scrollRef = useRef(null);
   const fieldRefs = useRef({});
+  const focusedKeyRef = useRef(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -285,11 +308,12 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   const cat = LOG_CATEGORIES.find(c => c.key === activeTab);
   const fields = CATEGORY_FIELDS[activeTab] || [];
 
-  // Delay lets the keyboard's open animation (and KeyboardAvoidingView's
-  // resulting resize) actually start first, so the measured position
-  // reflects the post-keyboard layout instead of the pre-keyboard one.
+  // Double requestAnimationFrame instead of a guessed timeout: it waits for
+  // the NEXT layout commit after maxSheetHeight changes (from the keyboard
+  // height effect above), so the measured position always reflects the
+  // sheet's real, already-shrunk size — never a stale pre-shrink layout.
   const scrollFieldIntoView = (key) => {
-    setTimeout(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       const node = fieldRefs.current[key];
       const scrollHandle = findNodeHandle(scrollRef.current);
       if (!node || !scrollHandle) return;
@@ -298,15 +322,31 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
         (_x, y) => scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true }),
         () => {},
       );
-    }, 120);
+    }));
   };
+
+  // onFocus alone isn't enough: on Android the keyboard (and the resulting
+  // maxSheetHeight shrink) often finishes animating AFTER focus fires, so
+  // the first scroll can land using the still-pre-shrink layout. Re-running
+  // it whenever keyboardHeight actually changes re-measures against the
+  // real, settled layout for whichever field is currently focused.
+  useEffect(() => {
+    if (keyboardHeight > 0 && focusedKeyRef.current) scrollFieldIntoView(focusedKeyRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyboardHeight]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.sheetOverlay} />
       </TouchableWithoutFeedback>
-      <KeyboardAvoidingView style={styles.sheetWrap} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Android: deliberately no `behavior` here — KeyboardAvoidingView's
+          auto-resize doesn't reliably fire inside a <Modal> on Android (see
+          maxSheetHeight above, which now does this shrink itself from a
+          real Keyboard event instead of trusting this to do it). Letting
+          both resize at once risked double-compensating on the odd device
+          where it does fire. */}
+      <KeyboardAvoidingView style={styles.sheetWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.sheetContent, { paddingBottom: 20 + bottomInset, maxHeight: maxSheetHeight }]}>
           <View style={styles.sheetHandle} />
 
@@ -354,7 +394,8 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
                       keyboardType={keyboard}
                       value={form[key] || ''}
                       onChangeText={v => set(key, v)}
-                      onFocus={() => scrollFieldIntoView(key)}
+                      onFocus={() => { focusedKeyRef.current = key; scrollFieldIntoView(key); }}
+                      onBlur={() => { if (focusedKeyRef.current === key) focusedKeyRef.current = null; }}
                     />
                     {!!unit && <Text style={styles.syncUnit}>{unit}</Text>}
                   </View>
