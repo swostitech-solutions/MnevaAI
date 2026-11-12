@@ -2527,7 +2527,17 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
   // delete_record" anyway — producing exactly the "do you want update or
   // delete?" non-answer this was supposed to prevent. Needs an actual
   // change-intent verb present, not just any list_records-triggering one.
-  const changeVerb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|set|make|kar\s*do|kardo|kar\s*dena|update\s*kar\w*|accept|approve|reject|decline|complete|cancel|mark\b.{0,20}\bdone|start|begin)\b/
+  // THIRD false-positive found (see the two comments above for the first
+  // two): "what is the loan start date of X" matched "start" as a change
+  // verb — the record it found didn't even match the name asked about, and
+  // the model, forced by the nudge below into calling update_record with no
+  // real field/value to change, invented one (an "amount" set to 0) to
+  // comply. "start"/"begin" are real status-change commands ("start this
+  // task") ONLY when not immediately followed by "date" — "start date" /
+  // "begin date" is always the noun field name (Loan/EMI/Subscription/FD
+  // all have one), never a command, so that phrasing is excluded here
+  // rather than removing the verb outright.
+  const changeVerb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|set|make|kar\s*do|kardo|kar\s*dena|update\s*kar\w*|accept|approve|reject|decline|complete|cancel|mark\b.{0,20}\bdone|start(?!\s*dates?)|begin(?!\s*dates?))\b/
   // A second false-positive found after the fix above: "how many tasks are
   // pending, rejected and cancel [sic]" is a pure count question, but
   // "cancel"/"reject" are themselves also change-intent verbs in changeVerb
