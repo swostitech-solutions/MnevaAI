@@ -182,9 +182,22 @@ export async function listRecords(userId, input) {
 
   const { status, payload } = await callRoute(router, 'get', spec.list.path, { userId, params: paramsFor(spec, input) })
   if (status >= 400) return { success: false, error: errorFrom(status, payload) }
-  const rows = spec.list.key ? payload?.[spec.list.key] : payload
-  const records = (Array.isArray(rows) ? rows : []).slice(0, 50).map((r) => stripOmitted(r, spec.list.omit))
-  return { success: true, module: input.module, count: records.length, records }
+  const rows = Array.isArray(spec.list.key ? payload?.[spec.list.key] : payload) ? (spec.list.key ? payload[spec.list.key] : payload) : []
+  // `records` below is capped to 50 so a huge module doesn't blow up the
+  // model's context — but `count` must be the TRUE total (rows.length,
+  // before the cap), not records.length. This was the actual bug behind "how
+  // many expenses do I have" coming back wrong: a user with, say, 80
+  // expenses got told 50, because count was computed from the already-capped
+  // list instead of the real row count.
+  const records = rows.slice(0, 50).map((r) => stripOmitted(r, spec.list.omit))
+  const truncated = rows.length > records.length
+  return {
+    success: true,
+    module: input.module,
+    count: rows.length,
+    records,
+    ...(truncated && { note: `Only the ${records.length} most recent of ${rows.length} total ${input.module} records are included in "records" below (to keep this response a reasonable size) — "count" above is still the true total across all of them. For a count question, use "count". For a sum/total across every record, say the total below is based on only these ${records.length} most recent ones and may not cover all ${rows.length}.` }),
+  }
 }
 
 export async function updateRecord(userId, input) {
