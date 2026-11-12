@@ -6,6 +6,30 @@ import { emitToUser } from '../services/realtime.js'
 
 export const familyRouter = express.Router()
 
+// family_task.dueDate and parent_medication.startDate/refillDate are plain
+// Strings, not DateTime — every screen that displays them shows the string
+// completely raw (no formatting pass), trusting it's already just a date,
+// and the manual edit forms enforce that by truncating the date-picker's
+// value to YYYY-MM-DD before ever sending it here. Ask AI's update_record
+// has no such guarantee — it can send any date shape the model produced,
+// including a full "2026-10-27T09:35:00.000Z" — so this normalizes
+// whatever comes in down to that same YYYY-MM-DD shape before it's ever
+// stored, regardless of the caller.
+function toDateOnlyString(value) {
+  if (!value) return null
+  const s = String(value).trim()
+  // An already-ISO value ("2026-10-27" or "2026-10-27T09:35:00.000Z") is
+  // sliced directly, string-wise — going through `new Date(...)` and back
+  // out via toISOString() would re-interpret it through the SERVER's local
+  // timezone and could shift it onto the adjacent day depending on both the
+  // server's TZ and the time-of-day in the string. Only a genuinely
+  // non-ISO value falls back to Date parsing.
+  const isoMatch = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (isoMatch) return isoMatch[1]
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+}
+
 const userSelect  = { id: true, name: true, email: true, avatar: true }
 // Connections additionally need each side's gender, to correctly invert the
 // relationship label for whichever side didn't set it (see
@@ -242,14 +266,15 @@ familyRouter.patch('/tasks/:id', async (req, res) => {
     if (!task) return res.status(404).json({ error: 'Task not found' })
     if (task.creatorId !== myId) return res.status(403).json({ error: 'Only the creator can edit this task' })
     if (title !== undefined && !title.trim()) return res.status(400).json({ error: 'title cannot be empty' })
-    if (dueDate !== undefined && isPastDueDate(dueDate)) return res.status(400).json({ error: 'Due date cannot be in the past — please pick today or a future date.' })
+    const normalizedDueDate = dueDate !== undefined ? toDateOnlyString(dueDate) : undefined
+    if (normalizedDueDate !== undefined && normalizedDueDate && isPastDueDate(normalizedDueDate)) return res.status(400).json({ error: 'Due date cannot be in the past — please pick today or a future date.' })
 
     const patch = {
       ...(title       !== undefined && { title: title.trim() }),
       ...(description !== undefined && { description: description?.trim() || null }),
       ...(priority     !== undefined && { priority }),
       ...(category     !== undefined && { category: category || null }),
-      ...(dueDate       !== undefined && { dueDate: dueDate || null }),
+      ...(dueDate       !== undefined && { dueDate: normalizedDueDate }),
       ...(recurrence   !== undefined && { recurrence: recurrence || 'None' }),
     }
     const updated = await prisma.familyTask.update({ where: { id: req.params.id }, data: patch, include: taskInclude })
@@ -501,11 +526,11 @@ familyRouter.patch('/parent-medications/:id', async (req, res) => {
       ...(frequency  !== undefined && { frequency }),
       ...(mealTime   !== undefined && { mealTime: mealTime || null }),
       ...(parent     !== undefined && { parent }),
-      ...(startDate  !== undefined && { startDate: startDate?.trim() || null }),
+      ...(startDate  !== undefined && { startDate: toDateOnlyString(startDate) }),
       ...(duration   !== undefined && { duration: duration?.trim() || null }),
       ...(doctor     !== undefined && { doctor: doctor?.trim() || null }),
       ...(notes      !== undefined && { notes: notes?.trim() || null }),
-      ...(refillDate !== undefined && { refillDate: refillDate?.trim() || null }),
+      ...(refillDate !== undefined && { refillDate: toDateOnlyString(refillDate) }),
       ...(doseTimes  !== undefined && { doseTimes: cleanDoseTimes(doseTimes) }),
       ...(active     !== undefined && { active: Boolean(active) }),
     }

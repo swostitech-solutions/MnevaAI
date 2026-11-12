@@ -540,6 +540,34 @@ function parseFlexibleDate(value, fallback = new Date()) {
   return isNaN(d.getTime()) ? fallback : d
 }
 
+// A handful of date fields (family_task.dueDate, parent_medication.startDate/
+// refillDate) are stored as a plain String, not a DateTime — the mobile
+// screens that edit them always truncate the date-picker's value to
+// YYYY-MM-DD before saving, and every screen that displays them shows that
+// string completely raw, with no formatting pass, trusting it's already
+// just a date. An AI tool filling one of these in from the model's own
+// wording has no such guarantee — "2026-10-27", "27 Oct 2026" or a full
+// "2026-10-27T09:35:00.000Z" are all things the model might produce, and
+// the last one is exactly what then showed up verbatim in the app. This
+// normalizes whatever the model gives to the same YYYY-MM-DD shape the
+// manual forms already enforce, so a plain-string date field never stores
+// anything but that, regardless of where the value came from.
+function toDateOnlyString(value) {
+  if (!value) return null
+  const s = String(value).trim()
+  // An already-ISO value ("2026-10-27" or "2026-10-27T09:35:00.000Z") is
+  // sliced directly, string-wise — going through `new Date(...)` and back
+  // out via toISOString() would re-interpret it through the SERVER's local
+  // timezone and could shift it onto the adjacent day depending on both the
+  // server's TZ and the time-of-day in the string. Only a genuinely
+  // non-ISO value (natural language the model wrote instead) falls back to
+  // Date parsing, same as parseFlexibleDate elsewhere in this file.
+  const isoMatch = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (isoMatch) return isoMatch[1]
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+}
+
 // Resolves a spoken name/email ("mom", "priya@x.com", "myself") to one of
 // the user's ACCEPTED family connections — creating a FamilyTask needs a
 // real connectionId + assigneeId, which only exist once two accounts are
@@ -1944,7 +1972,7 @@ export async function executeTool(name, input, userId, opts = {}) {
           mealTime: input.meal_time || null,
           doctor: input.doctor || null,
           duration: input.duration || null,
-          refillDate: input.refill_date || null,
+          refillDate: toDateOnlyString(input.refill_date),
           notes: input.notes || null,
         },
       })
@@ -2005,7 +2033,7 @@ export async function executeTool(name, input, userId, opts = {}) {
           description: input.description || null,
           priority: input.priority || 'Medium',
           category: input.category || null,
-          dueDate: input.due_date || null,
+          dueDate: toDateOnlyString(input.due_date),
           status: userId === assigneeId ? 'ACCEPTED' : 'PENDING_ACCEPTANCE',
         },
       })

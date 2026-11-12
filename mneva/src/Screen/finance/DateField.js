@@ -14,6 +14,15 @@ import { useTheme } from '../../context/ThemeContext';
 // so — unlike TaskCard/MeetingCard in Priorities.js — it calls useTheme()
 // and builds its own styles directly, the same way Settings.js's AccountTab
 // does for a component that isn't repeated across many rows.
+// Builds YYYY-MM-DD from the device's LOCAL calendar fields, never through
+// toISOString() (which converts to UTC first) — a date picked late at
+// night in a timezone ahead of UTC (e.g. just after midnight IST) would
+// otherwise convert to the PREVIOUS day in UTC, silently saving the wrong
+// date. The user picked a calendar day on their own device; this keeps it
+// exactly that day regardless of what timezone the backend runs in.
+const pad2 = (n) => String(n).padStart(2, '0');
+const toLocalDateOnly = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
 export default function DateField({ label, required, value, onChange, minimumDate }) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -39,7 +48,17 @@ export default function DateField({ label, required, value, onChange, minimumDat
           display={Platform.OS === 'ios' ? 'inline' : 'default'}
           onChange={(e, date) => {
             setShow(Platform.OS === 'ios');
-            if (date) onChange(date.toISOString());
+            // mode="date" above never lets the user pick a time, but the
+            // native picker still hands back a Date object carrying
+            // whatever time happened to be on the clock when it was
+            // constructed — so the raw ISO string includes a meaningless
+            // "T09:35:00.000Z"-style time that then got saved and shown
+            // verbatim wherever a screen displays this field raw (it relies
+            // on this already being a plain date, same as a few screens
+            // already truncated themselves after hitting that exact bug).
+            // toLocalDateOnly fixes every caller at once, including ones
+            // that forget to truncate themselves.
+            if (date) onChange(toLocalDateOnly(date));
           }}
         />
       )}
