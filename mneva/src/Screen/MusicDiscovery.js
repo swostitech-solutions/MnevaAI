@@ -280,12 +280,11 @@ function AIChatPanel({ onSongsUpdate, currentContext }) {
 2. Song Title - Artist Name · Album Name
 ...
 Keep it concise. If your search doesn't turn up enough real, current songs, return fewer rather than inventing any. User request: ${content}`
-        : `You are Mneva AI music assistant. The user is browsing ${currentContext}.
-Respond with a numbered list of 5-8 song recommendations in this exact format:
+        : `You are Mneva AI music assistant. The user is browsing ${currentContext}. Call your web_search tool first for "${content}" before answering — never recommend a song from memory alone. If the user named (or seems to be naming) a specific song, artist or album, your search must show a REAL result actually matching it; if nothing real comes up (e.g. the text doesn't match any real song/artist, like a random string of letters), say plainly that you couldn't find a real match for it and do NOT return a song list just to fill space — a wrong/invented recommendation is worse than admitting you found nothing. If the user is instead just asking for recommendations by mood/genre/vibe (no specific name given), use your search results (or well-known music you're confident actually exists) to pick 5-8 real songs that fit. When you do have real matches, respond with a numbered list of 5-8 in this exact format:
 1. Song Title - Artist Name · Album Name
 2. Song Title - Artist Name · Album Name
 ...
-Keep it concise. User request: ${content}`;
+Keep it concise. If fewer than 5 real matches turn up, return fewer rather than inventing any to reach that count. User request: ${content}`;
 
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
