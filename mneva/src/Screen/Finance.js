@@ -172,7 +172,14 @@ export default function Finance({ navigation }) {
     return () => offs.forEach(off => off?.());
   }, [on]);
 
-  const pendingBills = bills.filter(b => b.status !== 'Paid' && !b.autoPay).length;
+  // "Bills Pending" used to show only a count, with no ₹ figure at all —
+  // every other stat card (and every Overview row) leads with an amount, so
+  // this was the one with no sense of how much is actually owed. lastBillAmount
+  // (the latest known real bill) falls back to expectedAmount (the estimate
+  // entered when the bill was added) when no real amount has come in yet —
+  // same fallback /api/finance/spending already uses for the same reason.
+  const pendingBillsList = bills.filter(b => b.status !== 'Paid' && !b.autoPay);
+  const pendingBillsTotal = pendingBillsList.reduce((sum, b) => sum + (b.lastBillAmount ?? b.expectedAmount ?? 0), 0);
 
   const activeLoans = loans.filter(l => l.status === 'Active');
   const loanOutstanding = activeLoans.reduce((sum, l) => sum + (l.outstandingAmount || 0), 0);
@@ -185,7 +192,7 @@ export default function Finance({ navigation }) {
 
   const STAT_CARDS = [
     { label: 'Total Spend', value: `₹${(spending?.total || 0).toLocaleString('en-IN')}`, color: '#1F9A5A', sub: 'This month' },
-    { label: 'Bills Pending', value: pendingBills, color: '#F5A623', sub: 'Awaiting payment' },
+    { label: 'Bills Pending', value: pendingBillsList.length, color: '#F5A623', sub: pendingBillsList.length ? `₹${pendingBillsTotal.toLocaleString('en-IN')} due` : 'All paid' },
     { label: 'Portfolio', value: portfolio ? `₹${((portfolio.totalCurrent || 0) / 1000).toFixed(0)}k` : '—', color: '#615FF8', sub: `+${portfolio?.returnPct || 0}% return` },
     { label: 'EMI', value: `₹${emiMonthly.toLocaleString('en-IN')}`, color: '#4FA6E8', sub: `${activeEmis.length} active` },
   ];
