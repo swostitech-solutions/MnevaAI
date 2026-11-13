@@ -272,8 +272,17 @@ function AIChatPanel({ onSongsUpdate, currentContext }) {
       // "Trending"/"Charts" claim to be real current rankings (e.g. "India
       // Top 50"), not a recommendation — those need a real web search for
       // what's actually charting right now, not a guess from training data
-      // that could be describing whatever was popular a year ago.
-      const isRealChart = /^(Trending|Charts)\b/.test(currentContext || '');
+      // that could be describing whatever was popular a year ago. BUT this
+      // must only apply to the auto-generated browse query (`text` passed
+      // in explicitly, from the useEffect below) — if the user typed their
+      // OWN message into the chat box while sitting on the Trending tab
+      // (`sendMessage()` called with no `text`, so `content` came from the
+      // `input` field), that message still needs to go through the
+      // verify-or-say-you-found-nothing prompt below; otherwise typing
+      // random gibberish here just silently got the standing trending chart
+      // back every time, regardless of what was actually typed.
+      const isAutoQuery = !!text;
+      const isRealChart = isAutoQuery && /^(Trending|Charts)\b/.test(currentContext || '');
       const prompt = isRealChart
         ? `You are Mneva AI music assistant. Call your web_search tool first to find what is actually trending/charting right now for "${currentContext}" — never answer from memory, since chart rankings change constantly and your training data cannot be current. Based ONLY on what you find, respond with a numbered list of 5-8 real songs in this exact format:
 1. Song Title - Artist Name · Album Name
