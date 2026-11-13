@@ -31,7 +31,7 @@ Each object must have exactly these fields:
 { "teamA": string, "teamB": string, "scoreA": string, "scoreB": string, "info": string, "venue": string, "status": "${tab === "Live" ? "live" : tab === "Upcoming" ? "upcoming" : "result"}" }
 Rules:
 - scoreA/scoreB: empty string for upcoming matches, actual score for live/result
-- info: for live = current over/minute/quarter + competition name, for result = winner + margin. For upcoming = that SPECIFIC match's own actual scheduled date and time exactly as your search shows it (e.g. "15 Nov 2026, 2:30 PM") — every match has its own real date, almost never today's date, so do NOT put today's date (${today}) on every match as a placeholder; if your search doesn't clearly show a specific date for a given match, leave that match out entirely rather than guessing or reusing today's date.
+- info: for live = current over/minute/quarter + competition name, for result = winner + margin. For upcoming = that SPECIFIC match's own actual scheduled date and time exactly as your search shows it (e.g. "15 Nov 2026, 2:30 PM") — every match has its own real date, almost never today's date, so do NOT put today's date (${today}) on every match as a placeholder. Still include the match either way — never drop a real, confirmed upcoming match just because its exact date/time is unclear in your search results; in that case put whatever schedule detail you DO have (e.g. "Date TBA" or just the series/round name) instead of guessing a specific date or reusing today's.
 - venue: stadium/city name
 - Return 3 to 5 matches maximum — fewer, or an empty array, if your search doesn't turn up that many real ones. Never invent a match to fill the count.
 - Return ONLY the JSON array, nothing else`;
