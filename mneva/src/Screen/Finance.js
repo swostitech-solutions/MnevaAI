@@ -228,7 +228,11 @@ export default function Finance({ navigation }) {
           ))}
         </View>
 
-        {/* Overview — totals for everything added via "Add to Finance" */}
+        {/* Overview — a summary readout (totals for everything added via
+            "Add to Finance" below), not a chooser — a small soft-tint dot
+            instead of a bold gradient square, and the amount (the actual
+            point of this card) is what carries the visual weight on each
+            row, not an icon+chevron implying "tap to go add something". */}
         <View style={[styles.sectionCard, { marginTop: 4 }]}>
           <Text style={styles.sectionTitle}>Overview</Text>
 
@@ -236,19 +240,19 @@ export default function Finance({ navigation }) {
             {OVERVIEW.map((ov, i) => (
               <TouchableOpacity
                 key={ov.key}
-                style={[styles.chooserOption, i !== OVERVIEW.length - 1 && styles.rowDivider]}
+                style={[styles.overviewRow, i !== OVERVIEW.length - 1 && styles.rowDivider]}
                 onPress={() => navigation?.navigate?.(ov.screen)}
                 activeOpacity={0.7}
               >
-                <LinearGradient colors={ov.colors} style={styles.chooserIconGrad}>
-                  <Feather name={ov.icon} size={18} color="#FFFFFF" />
-                </LinearGradient>
+                <View style={[styles.overviewIconDot, { backgroundColor: theme.isDark ? `${ov.colors[0]}30` : `${ov.colors[0]}18` }]}>
+                  <Feather name={ov.icon} size={15} color={ov.colors[0]} />
+                </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.chooserOptionTitle}>{ov.label}</Text>
-                  <Text style={styles.chooserOptionSub}>{ov.count} active</Text>
+                  <Text style={styles.overviewLabel}>{ov.label}</Text>
+                  <Text style={styles.overviewLabelSub}>{ov.count} active</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.overviewAmount}>₹{ov.total.toLocaleString('en-IN')}</Text>
+                  <Text style={[styles.overviewAmount, { color: ov.colors[0] }]}>₹{ov.total.toLocaleString('en-IN')}</Text>
                   <Text style={styles.overviewAmountSub}>{ov.totalLabel}</Text>
                 </View>
               </TouchableOpacity>
@@ -394,7 +398,15 @@ const createStyles = (theme) => StyleSheet.create({
   chooserIconGrad: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   chooserOptionTitle: { fontSize: 15, fontWeight: '700', color: theme.text },
   chooserOptionSub: { fontSize: 12, color: theme.faint, marginTop: 1 },
-  overviewAmount: { fontSize: 14, fontWeight: '800', color: theme.text },
+  // Overview's own row treatment — deliberately lighter/flatter than
+  // chooserOption above (smaller soft-tint dot instead of a bold gradient
+  // square, a touch less vertical padding) so a summary readout doesn't
+  // read as just another "tap to add" list identical to the one below it.
+  overviewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+  overviewIconDot: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  overviewLabel: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
+  overviewLabelSub: { fontSize: 11, color: theme.faint, marginTop: 1 },
+  overviewAmount: { fontSize: 15, fontWeight: '800' },
   overviewAmountSub: { fontSize: 11, color: theme.faint, marginTop: 1 },
   tabBar: { flexDirection: 'row', backgroundColor: theme.tabBarBg, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 10 },
   tabItem: { flex: 1, alignItems: 'center' },
