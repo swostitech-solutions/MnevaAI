@@ -56,14 +56,16 @@ function DonutChart({ data, size = 128, strokeWidth = 18, centerLabel, centerSub
   );
 }
 
+// Loan/EMI/Subscription/Fixed Deposit/Portfolio Holding used to be listed
+// here too, but each one led to the exact same screen as its row in
+// Overview below — same list, same create/edit/delete — so the two cards
+// were doing the identical job twice. Only Expense and Bill stay: neither
+// has a row in Overview (that section only covers the 5 "N active, worth
+// ₹X" module types), so this card is now their one actual entry point,
+// not a redundant second path to somewhere Overview already goes.
 const ADD_OPTIONS = [
   { key: 'expense', label: 'Expense', sub: 'Everyday spending — cash, card, UPI & more', icon: 'shopping-bag', colors: ['#1F9A5A', '#17824A'], screen: 'ExpenseScreen' },
-  { key: 'loan', label: 'Loan', sub: 'Home, car, personal & more', icon: 'briefcase', colors: ['#4FA6E8', '#3D8BFF'], screen: 'LoanScreen' },
-  { key: 'emi', label: 'EMI', sub: 'Any installment purchase', icon: 'credit-card', colors: ['#F5A623', '#E0901A'], screen: 'EmiScreen' },
-  { key: 'subscription', label: 'Subscription', sub: 'Streaming, software & more', icon: 'repeat', colors: ['#9B72FF', '#7C5CE8'], screen: 'SubscriptionScreen' },
   { key: 'bill', label: 'Bill', sub: 'Electricity, rent, internet & more', icon: 'file-text', colors: ['#E0546E', '#C8405A'], screen: 'BillScreen' },
-  { key: 'fd', label: 'Fixed Deposit', sub: 'Bank FDs & maturity tracking', icon: 'lock', colors: ['#06B6D4', '#0891B2'], screen: 'FDScreen' },
-  { key: 'portfolio', label: 'Portfolio Holding', sub: 'Stocks, mutual funds, SIPs & more', icon: 'trending-up', colors: ['#615FF8', '#4A47D5'], screen: 'PortfolioScreen' },
 ];
 
 export default function Finance({ navigation }) {
@@ -228,11 +230,13 @@ export default function Finance({ navigation }) {
           ))}
         </View>
 
-        {/* Overview — a summary readout (totals for everything added via
-            "Add to Finance" below), not a chooser — a small soft-tint dot
-            instead of a bold gradient square, and the amount (the actual
-            point of this card) is what carries the visual weight on each
-            row, not an icon+chevron implying "tap to go add something". */}
+        {/* Overview — summary + the ONE entry point for Loans/EMIs/
+            Subscriptions/Fixed Deposits/Portfolio (view, create, edit,
+            delete all live on the screen each row opens) — not a chooser,
+            so it looks the part: a small soft-tint dot instead of a bold
+            gradient square, and the amount (the actual point of this card)
+            is what carries the visual weight on each row, not an
+            icon+chevron implying "tap to go add something". */}
         <View style={[styles.sectionCard, { marginTop: 4 }]}>
           <Text style={styles.sectionTitle}>Overview</Text>
 
@@ -304,8 +308,9 @@ export default function Finance({ navigation }) {
           </View>
         )}
 
-        {/* Add to Finance — always-visible card. Each option opens its own
-            full page (list + add form) instead of a popup. */}
+        {/* Add to Finance — the two module types with no row in Overview
+            above (see ADD_OPTIONS). Each option opens its own full page
+            (list + add form) instead of a popup. */}
         <View style={[styles.sectionCard, { marginTop: 16 }]}>
           <Text style={styles.sectionTitle}>Add to Finance</Text>
           <View style={{ marginTop: 10 }}>
