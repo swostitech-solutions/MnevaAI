@@ -212,7 +212,14 @@ export function requestedRecordTool(messages = []) {
   // real sentences put other words in between ("kitne family task hai" —
   // "kitne" and "hai" aren't next to each other) — the noun check below is
   // what keeps this from over-firing on unrelated small talk.
-  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what|who|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|list|count|kais[ae]|puch\w*|jaan\w*|information|accept|approve|reject|decline|complete|cancel|mark\b.{0,20}\bdone|start|begin)\b/
+  // "summary"/"summarize"/"overview"/"status"/"give me" added after a real,
+  // reproduced failure: "give me my loan summary" and "FD status" neither
+  // matched any existing verb word, so list_records was never forced, and
+  // the model answered with invented loan names / a hallucinated "0 fixed
+  // deposits" instead of the real records — only corrected after the user
+  // pushed back. These are extremely common ways to ask about saved data
+  // without using "what"/"how many"/etc., so they needed to be covered too.
+  const verb = /\b(edit|update|change|modify|rename|correct|badal\w*|hata\w*|remove|delete|mita\w*|details?|detail|set|make|kar\s*do|kardo|karo|kar\s*dena|update\s*kar\w*|kya|hai\s*kya|what|who|kaun\w*|naam|kab|when\s+is|kitn[aei]|how\s+much|how\s+many|is\s+there|are\s+there|bata\w*|dikha\w*|tell\s*me|show\s*me|give\s*me|list|count|kais[ae]|puch\w*|jaan\w*|information|summary|summari[sz]e|overview|status|accept|approve|reject|decline|complete|cancel|mark\b.{0,20}\bdone|start|begin)\b/
   const noun = /\b(medications?|medicines?|dawa|dawai|dosage|doses?|refill|pets?|dogs?|cats?|puppy|puppies|kittens?|breed|tasks?|reminders?|subscriptions?|loans?|emis?|fd|fds|fixed deposits?|bills?|holdings?|portfolio|expenses?|child|children|kids?|activity|activities|warranty|warranties|maintenance|appliances?|contacts?|gifts?|celebrations?|steps?|heart\s*rate|sleep|calories?|weight|height|bmi|vitals?|workout|distance|health\s*log|blood\s*pressure|spo2|oxygen|body\s*fat|muscle\s*mass|waist|water|protein|carbs?|cycle|father|dad|mom|mother|parents?|doctor)\b/
   return verb.test(text) && noun.test(text) ? 'list_records' : null
 }
