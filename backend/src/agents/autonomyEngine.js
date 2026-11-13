@@ -2594,8 +2594,19 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
 
     if (resp?.stop_reason === 'end_turn' || toolBlocks.length === 0) {
       // Looked the record up but then only described what it would do —
-      // push once for the actual update/delete call.
-      if (wantsChange && !nudgedToAct && allToolResults.some(r => r.tool === 'list_records')
+      // push once for the actual update/delete call. BUT: a reply containing
+      // "?" is the model legitimately asking which record is meant or what
+      // to change it to (rule 26/20) — a real, underspecified case like
+      // "edit one expense" with no record or new value named at all. Forcing
+      // "now do it" there overrides that correct question and leaves the
+      // model with nothing real to act on except guessing — which produced
+      // exactly that: it picked a random expense and invented a new amount,
+      // instead of actually asking the user like it should have. Only nudge
+      // when the reply has NO question in it (a genuine "I'll do that" the
+      // model just forgot to follow through on), so a legitimate clarifying
+      // question reaches the real user instead of getting steamrolled.
+      const askedClarifyingQuestion = textBlocks.some(b => String(b.text || '').includes('?'))
+      if (wantsChange && !nudgedToAct && !askedClarifyingQuestion && allToolResults.some(r => r.tool === 'list_records')
         && !allToolResults.some(r => r.tool === 'update_record' || r.tool === 'delete_record')) {
         nudgedToAct = true
         agentMsgs.push({ role: 'assistant', content: textBlocks.map(b => b.text).join('\n') || 'Looking that up' })
