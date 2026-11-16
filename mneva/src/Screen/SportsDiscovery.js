@@ -24,9 +24,18 @@ const TAB_BAR_HEIGHT = 50;
 // scores) ──────────────────────────────────────────────────────────────────
 async function fetchSportsFromAI(sportTitle, tab) {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const searchGoal = tab === "Live" ? "live score" : tab === "Upcoming" ? "upcoming fixtures schedule" : "recent match results";
-  const prompt = `Today is ${today}. Call your web_search tool first — search for "${sportTitle} ${searchGoal}" — to find real, current information. Never answer from memory: live/recent match scores and schedules change constantly and your training data cannot possibly be up to date.
-Based ONLY on what your search actually finds, return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? "upcoming (next 60 days — a full 2 months) — list EVERY real one your search turns up across that whole window, not just the first few or just the nearest ones" : "recently completed (last 7 days)"} ${sportTitle} matches.
+  // A single generic search ("Cricket upcoming fixtures schedule") tends to
+  // only surface whatever's happening in the next few days — the page/snippet
+  // that ranks highest is usually "what's on right now", not a full 2-month
+  // calendar — so the model needs an explicit end date and permission (really
+  // an instruction) to search again with more specific terms if the first
+  // search comes up short, otherwise it silently settles for however far out
+  // that first search happened to reach.
+  const endDateLabel = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+    .toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
+  const searchGoal = tab === "Live" ? "live score" : tab === "Upcoming" ? `full fixtures schedule through ${endDateLabel}` : "recent match results";
+  const prompt = `Today is ${today}. Call your web_search tool first — search for "${sportTitle} ${searchGoal}" — to find real, current information. Never answer from memory: live/recent match scores and schedules change constantly and your training data cannot possibly be up to date.${tab === "Upcoming" ? ` A single search like this often only returns the next few days' matches, not the full window — if what you get back doesn't clearly cover matches all the way out to ${endDateLabel}, search AGAIN with more specific terms (the sport's governing body's official fixture list, a specific tournament/series name you saw mentioned, or "${sportTitle} schedule" plus the relevant months) until you're confident you've found everything real that's been announced through ${endDateLabel} — don't stop after just one search and assume that's everything.` : ""}
+Based ONLY on what your search actually finds, return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? `upcoming (now through ${endDateLabel}) — list EVERY real one your search turns up across that whole window, not just the first few or just the nearest ones` : "recently completed (last 7 days)"} ${sportTitle} matches.
 Each object must have exactly these fields:
 { "teamA": string, "teamB": string, "scoreA": string, "scoreB": string, "info": string, "venue": string, "status": "${tab === "Live" ? "live" : tab === "Upcoming" ? "upcoming" : "result"}" }
 Rules:
