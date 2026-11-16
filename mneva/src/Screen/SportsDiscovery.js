@@ -26,14 +26,14 @@ async function fetchSportsFromAI(sportTitle, tab) {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const searchGoal = tab === "Live" ? "live score" : tab === "Upcoming" ? "upcoming fixtures schedule" : "recent match results";
   const prompt = `Today is ${today}. Call your web_search tool first — search for "${sportTitle} ${searchGoal}" — to find real, current information. Never answer from memory: live/recent match scores and schedules change constantly and your training data cannot possibly be up to date.
-Based ONLY on what your search actually finds, return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? "upcoming (next 30 days) — list EVERY real one your search turns up, not just the first few" : "recently completed (last 7 days)"} ${sportTitle} matches.
+Based ONLY on what your search actually finds, return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? "upcoming (next 60 days — a full 2 months) — list EVERY real one your search turns up across that whole window, not just the first few or just the nearest ones" : "recently completed (last 7 days)"} ${sportTitle} matches.
 Each object must have exactly these fields:
 { "teamA": string, "teamB": string, "scoreA": string, "scoreB": string, "info": string, "venue": string, "status": "${tab === "Live" ? "live" : tab === "Upcoming" ? "upcoming" : "result"}" }
 Rules:
 - scoreA/scoreB: empty string for upcoming matches, actual score for live/result
 - info: for live = current over/minute/quarter + competition name, for result = winner + margin. For upcoming = that SPECIFIC match's own actual scheduled date and time — every match has its own real date, almost never today's date, so do NOT put today's date (${today}) on every match as a placeholder. Schedule sites often show the time in GMT/UTC — always CONVERT it to IST (India Standard Time, UTC+5:30, e.g. GMT 11:00 → IST 16:30) before putting it in info, and label it "IST", never "GMT"/"UTC" — this app always shows times in IST, nowhere else in it shows GMT, so a time left in GMT is wrong even if it was technically what the source said. Format like "16 Nov 2026, 4:30 PM IST". Still include the match either way — never drop a real, confirmed upcoming match just because its exact date/time is unclear in your search results; in that case put whatever schedule detail you DO have (e.g. "Date TBA" or just the series/round name) instead of guessing a specific date or reusing today's.
 - venue: stadium/city name
-- Return ${tab === "Upcoming" ? "up to 15 matches — every real upcoming match your search finds, not an artificially short list" : "3 to 5 matches maximum"}; fewer, or an empty array, if your search doesn't turn up that many real ones. Never invent a match to fill the count.
+- Return ${tab === "Upcoming" ? "up to 30 matches — every real upcoming match your search finds across the full 60-day window, not an artificially short list" : "3 to 5 matches maximum"}; fewer, or an empty array, if your search doesn't turn up that many real ones. Never invent a match to fill the count.
 - Return ONLY the JSON array, nothing else`;
 
   const res = await apiFetch("/api/agent/chat", {
