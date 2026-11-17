@@ -381,11 +381,19 @@ export async function getEmailBody(user, messageId) {
 // line above it (and rejoined with a space instead of a break) only when it
 // doesn't start a new bullet and doesn't look like the start of a new
 // sentence/line — i.e. it starts lowercase, with "I" (always capitalized
-// even mid-sentence), or with a lowercase conjunction/article. A genuine
-// short standalone line like a "Best,\nName" sign-off always starts
-// uppercase, so it's left alone.
+// even mid-sentence), or with a word that's capitalized ONLY because it's
+// the first word on its own line, not because it starts a new sentence
+// (pronouns, conjunctions, prepositions, articles). A genuine short
+// standalone line like a "Best,\nName" sign-off is still left alone — it's
+// only ever reached when the line right above it is non-empty (a real
+// paragraph break is a BLANK line, which this function never joins across),
+// and a sign-off's own word ("Best", a name) is never one of these.
+// Recurring gap this was extended to cover: a wrap landing on a pronoun
+// other than "I" (we/you/he/she/they/...) kept being missed, since English
+// capitalizes the first word of any line regardless of whether that word
+// would normally be capitalized mid-sentence.
 const BULLET_LINE_RE = /^\s*(?:[•*-]|\d+[.)])\s+/
-const CONTINUATION_WORD_RE = /^(and|but|or|nor|so|because|which|who|whose|whom|that|to|of|in|on|for|with|as|the|a|an|this|these|those|it|its|if|when|while|until|unless)\b/i
+const CONTINUATION_WORD_RE = /^(and|but|or|nor|so|because|which|who|whose|whom|that|to|of|in|on|for|with|as|the|a|an|this|these|those|it|its|if|when|while|until|unless|we|us|our|ours|you|your|yours|he|she|him|her|his|hers|they|them|their|theirs|there|not|just|also|then|than|from|by|at|up|down|out|over|under|after|before|during|since|about|into|onto|through|between|among|will|would|can|could|should|may|might|must)\b/i
 function looksLikeWrapContinuation(line) {
   const t = line.trim()
   if (!t) return false
