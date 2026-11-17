@@ -22,27 +22,29 @@ const TAB_BAR_HEIGHT = 50;
 // ── Real-time sports fetch — grounded in an actual web search, not the
 // model's own training data (which can never be current for live/recent
 // scores) ──────────────────────────────────────────────────────────────────
-async function fetchSportsFromAI(sportTitle, tab) {
-  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  // A single generic search ("Cricket upcoming fixtures schedule") tends to
-  // only surface whatever's happening in the next few days — the page/snippet
-  // that ranks highest is usually "what's on right now", not a full 2-month
-  // calendar — so the model needs an explicit end date and permission (really
-  // an instruction) to search again with more specific terms if the first
-  // search comes up short, otherwise it silently settles for however far out
-  // that first search happened to reach.
-  const endDateLabel = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
-    .toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
-  const searchGoal = tab === "Live" ? "live score" : tab === "Upcoming" ? `full fixtures schedule through ${endDateLabel}` : "recent match results";
-  const prompt = `Today is ${today}. Call your web_search tool first — search for "${sportTitle} ${searchGoal}" — to find real, current information. Never answer from memory: live/recent match scores and schedules change constantly and your training data cannot possibly be up to date.${tab === "Upcoming" ? ` A single search like this often only returns the next few days' matches, not the full window — if what you get back doesn't clearly cover matches all the way out to ${endDateLabel}, search AGAIN with more specific terms (the sport's governing body's official fixture list, a specific tournament/series name you saw mentioned, or "${sportTitle} schedule" plus the relevant months) until you're confident you've found everything real that's been announced through ${endDateLabel} — don't stop after just one search and assume that's everything.` : ""}
-Based ONLY on what your search actually finds, return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? `upcoming (now through ${endDateLabel}) — list EVERY real one your search turns up across that whole window, not just the first few or just the nearest ones` : "recently completed (last 7 days)"} ${sportTitle} matches.
+// A single generic search ("Cricket upcoming fixtures schedule") only
+// surfaces whatever's happening in the next few days — the page/snippet
+// that ranks highest is "what's on right now", not a full 2-month calendar.
+// Telling the model to "search again if this one seems insufficient" (an
+// earlier version of this) left it as a judgment call it kept not making —
+// one search, every time, regardless of the instruction. toolChoice only
+// force-triggers web_search on the FIRST tool call of a turn (see
+// requestedWebSearchTool in autonomyEngine.js); a second/third search within
+// that SAME turn is never forced, only hoped for. So instead of one request
+// asking for 3 searches in one turn, Upcoming now fires 3 SEPARATE requests
+// — one per calendar month in the 60-day window — each starting its own
+// fresh turn, so each one's web_search is reliably force-triggered on its
+// own first call, the same way a single search already works today.
+async function fetchOneSportsQuery(sportTitle, tab, searchTerm, today, windowNote) {
+  const prompt = `Today is ${today}. Call your web_search tool first — search for "${sportTitle} ${searchTerm}" — to find real, current information. Never answer from memory: live/recent match scores and schedules change constantly and your training data cannot possibly be up to date.
+Based ONLY on what your search actually finds, return ONLY a valid JSON array (no markdown, no explanation) of ${tab === "Live" ? "currently live" : tab === "Upcoming" ? `upcoming ${windowNote} — list EVERY real one your search turns up, not just the first few` : "recently completed (last 7 days)"} ${sportTitle} matches.
 Each object must have exactly these fields:
 { "teamA": string, "teamB": string, "scoreA": string, "scoreB": string, "info": string, "venue": string, "status": "${tab === "Live" ? "live" : tab === "Upcoming" ? "upcoming" : "result"}" }
 Rules:
 - scoreA/scoreB: empty string for upcoming matches, actual score for live/result
 - info: for live = current over/minute/quarter + competition name, for result = winner + margin. For upcoming = that SPECIFIC match's own actual scheduled date and time — every match has its own real date, almost never today's date, so do NOT put today's date (${today}) on every match as a placeholder. Schedule sites often show the time in GMT/UTC — always CONVERT it to IST (India Standard Time, UTC+5:30, e.g. GMT 11:00 → IST 16:30) before putting it in info, and label it "IST", never "GMT"/"UTC" — this app always shows times in IST, nowhere else in it shows GMT, so a time left in GMT is wrong even if it was technically what the source said. Format like "16 Nov 2026, 4:30 PM IST". Still include the match either way — never drop a real, confirmed upcoming match just because its exact date/time is unclear in your search results; in that case put whatever schedule detail you DO have (e.g. "Date TBA" or just the series/round name) instead of guessing a specific date or reusing today's.
 - venue: stadium/city name
-- Return ${tab === "Upcoming" ? "up to 30 matches — every real upcoming match your search finds across the full 60-day window, not an artificially short list" : "3 to 5 matches maximum"}; fewer, or an empty array, if your search doesn't turn up that many real ones. Never invent a match to fill the count.
+- Return up to ${tab === "Upcoming" ? "15" : "5"} matches — fewer, or an empty array, if your search doesn't turn up that many real ones. Never invent a match to fill the count.
 - Return ONLY the JSON array, nothing else`;
 
   const res = await apiFetch("/api/agent/chat", {
@@ -52,11 +54,51 @@ Rules:
   });
 
   const text = res.response || res.reply || res.message || res.content || "";
-  // Extract JSON array from response
   const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
-  if (!match) return null;
-  const parsed = JSON.parse(match[0]);
-  return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchSportsFromAI(sportTitle, tab) {
+  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  if (tab !== "Upcoming") {
+    const searchTerm = tab === "Live" ? "live score" : "recent match results";
+    const results = await fetchOneSportsQuery(sportTitle, tab, searchTerm, today, "");
+    return results.length > 0 ? results : null;
+  }
+
+  // One query per calendar month across the ~60-day window, run in
+  // parallel as independent requests — see the comment above for why.
+  const monthLabel = (monthsAhead) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + monthsAhead);
+    return d.toLocaleDateString("en-IN", { year: "numeric", month: "long" });
+  };
+  const months = [monthLabel(0), monthLabel(1), monthLabel(2)];
+  const windowNote = `(now through ${new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })})`;
+  const perMonthResults = await Promise.all(
+    months.map(m => fetchOneSportsQuery(sportTitle, "Upcoming", `fixtures schedule ${m}`, today, windowNote).catch(() => []))
+  );
+
+  // Dedupe (the same series/match can turn up in more than one month's
+  // search) by team pairing + venue, keep original month order so the
+  // nearest month's matches lead the list.
+  const seen = new Set();
+  const merged = [];
+  for (const list of perMonthResults) {
+    for (const m of list) {
+      const key = `${m.teamA}|${m.teamB}|${m.venue}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(m);
+    }
+  }
+  return merged.length > 0 ? merged.slice(0, 30) : null;
 }
 
 const SPORTS = [
