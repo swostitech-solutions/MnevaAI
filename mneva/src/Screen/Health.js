@@ -330,8 +330,22 @@ function LogDataSheet({ visible, onClose, onSynced, metrics, bottomInset, theme,
   // the first scroll can land using the still-pre-shrink layout. Re-running
   // it whenever keyboardHeight actually changes re-measures against the
   // real, settled layout for whichever field is currently focused.
+  // A double rAF only guarantees ONE extra JS render cycle (~tens of ms) —
+  // this sheet sits inside a <Modal>, which has its own native window, and
+  // that window's actual native layout pass for the just-changed maxHeight
+  // can still be mid-flight when rAF-based measureLayout reads it, landing
+  // the scroll a bit short of fully correct. A second pass a little later
+  // (plain setTimeout, since nothing render-driven is a reliable enough
+  // signal for "the native layout has now actually settled") catches that
+  // case instead of just hoping the first measurement already was accurate.
   useEffect(() => {
-    if (keyboardHeight > 0 && focusedKeyRef.current) scrollFieldIntoView(focusedKeyRef.current);
+    if (!(keyboardHeight > 0 && focusedKeyRef.current)) return;
+    const key = focusedKeyRef.current;
+    scrollFieldIntoView(key);
+    const retry = setTimeout(() => {
+      if (focusedKeyRef.current === key) scrollFieldIntoView(key);
+    }, 250);
+    return () => clearTimeout(retry);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyboardHeight]);
 
