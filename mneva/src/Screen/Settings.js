@@ -253,8 +253,21 @@ function AccountTab({ user, currentLevel, navigation, onPhoneUpdated, onAvatarUp
     ? new Date(user.createdAt).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
     : 'Not available';
 
-  const handleExport = () =>
-    Alert.alert('Export Data', 'Your data export will be prepared and sent to your registered email within 24 hours (DPDP compliant).', [{ text: 'OK' }]);
+  // Used to just show this same alert with no backend behind it at all —
+  // tapping it now actually queues a real export job (see
+  // backend/src/queues/accountExport.queue.js), which emails a zip of
+  // every module's data within a couple of minutes, not a 24-hour promise.
+  const handleExport = async () => {
+    try {
+      const res = await apiFetch('/api/auth/account/export', { method: 'POST' });
+      Alert.alert('Export Started', res?.message || 'Your data export is on its way to your registered email.', [{ text: 'OK' }]);
+    } catch (err) {
+      const message = err?.status === 429
+        ? (err?.message || 'You can request one export per day. Please try again later.')
+        : 'Could not start the export right now. Please try again.';
+      Alert.alert('Export Data', message, [{ text: 'OK' }]);
+    }
+  };
 
   const handleDelete = () =>
     Alert.alert(

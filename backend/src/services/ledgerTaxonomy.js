@@ -92,6 +92,7 @@ const TOOL_META = {
   account_connected: { domain: 'security', autonomyStage: null },
   account_disconnected: { domain: 'security', autonomyStage: null },
   google_task_completed: { domain: 'workspace', autonomyStage: null },
+  account_data_exported: { domain: 'security', autonomyStage: null },
 }
 
 export function getToolMeta(tool) {

@@ -14,6 +14,7 @@ import { deletePersistedFile } from '../controllers/document.controller.js'
 import { deleteVaultFileBlob } from '../controllers/vault.controller.js'
 import { logger } from '../config/logger.js'
 import { authMiddleware, setSessionCache } from '../middleware/auth.js'
+import { queueAccountExport } from '../queues/accountExport.queue.js'
 
 const router = express.Router()
 const SECRET = process.env.JWT_SECRET
@@ -662,6 +663,30 @@ router.delete('/account', authMiddleware, async (req, res) => {
 
     logger.info(`Account deleted: ${userId}`)
     res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Audit item G-05: queues the real export job (see
+// queues/accountExport.queue.js) instead of just showing an alert that
+// promised one. Limited to once per day per user — stored on preferences
+// rather than a new table, since it's one timestamp, not a growing log.
+router.post('/account/export', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
+    const prefs = user?.preferences || {}
+    const lastRequestedAt = prefs.export?.lastRequestedAt ? new Date(prefs.export.lastRequestedAt) : null
+    if (lastRequestedAt && Date.now() - lastRequestedAt.getTime() < 24 * 60 * 60 * 1000) {
+      return res.status(429).json({ error: 'You can request one export per day. Please try again later.' })
+    }
+    await prisma.user.update({
+      where: { id: userId },
+      data: { preferences: { ...prefs, export: { lastRequestedAt: new Date().toISOString() } } },
+    })
+    await queueAccountExport(userId)
+    res.json({ success: true, message: "We're preparing your export — it will arrive by email shortly." })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
