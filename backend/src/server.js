@@ -51,6 +51,7 @@ import { newsRouter } from "./routes/news.js";
 import { familyRouter } from "./routes/family.js";
 import { petRouter, startPetReminderPoller } from "./routes/pet.js";
 import { callLogRouter } from "./routes/callLog.js";
+import { getGlobalTestModeLevel } from "./services/pendingActions.service.js";
 import {
   familyItemsRouter,
   startFamilyReminderPoller,
@@ -331,6 +332,24 @@ app.get("/api/health", (_, res) => {
   res.status(status.status === "ok" ? 200 : 503).json(status);
 });
 
+// Audit item G-20: three env vars quietly change real behavior with no
+// visibility from the code alone (a missing/ephemeral ledger signing key,
+// a missing token-encryption key, a leftover QA test-mode level) — this
+// surfaces their STATUS, never their VALUE, so the team can sanity-check a
+// deploy without reading raw .env contents. Requires login (not fully
+// public) since even "is this key configured" is a small security-posture
+// signal, but doesn't need any special admin role beyond that.
+app.get("/api/health/config", authMiddleware, (_req, res) => {
+  const testModeLevel = getGlobalTestModeLevel();
+  res.json({
+    nodeEnv: process.env.NODE_ENV || "development",
+    ledgerSigningKeyConfigured: !!process.env.LEDGER_SIGNING_PRIVATE_KEY?.trim(),
+    tokenEncryptionKeyConfigured: !!process.env.TOKEN_ENCRYPTION_KEY?.trim(),
+    testModeActive: testModeLevel !== null,
+    testModeLevel,
+  });
+});
+
 // Keep the server reachable during DB warm-up/reconnect storms. The app can
 // still show cached data or a friendly error instead of appearing completely
 // unavailable when only the database is reconnecting.
@@ -579,6 +598,26 @@ async function startGoogleServicePollersForConnectedUsers(io) {
 // background in parallel. Render's health check (and real users) get a fast
 // response immediately; features that need Redis/Qdrant/DB simply report
 // "not ready" until their connection resolves, instead of blocking startup.
+
+// Audit item G-20: two of these three vars are a hard safety floor, not a
+// "nice to have" — checking process.env directly is synchronous and free,
+// so this runs before the port even opens, same spot a slow DB/Redis check
+// would NOT get to run (see the comment above on why those are async).
+if (isProduction) {
+  if (!process.env.LEDGER_SIGNING_PRIVATE_KEY?.trim()) {
+    logger.error("LEDGER_SIGNING_PRIVATE_KEY is not set in production — refusing to start. Without it, ledgerSigning.js falls back to a fresh throwaway key every restart, making every past Twin Diary entry unverifiable going forward.");
+    process.exit(1);
+  }
+  if (!process.env.TOKEN_ENCRYPTION_KEY?.trim()) {
+    logger.error("TOKEN_ENCRYPTION_KEY is not set in production — refusing to start. Connected-account tokens (Google/Outlook/Slack) and memory text cannot be encrypted without it.");
+    process.exit(1);
+  }
+  const testModeLevel = getGlobalTestModeLevel();
+  if (testModeLevel !== null) {
+    logger.warn(`⚠️  GLOBAL_TEST_MODE_LEVEL=${testModeLevel} is set in PRODUCTION — every real user is getting this autonomy level right now, not just QA testers. Unset it (blank or remove the line) once the test window is done.`);
+  }
+}
+
 if (process.env.NODE_ENV !== "test") {
   server.listen(listenPort, "0.0.0.0");
 }
