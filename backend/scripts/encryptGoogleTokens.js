@@ -6,7 +6,7 @@
 import 'dotenv/config'
 import { prisma } from '../src/config/prisma.js'
 
-const GOOGLE_TOKEN_NAMESPACES = ['gmail', 'calendar', 'googleFit', 'googleContacts', 'googleDrive', 'googleTasks']
+const GOOGLE_TOKEN_NAMESPACES = ['gmail', 'calendar', 'googleFit', 'googleContacts', 'googleDrive', 'googleTasks', 'outlook']
 
 function hasPlaintextTokens(preferences) {
   if (!preferences || typeof preferences !== 'object') return false

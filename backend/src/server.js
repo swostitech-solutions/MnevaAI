@@ -32,7 +32,7 @@ import documentsRoutes from "./routes/documents.js";
 import vaultRoutes from "./routes/vault.js";
 import preferencesRoutes from "./routes/preferences.js";
 import gmailRoutes, { gmailCallbackHandler } from "./routes/gmail.js";
-import slackRoutes, { slackCallbackHandler } from "./routes/slack.js";
+import slackRoutes, { slackCallbackHandler, slackEventsHandler } from "./routes/slack.js";
 import calendarRoutes, { calendarCallbackHandler } from "./routes/calendar.js";
 import googleFitRoutes, {
   googleFitCallbackHandler,
@@ -417,6 +417,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/device-notifications", deviceNotificationRoutes);
 app.get("/api/gmail/callback", gmailCallbackHandler);
 app.get("/api/slack/callback", slackCallbackHandler);
+// Public Slack Events API endpoint (no auth — Slack itself calls this, not
+// a logged-in user). Point the Events Subscription URL at this in the
+// Slack App dashboard to get live token_revoked/app_uninstalled cleanup.
+app.post("/api/slack/events", slackEventsHandler);
 app.get("/api/calendar/callback", calendarCallbackHandler);
 app.get("/api/googlefit/callback", googleFitCallbackHandler);
 app.get("/api/contacts/callback", googleContactsCallbackHandler);

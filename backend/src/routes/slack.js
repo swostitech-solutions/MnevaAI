@@ -3,6 +3,7 @@ import { decodeSlackState, createSlackAuthUrl, exchangeCodeForTokens, saveSlackT
 import { logger } from '../config/logger.js'
 import { userStore } from '../models/userStore.js'
 import { ledger } from '../services/ledgerService.js'
+import { prisma } from '../config/prisma.js'
 
 const router = express.Router()
 
@@ -45,6 +46,48 @@ export async function slackCallbackHandler(req, res) {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174'
     if (isMobile) return res.redirect(`${mobileScheme}://settings?slack=error&msg=${encodeURIComponent(err.message)}`)
     return res.redirect(`${frontendUrl}/settings?slack=error&msg=${encodeURIComponent(err.message)}`)
+  }
+}
+
+// Audit item G-07: this app was previously silent about a user revoking
+// Slack access or uninstalling the app from Slack's side — Mneva kept
+// showing "connected" with a token that no longer actually worked, until
+// the next API call happened to fail. Slack's Events API posts here for
+// both cases; the single bot token this app uses is shared per-workspace
+// (Bot Token Scopes only, no per-user OAuth grant — see slack.service.js's
+// own comment), so either event means every Mneva user connected to that
+// one Slack team needs to be marked disconnected, not just whoever
+// triggered it. Needs the Events Subscription URL in the Slack App
+// dashboard pointed at POST /api/slack/events (not code-controllable from
+// here — the quick-win "check Slack app settings" item this audit also
+// flagged covers doing that).
+export async function slackEventsHandler(req, res) {
+  const body = req.body || {}
+  if (body.type === 'url_verification') return res.json({ challenge: body.challenge })
+  res.status(200).end() // ack immediately — Slack retries if this is slow/non-2xx
+  if (body.type !== 'event_callback') return
+  const eventType = body.event?.type
+  if (eventType !== 'tokens_revoked' && eventType !== 'app_uninstalled') return
+  const teamId = body.team_id
+  if (!teamId) return
+  try {
+    const affected = await prisma.user.findMany({
+      where: { preferences: { path: ['slack', 'teamId'], equals: teamId } },
+      select: { id: true },
+    })
+    for (const { id } of affected) {
+      await clearSlackConnection(id)
+      ledger.add({
+        userId: id,
+        tool: 'account_disconnected',
+        input: { service: 'slack', reason: eventType },
+        result: {},
+        status: 'completed',
+      }).catch(() => {})
+    }
+    logger.info(`Slack ${eventType} for team=${teamId} — disconnected ${affected.length} Mneva user(s)`)
+  } catch (err) {
+    logger.error(`Slack events handler failed: ${err.message}`)
   }
 }
 

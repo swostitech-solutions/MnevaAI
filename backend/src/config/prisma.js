@@ -35,6 +35,12 @@ const basePrisma = new PrismaClient({
 // aware this happens. Existing plaintext rows keep working unmodified until
 // scripts/encryptGoogleTokens.js re-saves them (see that script).
 const GOOGLE_TOKEN_NAMESPACES = ["gmail", "calendar", "googleFit", "googleContacts", "googleDrive", "googleTasks", "outlook"];
+// Audit items G-07/S-01: unlike Google/Outlook above, Slack's own saved
+// shape (slack.service.js's saveSlackTokens) is a single flat `botToken`
+// string, not a `{ tokens: {...} }` object — encryptToken/decryptToken
+// both work on any JSON-serializable value (they JSON.stringify first), so
+// the string case just needs its own small branch rather than forcing it
+// into the object-shaped loop above.
 
 function withEncryptedTokens(preferences) {
   if (!preferences || typeof preferences !== "object") return preferences;
@@ -46,6 +52,10 @@ function withEncryptedTokens(preferences) {
       next[ns] = { ...section, tokens: encryptToken(section.tokens) };
       changed = true;
     }
+  }
+  if (next.slack && typeof next.slack === "object" && typeof next.slack.botToken === "string" && !isEncryptedToken(next.slack.botToken)) {
+    next.slack = { ...next.slack, botToken: encryptToken(next.slack.botToken) };
+    changed = true;
   }
   return changed ? next : preferences;
 }
@@ -60,6 +70,10 @@ function withDecryptedTokens(preferences) {
       next[ns] = { ...section, tokens: decryptToken(section.tokens) };
       changed = true;
     }
+  }
+  if (next.slack && typeof next.slack === "object" && isEncryptedToken(next.slack.botToken)) {
+    next.slack = { ...next.slack, botToken: decryptToken(next.slack.botToken) };
+    changed = true;
   }
   return changed ? next : preferences;
 }
