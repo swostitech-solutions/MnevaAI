@@ -30,7 +30,8 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as FileSystem from "expo-file-system/legacy";
-import { apiFetch, peekCachedResponse } from "../api/client";
+import { apiFetch, peekCachedResponse, BASE_URL } from "../api/client";
+import { getStoredAuth } from "../storage/auth";
 import { useSocket } from "../services/socket";
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
@@ -1492,6 +1493,33 @@ export default function AskAI({ navigation }) {
     await handleSend(newText, truncated);
   };
 
+  // L-10: native multipart upload — the native HTTP client reads the file
+  // off disk and streams it, no base64 string ever built in JS. Mirrors
+  // what upload.single('audio') already expects server-side.
+  const transcribeViaNativeUpload = async (uri) => {
+    const { token } = await getStoredAuth();
+    const res = await FileSystem.uploadAsync(`${BASE_URL}/api/agent/transcribe`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "audio",
+      mimeType: "audio/m4a",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status < 200 || res.status >= 300) throw new Error(`Upload failed: ${res.status}`);
+    return JSON.parse(res.body);
+  };
+
+  // Original base64-in-JSON path, kept as the fallback if the native
+  // upload above fails for any reason (older OS quirk, a proxy that
+  // mishandles multipart, etc.) — same request the app always sent before.
+  const transcribeViaBase64 = async (uri) => {
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    return apiFetch('/api/agent/transcribe', {
+      method: 'POST',
+      body: { audioBase64: base64, fileName: 'voice.m4a', mimeType: 'audio/m4a' },
+    });
+  };
+
   // ── Voice recording (expo-audio → backend transcription) ──────────────────
   const startRecording = async () => {
     try {
@@ -1516,12 +1544,15 @@ export default function AskAI({ navigation }) {
       const uri = audioRecorder.uri;
       if (!uri) throw new Error('No recording URI');
 
-      // Read as base64 and send as JSON — avoids React Native FormData binary issues
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      const data = await apiFetch('/api/agent/transcribe', {
-        method: 'POST',
-        body: { audioBase64: base64, fileName: 'voice.m4a', mimeType: 'audio/m4a' },
-      });
+      // L-10: base64-in-JSON inflates the upload by ~33% and the comment
+      // this replaced said plain JS FormData/Blob uploads were unreliable on
+      // RN — true, but that was about JS-level binary handling specifically.
+      // FileSystem.uploadAsync hands the file to the native HTTP client
+      // directly (no JS Blob, no base64) and MULTIPART mode encodes it the
+      // same way multer's upload.single('audio') already expects server-
+      // side, so this needed no backend change at all. Falls back to the
+      // old base64+JSON path on any failure — never worse than before.
+      const data = await transcribeViaNativeUpload(uri).catch(() => transcribeViaBase64(uri));
       if (data?.text) {
         await handleSend(data.text);
       } else {

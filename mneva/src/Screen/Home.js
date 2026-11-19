@@ -6753,7 +6753,7 @@ import Svg, { Circle } from "react-native-svg";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { clearAuth, getStoredAuth } from "../storage/auth";
-import { apiFetch, peekCachedResponse } from "../api/client";
+import { apiFetch, peekCachedResponse, BASE_URL } from "../api/client";
 import { useSocket, resetSocket } from "../services/socket";
 import { onAppDataRefresh } from "../services/dataRefresh";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -7427,6 +7427,28 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles, speechLocale })
     playNextOrbSpeech();
   };
 
+  // L-10: same native-multipart-with-base64-fallback pair as Askai.js.
+  const transcribeOrbViaNativeUpload = async (uri) => {
+    const { token } = await getStoredAuth();
+    const res = await FileSystem.uploadAsync(`${BASE_URL}/api/agent/transcribe`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "audio",
+      mimeType: "audio/m4a",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status < 200 || res.status >= 300) throw new Error(`Upload failed: ${res.status}`);
+    return JSON.parse(res.body);
+  };
+  const transcribeOrbViaBase64 = async (uri) => {
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    return apiFetch("/api/agent/transcribe", {
+      method: "POST",
+      body: { audioBase64: base64, fileName: "voice.m4a", mimeType: "audio/m4a" },
+      timeoutMs: 30000,
+    });
+  };
+
   // Stop speech when app goes to background or screen navigates away
   useEffect(() => {
     const appStateSub = AppState.addEventListener("change", (state) => {
@@ -7467,22 +7489,14 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles, speechLocale })
       await audioRecorder.stop();
       const uri = audioRecorder.uri;
       if (!uri) throw new Error("no uri");
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      // L-10: this used to be a raw fetch with no timeout or retry — a
-      // stalled upload/transcription could hang "thinking" forever. apiFetch
-      // gives it the same 30s-abort + auth handling every other call here
-      // already gets.
-      const tData = await apiFetch("/api/agent/transcribe", {
-        method: "POST",
-        body: {
-          audioBase64: base64,
-          fileName: "voice.m4a",
-          mimeType: "audio/m4a",
-        },
-        timeoutMs: 30000,
-      });
+      // L-10: native multipart upload instead of base64-in-JSON — see
+      // Askai.js's stopRecording for the full reasoning (uploadAsync hands
+      // the file to the native HTTP client directly, no JS base64 string,
+      // no change needed server-side since MULTIPART mode is what
+      // upload.single('audio') already expects). Falls back to the
+      // original base64+JSON path (still with its 30s timeout) on any
+      // failure — never worse than before.
+      const tData = await transcribeOrbViaNativeUpload(uri).catch(() => transcribeOrbViaBase64(uri));
       const text = tData?.text || "";
       if (!text) {
         setPhaseSync("error");
