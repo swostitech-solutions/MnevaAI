@@ -510,7 +510,7 @@ export default function MusicDiscovery({ navigation }) {
             <View style={styles.agentStrip}>
               <View style={styles.agentIcon}><Feather name="cpu" size={14} color="#FFFFFF" /></View>
               <Text style={styles.agentText}>
-                Mneva AI is curating <Text style={styles.agentHighlight}>{sectionTitle.toLowerCase()}</Text> picks in real-time
+                Mneva AI is searching the web for <Text style={styles.agentHighlight}>{sectionTitle.toLowerCase()}</Text> picks right now
               </Text>
             </View>
 

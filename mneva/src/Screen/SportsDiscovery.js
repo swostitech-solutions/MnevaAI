@@ -366,8 +366,8 @@ export default function SportsDiscovery({ navigation }) {
         </View>
         <Text style={styles.agentText}>
           {selected
-            ? <>Mneva AI tracking <Text style={styles.agentBold}>{sport.title} · {activeTab}</Text> in real-time</>
-            : <>Mneva AI tracking <Text style={styles.agentBold}>live scores, fixtures & highlights</Text> in real-time</>
+            ? <>Mneva AI searching the web for <Text style={styles.agentBold}>{sport.title} · {activeTab}</Text> right now</>
+            : <>Mneva AI searching the web for <Text style={styles.agentBold}>live scores, fixtures & highlights</Text> right now</>
           }
         </Text>
       </LinearGradient>

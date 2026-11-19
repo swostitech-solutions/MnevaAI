@@ -211,9 +211,9 @@ export default function NewsDiscovery({ navigation }) {
           <Feather name="cpu" size={14} color="#fff" />
         </View>
         <Text style={styles.agentText}>
-          Mneva AI scanning{" "}
-          <Text style={styles.agentBold}>1,200+ sources</Text>
-          {" "}· summarising in real-time
+          Mneva AI searching the web{" "}
+          <Text style={styles.agentBold}>right now</Text>
+          {" "}· summarising what it finds
         </Text>
       </LinearGradient>
 

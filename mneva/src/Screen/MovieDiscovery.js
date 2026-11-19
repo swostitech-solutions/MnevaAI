@@ -361,9 +361,9 @@ export default function MovieDiscovery({ navigation }) {
             <LinearGradient colors={sectionColors} style={styles.agentStrip} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <View style={styles.agentIcon}><Feather name="cpu" size={14} color="#FFFFFF" /></View>
               <Text style={styles.agentText}>
-                Mneva AI is curating{" "}
+                Mneva AI is searching the web for{" "}
                 <Text style={styles.agentHighlight}>{sectionTitle.toLowerCase()}</Text>
-                {" "}picks in real-time
+                {" "}picks right now
               </Text>
             </LinearGradient>
 
