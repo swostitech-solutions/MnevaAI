@@ -21,7 +21,7 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | G-12 | Daily Brief focus score/ranking | ✅ Fixed (commit c938792) | Dashboard's top-3 priority cards now ranked by a real urgency score (time-until-due + overdue + urgent-email/meeting-request boost) instead of fixed category order. FocusRing's captions were already honestly profile-scoped, no fix needed there. |
 | G-13 | Trust levels manual set | ✅ Fixed (commit b6eaea9) | Removed dead /trust/upgrade + /trust/level (wrote the unused global trustLevel field). Added PATCH /trust/domain-level: lowering a domain is always allowed, raising is rejected (level is earned, not set). Settings.js Trust tab: tapping any level below current now drops straight to it with a confirm dialog — "Drop here" link on each lower level card. |
 | G-09 | Drive/Docs/Sheets file reading | ⏭️ Deferred | In-app Docs/Sheets/Drive screens only ever claimed "browse and open" (already honest, confirmed no overclaim). Real AI content-reading needs drive.readonly/documents.readonly/spreadsheets.readonly scopes; current scope was deliberately narrowed to drive.metadata.readonly only (list filenames, open externally) — broadening it again re-triggers Google OAuth verification, same external blocker as G-19. Needs G-19 resolved first. |
-| G-11 | Media & Discovery "real-time" claims | ⬜ | |
+| G-11 | Media & Discovery "real-time" claims | ✅ Fixed (commit 169d484) | Sports/Music/Movie/News Discovery banners said "tracking/summarising in real-time" (News also had a fabricated "1,200+ sources") when it's actually one on-demand web search per request, no live feed/polling/caching. Reworded all 4 to "searching the web ... right now". Mobile-only — ships with next app build (no backend change, no CI/VPS step needed). |
 | G-16 | Health appointment reminders | ⬜ | |
 | G-21 | Priorities answers not saved | ⬜ | |
 
@@ -32,4 +32,4 @@ L-01 through L-14 — ⬜ all not started.
 S-01 through S-13 — ⬜ all not started.
 
 ---
-**Currently working on:** Part A Medium items. Next up: G-11.
+**Currently working on:** Part A Medium items. Next up: G-16.
