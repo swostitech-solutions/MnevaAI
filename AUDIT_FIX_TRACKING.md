@@ -19,7 +19,7 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | G-14 | Payments/UPI/biometric | ⏭️ Skipped by user request | Explicitly told to skip this one. |
 | G-15 | Portfolio/credit score data labeling | ✅ Fixed (commit 2b416fb) | get_portfolio tool description no longer claims Account Aggregator/CIBIL. ConnectedAccounts' "coming soon" chips were already correct from an earlier fix. Added "manually entered" note to Portfolio screen. |
 | G-12 | Daily Brief focus score/ranking | ✅ Fixed (commit c938792) | Dashboard's top-3 priority cards now ranked by a real urgency score (time-until-due + overdue + urgent-email/meeting-request boost) instead of fixed category order. FocusRing's captions were already honestly profile-scoped, no fix needed there. |
-| G-13 | Trust levels manual set | ⬜ | |
+| G-13 | Trust levels manual set | ✅ Fixed (commit b6eaea9) | Removed dead /trust/upgrade + /trust/level (wrote the unused global trustLevel field). Added PATCH /trust/domain-level: lowering a domain is always allowed, raising is rejected (level is earned, not set). Settings.js Trust tab: tapping any level below current now drops straight to it with a confirm dialog — "Drop here" link on each lower level card. |
 | G-09 | Drive/Docs/Sheets file reading | ⬜ | |
 | G-11 | Media & Discovery "real-time" claims | ⬜ | |
 | G-16 | Health appointment reminders | ⬜ | |
@@ -32,4 +32,4 @@ L-01 through L-14 — ⬜ all not started.
 S-01 through S-13 — ⬜ all not started.
 
 ---
-**Currently working on:** Part A High items, in order, skipping G-14. Next up: G-20.
+**Currently working on:** Part A Medium items. Next up: G-09.
