@@ -6852,6 +6852,24 @@ function isToday(value, todayStart, todayEnd) {
   );
 }
 
+// Audit item G-12: real ranking for the dashboard's top-3 priority cards —
+// see where this is used, below. Higher score = more urgent = shown first.
+// `start`-less items (urgent emails, suggested meetings) get a flat boost
+// instead of a time component, since they're time-sensitive the moment
+// they arrive, not tied to a specific future due time the way a bill or
+// reminder is.
+const DASHBOARD_KIND_BOOST = { urgent_email: 300, suggested_meeting: 250 };
+function dashboardPriorityScore(item) {
+  let timeScore = 50; // baseline for a dated-but-timeless item (e.g. a bill due "today" with no hour) or a plain task
+  if (item.start) {
+    const hoursUntil = (new Date(item.start).getTime() - Date.now()) / (1000 * 60 * 60);
+    timeScore = hoursUntil <= 0
+      ? 1000 + Math.min(-hoursUntil, 200) // overdue — always near the top; more overdue edges slightly higher
+      : Math.max(0, 500 - hoursUntil * 10); // due within the next ~50h scales down toward 0
+  }
+  return timeScore + (DASHBOARD_KIND_BOOST[item.kind] || 0);
+}
+
 // Same cross-module analysis flattening as Priorities.js's TODAY tab (bills,
 // EMIs, subscriptions, medication refills, pet reminders, family items) — the
 // dashboard's "Today's Priorities" card must show this too, not just plain
@@ -8921,8 +8939,20 @@ export default function Home({ navigation }) {
       done: false,
       icon: item.icon,
       kind: "auto",
+      start: item.date,
     })),
-  ];
+  ]
+    // Audit item G-12: these used to just be concatenated in a fixed
+    // category order (suggested meetings, then urgent emails, then
+    // meetings, then tasks...) — whichever category happened to be listed
+    // first always won the top-3 slots, regardless of whether anything in
+    // it was actually more urgent than, say, a bill due in an hour. Real
+    // ranking instead: how soon something is due (overdue beats anything
+    // not due yet; sooner beats later), plus a flat boost for urgent
+    // emails/meeting requests, which don't carry a due time of their own
+    // but are still time-sensitive the moment they arrive.
+    .map((item) => ({ ...item, _score: dashboardPriorityScore(item) }))
+    .sort((a, b) => b._score - a._score);
 
   // Mirrors Priorities.js: once a reminder's scheduled time has passed, ask
   // whether it actually happened instead of leaving a static "NEW" badge.
