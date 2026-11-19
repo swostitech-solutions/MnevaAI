@@ -32,23 +32,32 @@ async function getVoyageClient() {
   }
 }
 
+// L-12: the hash fallback has no semantic meaning at all — it was being
+// stored into the same Qdrant collection as real embeddings with nothing
+// marking it apart, so a handful of fallback writes (Voyage down, key
+// missing/rotated) would quietly corrupt nearest-neighbor results for every
+// real embedding they got compared against too. createEmbedding now returns
+// which kind it produced so callers can tag (memory.service.js's store())
+// and exclude (qdrant.service.js's search()) fallback vectors instead of
+// treating them as real semantic data.
 export const embeddingService = {
   async createEmbedding(text = '') {
     const normalized = String(text || '').trim()
-    if (!normalized) return deterministicVector('')
+    if (!normalized) return { vector: deterministicVector(''), source: 'hash_fallback' }
 
     try {
       const client = await getVoyageClient()
       if (client) {
         const res = await client.embed({ input: [normalized], model: 'voyage-3-lite' })
         const vec = res?.data?.[0]?.embedding
-        if (Array.isArray(vec) && vec.length > 0) return vec
+        if (Array.isArray(vec) && vec.length > 0) return { vector: vec, source: 'voyage' }
       }
     } catch (err) {
       logger.warn(`⚠️  Voyage embedding failed: ${err.message} — using hash fallback`)
     }
 
-    return deterministicVector(normalized)
+    logger.warn('⚠️  Storing a hash-fallback vector (no real semantic meaning) — Voyage is unavailable right now')
+    return { vector: deterministicVector(normalized), source: 'hash_fallback' }
   },
 
   async createEmbeddingBatch(texts = []) {

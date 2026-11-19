@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { getQdrantClient, ensureCollection, clearEnsuredCollection } from '../config/qdrant.js'
 import { embeddingService } from './embedding.service.js'
 import { encryptToken, decryptToken, isEncryptedToken } from './tokenCrypto.js'
+import { logger } from '../config/logger.js'
 
 const DEFAULT_COLLECTION = 'mneva_memory'
 
@@ -92,13 +93,29 @@ const qdrantService = {
       const limit = options.limit || 5
       const filter = options.filter || {}
       const text = typeof query === 'string' ? query : ''
-      const embedding = text ? await embeddingService.createEmbedding(text) : []
+      let embedding = []
+      if (text) {
+        const embResult = await embeddingService.createEmbedding(text)
+        embedding = embResult.vector
+        if (embResult.source === 'hash_fallback') {
+          logger.warn('⚠️  Semantic search query itself used a hash-fallback embedding — results may be unreliable')
+        }
+      }
+
+      // L-12: a hash-fallback vector has no real semantic meaning, so a
+      // point tagged that way at write time is excluded from ever
+      // surfacing as a similarity match here — same collection, just
+      // filtered out instead of needing a separate one.
+      const mergedFilter = {
+        ...filter,
+        must_not: [...(filter.must_not || []), { key: 'embeddingSource', match: { value: 'hash_fallback' } }],
+      }
 
       const response = await client.search(collectionName, {
         vector: embedding,
         limit,
         with_payload: true,
-        filter,
+        filter: mergedFilter,
       })
 
       return response.map((item) => ({

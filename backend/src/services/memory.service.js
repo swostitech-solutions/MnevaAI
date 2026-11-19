@@ -85,15 +85,19 @@ export const memoryService = {
     const text = String(record.text || record.content || '')
     if (!text) return { success: false, reason: 'empty_text' }
 
+    const { vector, source: embeddingSource } = await embeddingService.createEmbedding(text)
     const point = {
       id: record.id || randomUUID(),
-      vector: await embeddingService.createEmbedding(text),
+      vector,
       payload: {
         userId,
         text,
         type: record.type || 'memory',
         metadata: record.metadata || {},
         createdAt: record.createdAt || new Date().toISOString(),
+        // L-12: tags a hash-fallback vector so search() can exclude it —
+        // it has no real semantic meaning, only real Voyage embeddings do.
+        embeddingSource,
       },
     }
 
