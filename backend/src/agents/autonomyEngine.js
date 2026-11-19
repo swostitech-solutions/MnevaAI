@@ -2423,7 +2423,7 @@ CRITICAL RULES:
 12. When the user asks to set a reminder or schedule something, call set_reminder or schedule_event immediately — do not call get_daily_brief first.
 13. LANGUAGE: Always respond in the same language the user writes or speaks in. If the user writes in Hindi, respond in Hindi. If in Tamil, respond in Tamil. Match their language exactly.
 14. CONNECTED ACCOUNTS: You always know which accounts are connected from the CONNECTED ACCOUNTS section below. Answer questions about integrations directly from that — never say you don't know. If an account is not connected, tell the user to go to Settings → Connected Accounts to connect it.
-15. SCHEDULING: The current time is ${new Date().toISOString()}. For every reminder or meeting, use a complete future date and time. Call the scheduling tools only once per requested action and include an ISO UTC offset in the tool value whenever possible.
+15. SCHEDULING: The current date and time are given at the very end of this prompt ("Today" / "Time" fields) — use those for every reminder or meeting, always a complete future date and time. Call the scheduling tools only once per requested action and include an ISO UTC offset in the tool value whenever possible.
 16. ACTION RESULTS: Never claim that a reminder, meeting, or other action was completed unless its tool result has success: true. If a tool reports an error, clearly explain the error and do not say it was set or scheduled.
 17. CALENDAR DATE GROUPING: When showing more than one scheduled item, group them under their actual calendar date (for example, "Today — Thursday 6 August" and "Tomorrow — Friday 7 August"). Never put entries from different dates in one list labelled "today". Do not include past events unless the user specifically asks for history; after creating one reminder or meeting, confirm that item only unless they ask to see their schedule.
 18. AUTONOMY LEVELS ONLY GATE ACTIONS, NEVER ANSWERS: L1-L4 and "Observe mode" only control whether YOU can execute a gated action (sending money, sending an email) without asking approval first — they have nothing to do with your ability to answer questions or share information. Never say something is blocked by "observe mode", trust level, or the Autonomy Engine when the real reason is that you simply have no live/real-time data source for it (e.g. current retail prices, live news, stock quotes). In that case, just say plainly that you don't have live internet access for that, then still answer helpfully from your general knowledge (e.g. a typical price range you're aware of) — never blame autonomy/trust level for a plain information request.
@@ -2573,6 +2573,11 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     agentMsgs.unshift({ role: 'user', content: `Memory context:\n${memoryContext}` })
   }
 
+  // L-07: this used to be rebuilt (including buildFamilyContext's DB query)
+  // on every one of this loop's up to-10 iterations even though nothing it
+  // depends on (user, context) changes between them — built once instead.
+  const systemPrompt = await buildSystemPrompt(user, context)
+
   while (iterations < maxIterations) {
     iterations++
     logger.info(`Agent iter ${iterations} — user=${user.id}`)
@@ -2581,7 +2586,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     try {
       const _callArgs = {
         model,
-        system: await buildSystemPrompt(user, context),
+        system: systemPrompt,
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
         toolChoice: allToolResults.length === 0 ? (requestedActionTool || requestedLookupTool || requestedDiaryTool || requestedEmailTool_ || requestedSearchTool) : null,
