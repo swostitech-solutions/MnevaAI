@@ -655,7 +655,15 @@ export const MNEVA_TOOLS = [
   },
   {
     name: 'get_portfolio',
-    description: 'Fetch investment portfolio: mutual funds, equities, SIPs, account balances, CIBIL score, net worth via Account Aggregator.',
+    // Audit item G-15: this used to say "...CIBIL score, net worth via
+    // Account Aggregator" — false on both counts. There is no Account
+    // Aggregator or brokerage integration anywhere in this app (holdings
+    // are entered by the user or via add_portfolio_holding, same as this
+    // tool's own description already says), and no credit score field
+    // exists ANYWHERE in the schema — a user asking "what's my credit
+    // score" was being primed by this very description to treat that as
+    // real, fetchable data instead of something not tracked at all.
+    description: "Fetch the user's saved investment portfolio: holdings (mutual funds, equities, SIPs, ETFs, etc.) with invested amount and current value, total invested, total current value, and return %. Every figure here is manually entered by the user (or via add_portfolio_holding) — there is no live brokerage/Account Aggregator connection, and no credit score / CIBIL data is stored anywhere in the app at all.",
     input_schema: { type: 'object', properties: {}, required: [] }
   },
   {

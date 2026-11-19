@@ -219,18 +219,27 @@ export default function PortfolioScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.accent} colors={[theme.accent]} />}
         >
           {!loading && holdings.length > 0 && (
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryRow}>
-                {[['Invested', `₹${totalInvested.toLocaleString('en-IN')}`, theme.faint],
-                  ['Current', `₹${totalCurrent.toLocaleString('en-IN')}`, '#1F9A5A'],
-                  ['Gain/Loss', `${gain >= 0 ? '+' : ''}${gainPct}%`, gain >= 0 ? '#1F9A5A' : theme.danger]].map(([k, v, c]) => (
-                  <View key={k} style={styles.summaryStat}>
-                    <Text style={styles.summaryStatLabel}>{k}</Text>
-                    <Text style={[styles.summaryStatValue, { color: c }]}>{v}</Text>
-                  </View>
-                ))}
+            <>
+              <View style={styles.summaryCard}>
+                <View style={styles.summaryRow}>
+                  {[['Invested', `₹${totalInvested.toLocaleString('en-IN')}`, theme.faint],
+                    ['Current', `₹${totalCurrent.toLocaleString('en-IN')}`, '#1F9A5A'],
+                    ['Gain/Loss', `${gain >= 0 ? '+' : ''}${gainPct}%`, gain >= 0 ? '#1F9A5A' : theme.danger]].map(([k, v, c]) => (
+                    <View key={k} style={styles.summaryStat}>
+                      <Text style={styles.summaryStatLabel}>{k}</Text>
+                      <Text style={[styles.summaryStatValue, { color: c }]}>{v}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
-            </View>
+              {/* Audit item G-15: there's no brokerage/Account Aggregator
+                  connection behind these numbers — every value here is
+                  whatever the user typed in (or told Ask AI), not pulled
+                  live from Zerodha/Groww/etc. (those are "Coming soon" in
+                  Connected Accounts). Said plainly rather than letting the
+                  summary card read as a live, synced balance. */}
+              <Text style={styles.sourceNote}>Manually entered — no live brokerage or Account Aggregator connection yet.</Text>
+            </>
           )}
           {loading ? (
             [1, 2, 3].map(i => <View key={i} style={styles.skeleton} />)
@@ -290,6 +299,7 @@ const createStyles = (theme) => StyleSheet.create({
   summaryStat: { alignItems: 'center' },
   summaryStatLabel: { fontSize: 10, color: theme.faint, fontWeight: '600', marginBottom: 4 },
   summaryStatValue: { fontSize: 15, fontWeight: '800' },
+  sourceNote: { fontSize: 11, color: theme.faint, textAlign: 'center', marginBottom: 14, marginTop: -6 },
 
   sectionCard: { backgroundColor: theme.card, borderRadius: 20, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
