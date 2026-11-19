@@ -30,6 +30,7 @@ const TOOL_META = {
   send_email: { domain: 'communications', autonomyStage: 'notified_after_acting' },
   schedule_event: { domain: 'lifeops', autonomyStage: 'notified_after_acting' },
   set_reminder: { domain: 'lifeops', autonomyStage: 'trusted_automation' },
+  mark_meeting_done: { domain: 'lifeops', autonomyStage: 'trusted_automation' },
   book_cab: { domain: 'lifeops', autonomyStage: 'fully_autonomous' },
   order_food: { domain: 'lifeops', autonomyStage: 'fully_autonomous' },
   book_flight: { domain: 'lifeops', autonomyStage: 'proposed' },
@@ -93,6 +94,13 @@ const TOOL_META = {
   account_disconnected: { domain: 'security', autonomyStage: null },
   google_task_completed: { domain: 'workspace', autonomyStage: null },
   account_data_exported: { domain: 'security', autonomyStage: null },
+  task_created: { domain: 'lifeops', autonomyStage: null },
+  task_status_updated: { domain: 'lifeops', autonomyStage: null },
+  meeting_marked_done: { domain: 'lifeops', autonomyStage: null },
+  meeting_marked_cancelled: { domain: 'lifeops', autonomyStage: null },
+  comms_email_sent: { domain: 'communications', autonomyStage: null },
+  document_uploaded: { domain: 'security', autonomyStage: null },
+  document_deleted: { domain: 'security', autonomyStage: null },
 }
 
 export function getToolMeta(tool) {

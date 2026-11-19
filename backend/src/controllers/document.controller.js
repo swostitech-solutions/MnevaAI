@@ -5,6 +5,7 @@ import { prisma } from '../config/prisma.js'
 import { memoryService } from '../services/memory.service.js'
 import { qdrantService } from '../services/qdrant.service.js'
 import { logger } from '../config/logger.js'
+import { ledger } from '../services/ledgerService.js'
 
 const SUPPORTED_DOCUMENT_TYPES = ['pdf', 'docx', 'text', 'zip', 'image']
 
@@ -139,6 +140,9 @@ export async function uploadDocument(req, res) {
     const document = await prisma.document.create({
       data: { title, filePath, userId: req.user.id },
     })
+    // Audit item G-03: document upload/delete had no ledger entry at all —
+    // a real gap even though nothing else in this flow is AI-initiated.
+    ledger.add({ userId: req.user.id, tool: 'document_uploaded', input: { title }, result: { documentId: document.id }, status: 'completed' }).catch(() => {})
 
     if (parsed.type === 'image' && parsed.ocr === false) {
       // No OCR text — the photo is still saved, and the AI looks at it
@@ -235,6 +239,7 @@ export async function deleteDocument(req, res) {
       where: { id: document.id },
     })
 
+    ledger.add({ userId: req.user.id, tool: 'document_deleted', input: { title: document.title }, result: { documentId: document.id }, status: 'completed' }).catch(() => {})
     res.json({ success: true, document })
   } catch (error) {
     res.status(500).json({ error: error.message })

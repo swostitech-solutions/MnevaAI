@@ -2216,6 +2216,11 @@ commsRouter.post("/emails/:id/send", async (req, res) => {
       threadId,
       inReplyTo: messageIdHeader,
     });
+    // Audit item G-03: sending a reply from Communications had no ledger
+    // entry — the AI's own send_email tool already gets one (via the
+    // actionTools list in autonomyEngine.js), so a user's own sent replies
+    // were a real gap in "every action is signed".
+    ledger.add({ userId: req.user.id, tool: 'comms_email_sent', input: { recipient, subject }, result: { success: true }, status: 'completed' }).catch(() => {});
     res.json({ success: true, result });
   } catch (err) {
     gmailErrorResponse(err, res);

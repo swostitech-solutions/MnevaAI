@@ -2673,7 +2673,7 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
       // pendingActions.service.js) to match the label the equivalent manual
       // creation routes use; logging them again here would double the entry.
       const actionTools = [
-        'initiate_payment', 'send_email', 'book_cab', 'order_food', 'set_reminder', 'schedule_event',
+        'initiate_payment', 'send_email', 'book_cab', 'order_food', 'set_reminder', 'schedule_event', 'mark_meeting_done',
         'create_subscription', 'create_loan', 'create_emi', 'create_fixed_deposit', 'add_portfolio_holding', 'add_expense',
         'add_parent_medication', 'add_pet', 'add_pet_reminder',
       ]

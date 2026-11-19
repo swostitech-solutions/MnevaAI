@@ -1,6 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { formatLeadMinutes } from '../agents/autonomyEngine.js'
+import { ledger } from '../services/ledgerService.js'
 
 const router = express.Router()
 
@@ -70,6 +71,11 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // Audit item G-03: this manual Priorities/Home create path had no
+    // ledger entry at all — the AI-driven equivalents (set_reminder,
+    // schedule_event) already got one, so a user's own tasks were a real
+    // gap in "every action is signed", not just an AI-autonomy one.
+    ledger.add({ userId: req.user.id, tool: 'task_created', input: { title: task.title }, result: { taskId: task.id }, status: 'completed' }).catch(() => {})
     res.json(task)
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -109,6 +115,7 @@ router.post('/meeting-done', async (req, res) => {
         status: 'COMPLETED',
       },
     })
+    ledger.add({ userId: req.user.id, tool: 'meeting_marked_done', input: { meetingId, meetingTitle: meetingTitle || null }, result: { taskId: task.id }, status: 'completed' }).catch(() => {})
     res.json(task)
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -149,6 +156,7 @@ router.post('/meeting-cancelled', async (req, res) => {
         status: 'COMPLETED',
       },
     })
+    ledger.add({ userId: req.user.id, tool: 'meeting_marked_cancelled', input: { meetingId, meetingTitle: meetingTitle || null }, result: { taskId: task.id }, status: 'completed' }).catch(() => {})
     res.json(task)
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -161,6 +169,7 @@ router.patch('/:id', async (req, res) => {
       where: { id: req.params.id, userId: req.user.id },
       data: { status: status || 'COMPLETED' },
     })
+    ledger.add({ userId: req.user.id, tool: 'task_status_updated', input: { title: task.title, status: task.status }, result: { taskId: task.id }, status: 'completed' }).catch(() => {})
     res.json(task)
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
