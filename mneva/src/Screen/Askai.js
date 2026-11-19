@@ -1195,45 +1195,81 @@ export default function AskAI({ navigation }) {
     return () => offs.forEach(off => off?.());
   }, [on]);
 
+  const cleanForSpeech = (text) => (text || '')
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA9F}\u{FE00}-\u{FEFF}]/gu, '')
+    .replace(/[*_`#~>|\-=+\[\]{}\\^]/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // Auto-detect language from response text
+  const detectSpeechLang = (t) => {
+    if (/[\u0900-\u097F]/.test(t)) return 'hi-IN';  // Hindi/Devanagari
+    if (/[\u0C00-\u0C7F]/.test(t)) return 'te-IN';  // Telugu
+    if (/[\u0B80-\u0BFF]/.test(t)) return 'ta-IN';  // Tamil
+    if (/[\u0C80-\u0CFF]/.test(t)) return 'kn-IN';  // Kannada
+    if (/[\u0D00-\u0D7F]/.test(t)) return 'ml-IN';  // Malayalam
+    if (/[\u0980-\u09FF]/.test(t)) return 'bn-IN';  // Bengali
+    if (/[\u0A00-\u0A7F]/.test(t)) return 'pa-IN';  // Punjabi
+    if (/[\u0B00-\u0B7F]/.test(t)) return 'or-IN';  // Odia
+    return 'en-IN';
+  };
+
+  // L-11: speaking used to wait for the entire reply to land before saying
+  // a word. Streamed replies now feed complete sentences in here one at a
+  // time as they arrive (queueSpeech below) instead of the whole text at
+  // once \u2014 this queue plays them back-to-back so sentence N+1 doesn't cut
+  // off sentence N.
+  const speechQueueRef = useRef([]);
+  const speechPlayingRef = useRef(false);
+
+  const playNextQueuedSpeech = () => {
+    if (speechPlayingRef.current) return;
+    const next = speechQueueRef.current.shift();
+    if (!next) { setSpeaking(false); return; }
+    speechPlayingRef.current = true;
+    setSpeaking(true);
+    Speech.speak(next, {
+      language: detectSpeechLang(next),
+      pitch: 1.0,
+      rate: 0.95,
+      onDone: () => { speechPlayingRef.current = false; playNextQueuedSpeech(); },
+      onError: () => { speechPlayingRef.current = false; playNextQueuedSpeech(); },
+      onStopped: () => { speechPlayingRef.current = false; setSpeaking(false); },
+    });
+  };
+
+  const queueSpeech = (text) => {
+    if (!voiceEnabledRef.current) return;
+    const clean = cleanForSpeech(text);
+    if (!clean) return;
+    speechQueueRef.current.push(clean);
+    playNextQueuedSpeech();
+  };
+
   const speakText = (text) => {
     if (!voiceEnabledRef.current) return;
     Speech.stop();
-    const clean = text
-      .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA9F}\u{FE00}-\u{FEFF}]/gu, '')
-      .replace(/[*_`#~>|\-=+\[\]{}\\^]/g, '')
-      .replace(/https?:\/\/\S+/g, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
+    speechQueueRef.current = [];
+    speechPlayingRef.current = false;
+    const clean = cleanForSpeech(text);
     if (!clean) return;
-
-    // Auto-detect language from response text
-    const detectLang = (t) => {
-      if (/[\u0900-\u097F]/.test(t)) return 'hi-IN';  // Hindi/Devanagari
-      if (/[\u0C00-\u0C7F]/.test(t)) return 'te-IN';  // Telugu
-      if (/[\u0B80-\u0BFF]/.test(t)) return 'ta-IN';  // Tamil
-      if (/[\u0C80-\u0CFF]/.test(t)) return 'kn-IN';  // Kannada
-      if (/[\u0D00-\u0D7F]/.test(t)) return 'ml-IN';  // Malayalam
-      if (/[\u0980-\u09FF]/.test(t)) return 'bn-IN';  // Bengali
-      if (/[\u0A00-\u0A7F]/.test(t)) return 'pa-IN';  // Punjabi
-      if (/[\u0B00-\u0B7F]/.test(t)) return 'or-IN';  // Odia
-      if (/[\u0900-\u097F]/.test(t)) return 'mr-IN';  // Marathi
-      return 'en-IN';
-    };
-    const lang = detectLang(clean);
-
     setSpeaking(true);
+    speechPlayingRef.current = true;
     Speech.speak(clean, {
-      language: lang,
+      language: detectSpeechLang(clean),
       pitch: 1.0,
       rate: 0.95,
-      onDone: () => setSpeaking(false),
-      onError: () => setSpeaking(false),
-      onStopped: () => setSpeaking(false),
+      onDone: () => { speechPlayingRef.current = false; setSpeaking(false); },
+      onError: () => { speechPlayingRef.current = false; setSpeaking(false); },
+      onStopped: () => { speechPlayingRef.current = false; setSpeaking(false); },
     });
   };
 
   const stopSpeaking = () => {
     Speech.stop();
+    speechQueueRef.current = [];
+    speechPlayingRef.current = false;
     setSpeaking(false);
   };
 
@@ -1315,10 +1351,58 @@ export default function AskAI({ navigation }) {
           ? `${m.text}\n\n[Attached ${m.attachment.type}: ${m.attachment.name} — uploaded and indexed]`
           : m.text,
       }));
+
+      // L-08/L-11: the backend streams tokens over the socket as the model
+      // generates them (see autonomyEngine.js's callOpenAI/consumeOpenAIStream),
+      // scoped to this one request via a client-generated id — the server
+      // can't hand the id back fast enough for the app to subscribe in time,
+      // since the id has to exist before the request is even sent. Chunks
+      // build the bubble live and feed queueSpeech sentence by sentence;
+      // gotAnyChunk tracks whether any of this actually arrived (a cold
+      // socket, backgrounded app, or local-fallback response won't stream),
+      // so the fallback path below still works exactly as before.
+      const requestId = `askai_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const aiMsgId = String(Date.now() + 1);
+      let streamedText = "";
+      let speechBuffer = "";
+      let gotAnyChunk = false;
+      const SENTENCE_END_RE = /[.!?।]+[\s"'”’)\]]*/;
+      const drainSpeechBuffer = (flushAll) => {
+        let match;
+        // eslint-disable-next-line no-cond-assign
+        while ((match = speechBuffer.match(SENTENCE_END_RE))) {
+          const cut = match.index + match[0].length;
+          queueSpeech(speechBuffer.slice(0, cut));
+          speechBuffer = speechBuffer.slice(cut);
+        }
+        if (flushAll && speechBuffer.trim()) {
+          queueSpeech(speechBuffer);
+          speechBuffer = "";
+        }
+      };
+      const offs = [
+        on("agent:stream_reset", (payload) => {
+          if (payload?.requestId !== requestId) return;
+          streamedText = "";
+          speechBuffer = "";
+        }),
+        on("agent:stream_chunk", (payload) => {
+          if (payload?.requestId !== requestId || !payload.chunk) return;
+          gotAnyChunk = true;
+          streamedText += payload.chunk;
+          speechBuffer += payload.chunk;
+          setMessages(prev => prev.some(m => m.id === aiMsgId)
+            ? prev.map(m => m.id === aiMsgId ? { ...m, text: streamedText } : m)
+            : [...prev, { id: aiMsgId, sender: "ai", text: streamedText, ts: new Date().toISOString(), streaming: true }]);
+          drainSpeechBuffer(false);
+        }),
+      ];
+
       const res = await apiFetch("/api/agent/chat", {
         method: "POST",
         body: {
           messages: apiMessages,
+          requestId,
           ...(attachedDocId ? { attachment: { documentId: attachedDocId, name: attachment.name, type: attachment.type } } : {}),
         },
         // The agent loop can run up to 10 sequential tool-calling iterations
@@ -1327,14 +1411,33 @@ export default function AskAI({ navigation }) {
         // false "could not connect" for a complex, multi-step ask.
         timeoutMs: 60000,
       });
+      offs.forEach(off => off?.());
       const aiText = res.response || res.reply || res.message || res.content || "I processed your request.";
-      const aiMsgId = String(Date.now() + 1);
-      addMessage({ id: aiMsgId, sender: "ai", text: aiText, ts: new Date().toISOString() });
-      setLiveTypingId(aiMsgId);
+
+      if (gotAnyChunk) {
+        // Streaming already built this bubble live — replace with the
+        // authoritative final text (some replies, e.g. a scheduled-action
+        // confirmation or the daily schedule, are composed server-side
+        // AFTER the model call finishes and never appear in the raw stream)
+        // and finish speaking whatever trailing fragment never hit a
+        // sentence boundary. No typewriter animation — it already typed.
+        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: aiText, streaming: false } : m));
+        if (aiText === streamedText) drainSpeechBuffer(true);
+        // else: a post-processed override (scheduled-action confirmation,
+        // daily schedule) replaced the streamed text wholesale — what was
+        // already spoken doesn't match it, so don't try to patch the
+        // speech queue; the text is on screen, which is what matters most.
+      } else {
+        // No chunks arrived at all (socket reconnecting, app backgrounded,
+        // or a non-streamed local-fallback reply) — same behavior as before
+        // streaming existed.
+        addMessage({ id: aiMsgId, sender: "ai", text: aiText, ts: new Date().toISOString() });
+        setLiveTypingId(aiMsgId);
+        speakText(aiText);
+      }
       // L-03: speak as soon as the text is ready — the save (still fired,
       // still retried) no longer has to finish first. aiLoading is still
       // true here, so loadConversation still won't race this save.
-      speakText(aiText);
       persistMessage("assistant", aiText);
       setAiLoading(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);

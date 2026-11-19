@@ -7227,7 +7227,7 @@ function WaveBars({ active, color }) {
   );
 }
 
-function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
+function VoiceOrb({ visible, onClose, navigation, theme, styles, speechLocale }) {
   const slideAnim = useRef(new Animated.Value(60)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const orbScale = useRef(new Animated.Value(0.85)).current;
@@ -7244,6 +7244,21 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
   const [transcript, setTranscript] = useState("");
   const [reply, setReply] = useState("");
   const phaseRef = useRef("idle");
+  // L-08/L-11: same live-token-stream subscription Askai.js uses — VoiceOrb
+  // is its own component (not nested inside Home's), so it needs its own
+  // call into useSocket rather than reaching for Home's.
+  const { on } = useSocket();
+  // BUG FIX (found while closing out L-11): this used to read
+  // `speechLocaleRef.current` from Home's own scope, a ref that was never
+  // passed down and doesn't exist inside VoiceOrb — every voice reply threw
+  // a ReferenceError the instant Speech.speak ran, which the catch block
+  // below silently turned into "Something went wrong. Please try again."
+  // even though the AI had already answered. Home computes the user's
+  // language locale once (speechLocaleRef there) and passes it down as the
+  // speechLocale prop; mirrored into a local ref since stopListening isn't
+  // re-created on every prop change.
+  const speechLocaleRef = useRef(speechLocale || "en-IN");
+  useEffect(() => { speechLocaleRef.current = speechLocale || "en-IN"; }, [speechLocale]);
 
   const setPhaseSync = (p) => {
     phaseRef.current = p;
@@ -7374,7 +7389,42 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
   const stopAll = () => {
     rippleLoop.current?.forEach((l) => l.stop());
     Speech.stop();
+    speechQueueRef.current = [];
+    speechPlayingRef.current = false;
     setPhaseSync("idle");
+  };
+
+  // L-11: same sentence-by-sentence speech queue as Askai.js — lets the
+  // orb start speaking the first finished sentence of a streamed reply
+  // instead of waiting for the whole answer to land first.
+  const speechQueueRef = useRef([]);
+  const speechPlayingRef = useRef(false);
+  const cleanForSpeechOrb = (text) => (text || "")
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA9F}\u{FE00}-\u{FEFF}]/gu, "")
+    .replace(/[*_`#~>|\-=+\[\]{}\\^]/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  const playNextOrbSpeech = () => {
+    if (speechPlayingRef.current) return;
+    const next = speechQueueRef.current.shift();
+    if (!next) { setPhaseSync("idle"); return; }
+    speechPlayingRef.current = true;
+    setPhaseSync("speaking");
+    Speech.speak(next, {
+      language: speechLocaleRef.current,
+      pitch: 1.0,
+      rate: 0.95,
+      onDone: () => { speechPlayingRef.current = false; playNextOrbSpeech(); },
+      onError: () => { speechPlayingRef.current = false; playNextOrbSpeech(); },
+      onStopped: () => { speechPlayingRef.current = false; setPhaseSync("idle"); },
+    });
+  };
+  const queueOrbSpeech = (text) => {
+    const clean = cleanForSpeechOrb(text);
+    if (!clean) return;
+    speechQueueRef.current.push(clean);
+    playNextOrbSpeech();
   };
 
   // Stop speech when app goes to background or screen navigates away
@@ -7457,11 +7507,51 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
         }).catch(() => {});
       }
 
+      // L-08/L-11: stream tokens live (see Askai.js's handleSend for the
+      // same pattern/reasoning) — speaks the first sentence as soon as it's
+      // complete instead of waiting for the whole reply, and shows the
+      // reply text building up instead of appearing all at once.
+      const requestId = `orb_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      let streamedText = "";
+      let speechBuffer = "";
+      let gotAnyChunk = false;
+      const SENTENCE_END_RE = /[.!?।]+[\s"'”’)\]]*/;
+      const drainOrbSpeechBuffer = (flushAll) => {
+        let match;
+        // eslint-disable-next-line no-cond-assign
+        while ((match = speechBuffer.match(SENTENCE_END_RE))) {
+          const cut = match.index + match[0].length;
+          queueOrbSpeech(speechBuffer.slice(0, cut));
+          speechBuffer = speechBuffer.slice(cut);
+        }
+        if (flushAll && speechBuffer.trim()) {
+          queueOrbSpeech(speechBuffer);
+          speechBuffer = "";
+        }
+      };
+      const offs = [
+        on("agent:stream_reset", (payload) => {
+          if (payload?.requestId !== requestId) return;
+          streamedText = "";
+          speechBuffer = "";
+        }),
+        on("agent:stream_chunk", (payload) => {
+          if (payload?.requestId !== requestId || !payload.chunk) return;
+          if (!gotAnyChunk) { Vibration.vibrate(30); setPhaseSync("speaking"); }
+          gotAnyChunk = true;
+          streamedText += payload.chunk;
+          speechBuffer += payload.chunk;
+          setReply(streamedText);
+          drainOrbSpeechBuffer(false);
+        }),
+      ];
+
       // send full history to AI — same as AskAI screen
       const aRes = await apiFetch("/api/agent/chat", {
         method: "POST",
-        body: { messages: historyRef.current },
+        body: { messages: historyRef.current, requestId },
       });
+      offs.forEach((off) => off?.());
       const aiText =
         aRes.response || aRes.reply || aRes.message || aRes.content || "Done.";
 
@@ -7472,26 +7562,16 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
       ];
 
       setReply(aiText);
-      setPhaseSync("speaking");
-      Vibration.vibrate(30);
-      const cleanReply = aiText
-        .replace(
-          /[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA9F}\u{FE00}-\u{FEFF}]/gu,
-          "",
-        )
-        .replace(/[*_`#~>|\-=+\[\]{}\\^]/g, "")
-        .replace(/https?:\/\/\S+/g, "")
-        .replace(/\s{2,}/g, " ")
-        .trim();
+      if (!gotAnyChunk) Vibration.vibrate(30);
       // L-03: speak right away, don't wait on the save below.
-      Speech.speak(cleanReply, {
-        language: speechLocaleRef.current,
-        pitch: 1.0,
-        rate: 0.95,
-        onDone: () => setPhaseSync("idle"),
-        onError: () => setPhaseSync("idle"),
-        onStopped: () => setPhaseSync("idle"),
-      });
+      if (gotAnyChunk && aiText === streamedText) {
+        drainOrbSpeechBuffer(true);
+      } else if (!gotAnyChunk) {
+        queueOrbSpeech(aiText);
+      }
+      // else: a post-processed override replaced the streamed text — it's
+      // already on screen, which matters more than re-speaking it from
+      // scratch over whatever was already said.
 
       // persist AI reply (background — see L-02 note above)
       if (convId) {
@@ -9688,6 +9768,7 @@ export default function Home({ navigation }) {
         navigation={navigation}
         theme={theme}
         styles={styles}
+        speechLocale={speechLocaleRef.current}
       />
 
       <QuickCaptureSheet

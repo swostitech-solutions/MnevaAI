@@ -1288,6 +1288,7 @@ import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
 import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle, getGlobalTestModeLevel, transitionDomain } from "../services/pendingActions.service.js";
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
 import { createPerfTimer, getPerfStats } from "../services/perf.service.js";
+import { emitToUser } from "../services/realtime.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1296,7 +1297,7 @@ const upload = multer({
 
 export const agentRouter = express.Router();
 agentRouter.post("/chat", async (req, res) => {
-  const perf = createPerfTimer("chat");
+  const perf = createPerfTimer("chat", req.body?.requestId);
   try {
     const { messages, attachment } = req.body;
     if (!Array.isArray(messages))
@@ -1428,6 +1429,13 @@ agentRouter.post("/chat", async (req, res) => {
     }
     perf.mark("model_and_tools");
 
+    // L-08: tells the app this requestId's live token stream is over —
+    // covers every exit path out of runAutonomyEngine/runLangGraphOrchestrator
+    // (tool-less replies, failed actions, errors inside the engine that still
+    // resolve to a text response) in one place, instead of having to emit it
+    // from each return site inside the engine.
+    emitToUser(req.user.id, "agent:stream_done", { requestId: perf.requestId });
+
     res.json({
       ...result,
       sessionContext,
@@ -1436,6 +1444,7 @@ agentRouter.post("/chat", async (req, res) => {
     });
     perf.finish();
   } catch (err) {
+    emitToUser(req.user.id, "agent:stream_done", { requestId: perf.requestId });
     perf.finish({ note: "error" });
     res.status(500).json({ error: err.message });
   }

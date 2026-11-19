@@ -400,7 +400,68 @@ function getOpenAIErrorMessage(error) {
   return "I'm having trouble reaching the AI service right now — please try that again in a moment."
 }
 
-async function callOpenAI({ model, system, messages, tools, toolChoice = null }) {
+// L-08: reads an OpenAI `stream: true` SSE response and reconstructs the
+// exact same `{ choices: [{ message, finish_reason }] }` shape the
+// non-streaming path returns, so everything downstream of callOpenAI stays
+// unchanged. onDelta (if given) fires with each plain-text content fragment
+// as it arrives, for live display — tool-call argument fragments are only
+// ever buffered and reassembled here, never surfaced partially (a half-
+// written JSON argument string means nothing to a user or to executeTool).
+export async function consumeOpenAIStream(response, onDelta) {
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let content = ''
+  const toolCallsByIndex = new Map()
+  let finishReason = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let newlineIdx
+    while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newlineIdx).trim()
+      buffer = buffer.slice(newlineIdx + 1)
+      if (!line.startsWith('data:')) continue
+      const raw = line.slice(5).trim()
+      if (!raw || raw === '[DONE]') continue
+      let evt
+      try { evt = JSON.parse(raw) } catch { continue }
+      const choice = evt.choices?.[0]
+      if (!choice) continue
+      const delta = choice.delta || {}
+      if (typeof delta.content === 'string' && delta.content) {
+        content += delta.content
+        if (onDelta) { try { onDelta(delta.content) } catch {} }
+      }
+      if (Array.isArray(delta.tool_calls)) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0
+          const existing = toolCallsByIndex.get(idx) || { id: '', type: 'function', function: { name: '', arguments: '' } }
+          if (tc.id) existing.id = tc.id
+          if (tc.function?.name) existing.function.name += tc.function.name
+          if (tc.function?.arguments) existing.function.arguments += tc.function.arguments
+          toolCallsByIndex.set(idx, existing)
+        }
+      }
+      if (choice.finish_reason) finishReason = choice.finish_reason
+    }
+  }
+
+  const tool_calls = toolCallsByIndex.size
+    ? Array.from(toolCallsByIndex.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v)
+    : undefined
+
+  return {
+    choices: [{
+      message: { role: 'assistant', content: content || null, ...(tool_calls ? { tool_calls } : {}) },
+      finish_reason: finishReason || (tool_calls ? 'tool_calls' : 'stop'),
+    }],
+  }
+}
+
+async function callOpenAI({ model, system, messages, tools, toolChoice = null, stream: streamOpts = null }) {
   const apiKey = process.env.OPENAI_API_KEY?.trim()
   if (!isOpenAIConfigured(apiKey)) return null
 
@@ -435,6 +496,13 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
   }
   if (toolChoice) payload.tool_choice = { type: 'function', function: { name: toolChoice } }
 
+  // L-08: only ask OpenAI to stream when a caller actually wants live
+  // tokens (runAutonomyEngine's main loop, so the app can show/speak text
+  // as it arrives) — tool-forced calls elsewhere don't need it and skip the
+  // SSE parsing path entirely.
+  const onDelta = typeof streamOpts?.onDelta === 'function' ? streamOpts.onDelta : null
+  if (onDelta) payload.stream = true
+
   // A bare 5xx/429 from OpenAI, or the fetch itself dropping (network blip,
   // upstream timeout), is almost always transient — retry a couple of times
   // before giving up, instead of turning a few-second hiccup into a dead-end
@@ -466,13 +534,21 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
       clearTimeout(timeoutId)
     }
 
-    data = await response.json().catch(() => ({}))
     if (!response.ok) {
+      data = await response.json().catch(() => ({}))
       const message = data?.error?.message || `OpenAI API error ${response.status}`
       const transient = response.status >= 500 || response.status === 429
       if (transient && attempt < maxAttempts) { await new Promise(r => setTimeout(r, attempt * 800)); continue }
       throw new Error(message)
     }
+
+    // A response that's already OK has started (or finished) delivering —
+    // re-sending it on a later loop pass would duplicate tokens the user
+    // already saw, so a failure from here on is terminal for this call
+    // rather than retried.
+    data = payload.stream
+      ? await consumeOpenAIStream(response, onDelta)
+      : await response.json().catch(() => ({}))
     break
   }
 
@@ -2604,12 +2680,24 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
 
     let resp
     try {
+      // L-08: only the live /chat route passes a perf timer (background
+      // callers — proactive suggestions, scheduled jobs — don't), so this
+      // naturally limits streaming to turns with a real user waiting on a
+      // socket connection. stream_reset lets the app clear its live-preview
+      // buffer before each iteration, since an earlier iteration's content
+      // (rare, but possible alongside a forced tool call) must never bleed
+      // into the next one's.
+      const streamRequestId = context?.perf?.requestId || null
+      if (streamRequestId) emitToUser(user.id, 'agent:stream_reset', { requestId: streamRequestId })
       const _callArgs = {
         model,
         system: systemPrompt,
         tools: MNEVA_TOOLS,
         messages: agentMsgs,
         toolChoice: allToolResults.length === 0 ? (requestedActionTool || requestedLookupTool || requestedDiaryTool || requestedEmailTool_ || requestedSearchTool) : null,
+        stream: streamRequestId
+          ? { onDelta: (chunk) => emitToUser(user.id, 'agent:stream_chunk', { requestId: streamRequestId, chunk }) }
+          : null,
       }
       resp = await callOpenAI(_callArgs)
     } catch (error) {

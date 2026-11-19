@@ -25,8 +25,13 @@ function percentile(sorted, p) {
   return sorted[Math.max(0, idx)]
 }
 
-export function createPerfTimer(label) {
-  const requestId = randomUUID()
+// L-08: a caller-supplied id lets the app subscribe to this turn's live
+// token-stream socket events BEFORE the request even lands here (it has no
+// other way to learn the id in time to catch early chunks) — falls back to
+// a server-generated one for any caller that doesn't pass one.
+export function createPerfTimer(label, externalRequestId = null) {
+  const trimmed = typeof externalRequestId === 'string' ? externalRequestId.trim().slice(0, 80) : ''
+  const requestId = trimmed || randomUUID()
   const start = Date.now()
   let lastMark = start
   const stages = []
