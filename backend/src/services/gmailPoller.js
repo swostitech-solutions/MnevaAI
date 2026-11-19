@@ -60,11 +60,21 @@ async function generateReplyDraft(email, userName, userId) {
         },
       ],
     }, { temperature: 0.4 })
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(payload),
-    })
+    // L-13: this fetch had no timeout — a stalled draft call could hang
+    // this poll tick's whole per-email loop indefinitely.
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 20000)
+    let res
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+    }
     const data = await res.json().catch(() => ({}))
     return data.choices?.[0]?.message?.content?.trim() || null
   } catch {
@@ -106,7 +116,14 @@ async function pollOnce(userId, io) {
         fullEmail = { ...email, body: body.body }
       } catch { /* use preview fallback */ }
 
-      const draft = await generateReplyDraft(fullEmail, user.name || 'User', userId)
+      // L-13: drafting costs one real OpenAI call per email regardless of
+      // whether the user will ever act on it — only worth doing for mail
+      // the same urgency classifier (already computed once per poll tick,
+      // no extra cost) actually flagged. Routine/newsletter mail still gets
+      // its Notification row and shows in the in-app Gmail panel either
+      // way, just without a pre-written reply.
+      const isUrgent = !!urgency.get(email.id)?.urgent
+      const draft = isUrgent ? await generateReplyDraft(fullEmail, user.name || 'User', userId) : null
 
       const notif = await prisma.notification.create({
         data: {
@@ -132,7 +149,7 @@ async function pollOnce(userId, io) {
         suggestedReply: draft,
         ts: notif.createdAt.toISOString(),
       })
-      if (urgency.get(email.id)?.urgent) {
+      if (isUrgent) {
         sendPushToUser(userId, { title: notif.title, body: `From ${email.from || 'unknown'}`, data: { type: 'gmail', emailId: email.id } })
       }
     }
@@ -154,10 +171,16 @@ export function startGmailPoller(userId, io) {
   const state = { lastSeenIds: new Set(), timer: null }
   activePollers.set(userId, state)
 
+  // L-13: a server restart calls this for every connected user in one tight
+  // loop (see server.js's startGoogleServicePollersForConnectedUsers) — a
+  // random spread-out start means their 60s ticks land at different
+  // moments from then on instead of every user polling in lockstep forever.
+  const jitterMs = Math.floor(Math.random() * POLL_INTERVAL_MS)
+
   // seed existing unread IDs first, THEN start polling so old emails never trigger cards
   userStore.getById(userId).then(async (user) => {
     if (!user?.preferences?.gmail?.tokens?.refresh_token) {
-      state.timer = setInterval(() => pollOnce(userId, io), POLL_INTERVAL_MS)
+      state.timer = setTimeout(() => { state.timer = setInterval(() => pollOnce(userId, io), POLL_INTERVAL_MS) }, jitterMs)
       return
     }
     try {
@@ -166,7 +189,7 @@ export function startGmailPoller(userId, io) {
       logger.info(`Gmail poller seeded ${state.lastSeenIds.size} existing unread IDs for user ${userId}`)
     } catch { /* not connected yet */ }
     // start polling only after seed is done
-    state.timer = setInterval(() => pollOnce(userId, io), POLL_INTERVAL_MS)
+    state.timer = setTimeout(() => { state.timer = setInterval(() => pollOnce(userId, io), POLL_INTERVAL_MS) }, jitterMs)
   })
 
   logger.info(`Gmail poller started for user ${userId}`)
