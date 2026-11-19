@@ -7,6 +7,7 @@ import { applyModelCompat } from '../services/openaiCompat.js'
 import { memoryService } from '../services/memory.service.js'
 import { GATED_DOMAINS, domainForCall, getDomainTrust, decideGate, blockedMessage, executeSendEmailSideEffect, executePaymentSideEffect, createPendingAction, recordDomainAction, getGlobalTestModeLevel } from '../services/pendingActions.service.js'
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from '../services/activityCalc.js'
+import { getToolMeta } from '../services/ledgerTaxonomy.js'
 
 function validTimeZone(value) {
   try {
@@ -158,6 +159,24 @@ function actionIdentity(name, input = {}) {
   if (name === 'set_reminder') return `${name}:${String(input.message || '').trim().toLowerCase()}:${input.time || ''}`
   if (name === 'schedule_event') return `${name}:${String(input.title || '').trim().toLowerCase()}:${input.start || ''}`
   return null
+}
+
+// L-09: groups one turn's write/action tool calls so same-domain calls
+// (which could plausibly touch the same resource, e.g. two Finance writes,
+// or two set_reminder/schedule_event calls that need the dedup-by-identity
+// check to see each other) stay in their original order, while calls in
+// different domains have no real reason to wait on each other. Exported
+// for a focused unit test — getToolMeta/update_record/delete_record domain
+// resolution is worth pinning down on its own, without mocking the rest of
+// the agent loop just to exercise this grouping decision.
+export function groupToolBlocksByDomain(toolBlocks) {
+  const groups = new Map() // key -> [{ tb, tbIndex }]
+  toolBlocks.forEach((tb, tbIndex) => {
+    const key = getToolMeta(tb.name).domain || `generic:${tb.input?.module || 'unknown'}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push({ tb, tbIndex })
+  })
+  return groups
 }
 
 // The model's prose is not a record of an action.  Explicitly require the
@@ -2787,21 +2806,43 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
     // below (executedActionResults) depends on each call completing before
     // the next one is evaluated.
     const allReadOnly = toolBlocks.every(tb => READ_ONLY_TOOLS.has(tb.name))
-    const executedResults = allReadOnly
-      ? await Promise.all(toolBlocks.map(tb => executeTool(tb.name, tb.input, user.id)))
-      : null
+    // L-09: a write/action batch used to run fully sequentially regardless
+    // of what it actually contained — but the only real ordering need is
+    // the dedup-by-identity check just below (set_reminder/schedule_event,
+    // both always the 'lifeops' domain), so two calls only need to stay in
+    // program order when they could plausibly collide: same domain
+    // (grouping by the tool's taxonomy domain is a safe, if coarse, proxy
+    // for "same resource" — e.g. two Finance writes stay sequential, a
+    // Finance write and a Family write don't block each other), or no
+    // domain at all (update_record/delete_record are generic across every
+    // module — their real domain depends on input.module, not the tool
+    // name, so getToolMeta can't place them; they share one fallback group
+    // keyed by module and stay sequential with each other to be safe).
+    // Execution order within a group matches toolBlocks' original order;
+    // groups themselves run concurrently via Promise.all.
+    let executedResults
+    if (allReadOnly) {
+      executedResults = await Promise.all(toolBlocks.map(tb => executeTool(tb.name, tb.input, user.id)))
+    } else {
+      const groups = groupToolBlocksByDomain(toolBlocks)
+      executedResults = new Array(toolBlocks.length)
+      await Promise.all(Array.from(groups.values()).map(async (entries) => {
+        for (const { tb, tbIndex } of entries) {
+          const identity = actionIdentity(tb.name, tb.input)
+          executedResults[tbIndex] = identity && executedActionResults.has(identity)
+            ? executedActionResults.get(identity)
+            : await executeTool(tb.name, tb.input, user.id)
+          if (identity) executedActionResults.set(identity, executedResults[tbIndex])
+        }
+      }))
+    }
 
     const toolResults = []
     for (let tbIndex = 0; tbIndex < toolBlocks.length; tbIndex++) {
       const tb = toolBlocks[tbIndex]
       logger.info(`  → Tool: ${tb.name}`)
       const identity = actionIdentity(tb.name, tb.input)
-      const result = executedResults
-        ? executedResults[tbIndex]
-        : identity && executedActionResults.has(identity)
-          ? executedActionResults.get(identity)
-          : await executeTool(tb.name, tb.input, user.id)
-      if (identity) executedActionResults.set(identity, result)
+      const result = executedResults[tbIndex]
 
       // book_cab/order_food/set_reminder aren't domain-gated (not one of the
       // 4 PDF trust domains) but still get logged here like every other
