@@ -35,7 +35,7 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | L-04 | Sequential lookups + live Google calls on every message | ✅ Fixed (commit 7667157) | user/session/memory/profile lookups now Promise.all'd. Live health/contacts/calendar/email fetch is now skipped entirely unless the message text plausibly needs it (keyword check) — a greeting makes zero Google calls. |
 | L-05 | Qdrant collection check on every call | ✅ Fixed (commit 72b7a27) | ensureCollection memoized per process, only re-verified after a real failure (clearEnsuredCollection), not before every call. |
 | L-06 | Duplicate/unused memory work | ✅ Fixed (commit 72b7a27) | recall() no longer re-reads session context from Redis or writes it into the unused memory:search:* cache key. In-process fallback Map documented as single-process-only (current deployment has no clustering, so not an active bug). |
-| L-07 | Prompt size and caching | ⬜ | |
+| L-07 | Prompt size and caching | ✅ Fixed (commit 8ea0163) | buildSystemPrompt (incl. buildFamilyContext's DB query) now runs once per turn instead of once per agent-loop iteration (up to 10x). Rule 15's embedded live timestamp — which broke provider prefix-caching for the whole rules block on every call — now references the existing Today/Time fields at the end instead. Smaller toolset by intent (a cheap classifier) not done — real benefit is now mostly caching-driven already via these two fixes. |
 | L-08 | No streaming anywhere | ⬜ | |
 | L-09 | Tool turns sequential, always full agent | ⬜ | |
 | L-10 | Voice input heavy batch upload | ⬜ | |
