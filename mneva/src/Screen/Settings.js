@@ -726,6 +726,34 @@ export default function Settings({ navigation, route }) {
     finally { setConfirmingLevel(false); }
   };
 
+  // Audit item G-13: lets a user drop a domain to any lower level directly,
+  // without waiting for a reject-rate demotion. Raising is rejected by the
+  // backend — level is still earned, only lowering is a dial the user turns.
+  const setDomainLevelManually = (domain, targetLevel) => {
+    const domainLabel = DOMAIN_TABS.find(d => d.key === domain)?.label || domain;
+    Alert.alert(
+      `Drop ${domainLabel} to L${targetLevel}?`,
+      `Mneva will ${targetLevel <= 2 ? 'ask before acting' : 'ask less often'} here until you earn your way back up.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm', style: 'destructive',
+          onPress: async () => {
+            setConfirmingLevel(true);
+            try {
+              const res = await apiFetch('/api/trust/domain-level', { method: 'PATCH', body: { domain, level: targetLevel } });
+              if (res?.success) {
+                setDomainTrust(prev => ({ ...prev, [domain]: { ...prev[domain], ...resetDomainStats, level: res.level, pendingL2Confirm: false, pendingL4Confirm: false } }));
+              }
+            } catch (err) {
+              Alert.alert('Could not change level', err?.message || 'Please try again.');
+            } finally { setConfirmingLevel(false); }
+          },
+        },
+      ]
+    );
+  };
+
   const turnOffInnerCircle = (domain) => {
     Alert.alert(
       'Turn off Inner Circle?',
@@ -1049,22 +1077,28 @@ export default function Settings({ navigation, route }) {
               {/* Level display — earned automatically (enough approvals/
                   declines in chat moves this), never set by tapping a card. */}
               <Text style={styles.sectionLabel}>Autonomy Level</Text>
-              <Text style={styles.levelHint}>Earned automatically as you approve or decline what Mneva proposes for this domain — not something you set directly.</Text>
-              {TRUST_LEVELS.map(({ level: l, name, desc }) => (
-                <View
-                  key={l}
-                  style={[styles.levelCard, level === l && styles.levelCardActive, level !== l && styles.levelCardInactive]}
-                >
-                  <View style={[styles.levelBadge, level === l && styles.levelBadgeActive]}>
-                    <Text style={[styles.levelBadgeText, level === l && styles.levelBadgeTextActive]}>L{l}</Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 14 }}>
-                    <Text style={[styles.levelName, level === l && styles.levelNameActive]}>{name}</Text>
-                    <Text style={styles.levelDesc}>{desc}</Text>
-                  </View>
-                  {level === l && <Feather name="check-circle" size={18} color={theme.accent} />}
-                </View>
-              ))}
+              <Text style={styles.levelHint}>Earned automatically as you approve or decline what Mneva proposes for this domain. You can always drop to a lower level yourself — tap one below.</Text>
+              {TRUST_LEVELS.map(({ level: l, name, desc }) => {
+                const isLower = l < level;
+                const Wrapper = isLower ? TouchableOpacity : View;
+                return (
+                  <Wrapper
+                    key={l}
+                    style={[styles.levelCard, level === l && styles.levelCardActive, level !== l && styles.levelCardInactive]}
+                    {...(isLower ? { onPress: () => setDomainLevelManually(selectedDomain, l), disabled: confirmingLevel } : {})}
+                  >
+                    <View style={[styles.levelBadge, level === l && styles.levelBadgeActive]}>
+                      <Text style={[styles.levelBadgeText, level === l && styles.levelBadgeTextActive]}>L{l}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 14 }}>
+                      <Text style={[styles.levelName, level === l && styles.levelNameActive]}>{name}</Text>
+                      <Text style={styles.levelDesc}>{desc}</Text>
+                    </View>
+                    {level === l && <Feather name="check-circle" size={18} color={theme.accent} />}
+                    {isLower && <Text style={styles.levelDropLink}>Drop here</Text>}
+                  </Wrapper>
+                );
+              })}
 
               {/* This domain's on/off switch */}
               <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Domain Autonomy</Text>
@@ -1324,6 +1358,7 @@ const createStyles = (theme) => StyleSheet.create({
   levelName:       { fontSize: 15, fontWeight: '700', color: theme.text },
   levelNameActive: { color: theme.accent },
   levelDesc:       { fontSize: 12, color: theme.faint, marginTop: 2 },
+  levelDropLink:   { fontSize: 12, fontWeight: '700', color: theme.danger },
   toggleRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   toggleLabel:     { flex: 1, fontSize: 14, fontWeight: '600', color: theme.text, marginLeft: 12 },
   appLockHint:     { fontSize: 12, color: theme.faint, paddingBottom: 14, paddingHorizontal: 2 },

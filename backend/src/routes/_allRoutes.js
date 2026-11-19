@@ -1285,7 +1285,7 @@ import { createDeviceToken, hashToken } from "./deviceNotifications.js";
 import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
-import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle, getGlobalTestModeLevel } from "../services/pendingActions.service.js";
+import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle, getGlobalTestModeLevel, transitionDomain } from "../services/pendingActions.service.js";
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
 
 const upload = multer({
@@ -3631,40 +3631,36 @@ trustRouter.get("/status", async (req, res) => {
     plan: user?.plan || "Free",
   });
 });
-trustRouter.post("/upgrade", async (req, res) => {
-  const user = await prisma.user.update({
-    where: { id: req.user.id },
-    data: { trustLevel: { increment: 1 } },
-  });
-  res.json({ success: true, newLevel: user.trustLevel });
-});
+// Audit item G-13: these two used to write the old single global
+// user.trustLevel field — gating has read per-domain DomainTrust.level for
+// a while now, so they silently did nothing useful while still looking
+// like a real control a client could call. Removed outright (Express's
+// router falls through to the app's own 404 handler for both paths now)
+// in favour of PATCH /trust/domain-level below, which actually changes the
+// thing gating reads.
 
-trustRouter.patch("/level", async (req, res) => {
-  const { level } = req.body;
-  if (!level || level < 1 || level > 4)
-    return res.status(400).json({ error: "level must be 1–4" });
-  const before = await prisma.user.findUnique({ where: { id: req.user.id }, select: { trustLevel: true } });
-  const user = await prisma.user.update({
-    where: { id: req.user.id },
-    data: { trustLevel: Number(level) },
-  });
-  if (before && before.trustLevel !== user.trustLevel) {
-    ledger.add({
-      userId: req.user.id,
-      tool: "trust_level_changed",
-      input: { from: before.trustLevel, to: user.trustLevel, reason: "manual" },
-      result: { level: user.trustLevel },
-      status: "completed",
-    }).catch(() => {});
-    // A manual change is a deliberate reset — old streaks shouldn't carry
-    // into the newly-chosen level and silently trigger another auto-change.
-    prisma.trustScore.upsert({
-      where: { userId: req.user.id },
-      update: { approvalStreak: 0, rejectionStreak: 0 },
-      create: { userId: req.user.id, approvalStreak: 0, rejectionStreak: 0 },
-    }).catch(() => {});
+// Lowering is always allowed (the user backing off is never something to
+// gate); raising is only allowed up to whatever this domain has already
+// earned/been offered — that current row.level IS that ceiling by
+// definition (it only ever moves up through real progression or an
+// explicit L4 confirm), so a request above it is rejected rather than
+// silently granting autonomy the user hasn't actually built up yet.
+trustRouter.patch("/domain-level", async (req, res) => {
+  try {
+    const { domain, level } = req.body;
+    if (!DOMAINS.includes(domain)) return res.status(400).json({ error: `domain must be one of: ${DOMAINS.join(", ")}` });
+    const requested = Number(level);
+    if (!Number.isInteger(requested) || requested < 1 || requested > 4) return res.status(400).json({ error: "level must be 1-4" });
+    const row = await getDomainTrust(req.user.id, domain);
+    if (requested > row.level) {
+      return res.status(400).json({ error: `Autonomy is earned, not set directly — ${domain} is currently L${row.level}. Keep using Mneva at this level (or confirm when Mneva offers L4) to go higher.` });
+    }
+    if (requested === row.level) return res.json({ success: true, domain, level: row.level });
+    await transitionDomain(req.user.id, row, requested, "manual");
+    res.json({ success: true, domain, level: requested });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  res.json({ success: true, newLevel: user.trustLevel });
 });
 
 // Per-domain trust: one row per Finance/Communication/Health Core/Family

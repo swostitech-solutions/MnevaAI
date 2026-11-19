@@ -198,7 +198,9 @@ async function notifyLevelChange(userId, domain, from, to, reason = null) {
         ? `Mneva's ${DOMAIN_LABEL[domain]} trust level is now L${to}.`
         : reason === 'user_turned_off'
           ? `You turned off Inner Circle for ${DOMAIN_LABEL[domain]}. Mneva will ask before acting again.`
-          : `Mneva's ${DOMAIN_LABEL[domain]} trust level was lowered to L${to} after too many declined actions.`,
+          : reason === 'manual'
+            ? `You set ${DOMAIN_LABEL[domain]}'s trust level to L${to}. Mneva will act accordingly.`
+            : `Mneva's ${DOMAIN_LABEL[domain]} trust level was lowered to L${to} after too many declined actions.`,
     },
   })
   emitToUser(userId, 'domainTrust:levelChanged', { domain, level: to, previousLevel: from })
@@ -210,7 +212,12 @@ async function notifyLevelChange(userId, domain, from, to, reason = null) {
 // the PDF's "last 15 actions and then comes to L3 with better
 // understanding" for a demotion, and preventing an old streak years back
 // from carrying into a level it didn't actually earn there.
-async function transitionDomain(userId, row, newLevel, reason = null) {
+// Exported for PATCH /trust/domain-level (audit item G-13) — a manual,
+// user-initiated level change needs the exact same reset-and-record
+// behavior (fresh counters, a ledger entry, the live socket update) as an
+// earned promotion/demotion does; this was already the one place that did
+// all of that together.
+export async function transitionDomain(userId, row, newLevel, reason = null) {
   await prisma.domainTrust.update({
     where: { id: row.id },
     data: { level: newLevel, levelEnteredAt: new Date(), actionsAtLevel: 0, acceptedAtLevel: 0, rejectedAtLevel: 0, pendingL2Confirm: false, pendingL4Confirm: false },
