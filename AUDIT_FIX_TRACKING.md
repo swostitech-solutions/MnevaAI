@@ -12,7 +12,7 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | G-20 | Production config audit | ✅ Fixed (commit 9939496) | Boot refuses to start in prod w/o signing/encryption keys; logs loud warning if GLOBAL_TEST_MODE_LEVEL set; added GET /api/health/config. **Found live: GLOBAL_TEST_MODE_LEVEL=4 is currently set on production** — flagged to user, awaiting decision on whether to unset it now. |
 | G-05 | Export my data | ✅ Fixed (commit fa6dfcd) | Real BullMQ job: zips tasks/finance/family/health/documents-list/notifications/trust/ledger/chat, emails via Resend, tokens stripped, 1/day limit, logged to ledger. Not included: Qdrant memory-text, actual document file binaries (metadata only) — noted as known scope limit. User should test by tapping Export in Settings. |
 | G-07 | Slack distribution/token storage | 🟡 Partial (commit 42831cc) | Token encryption + token_revoked/app_uninstalled handler done & migrated (0 plaintext found). Distribution check + Events Subscription URL wiring are external Slack dashboard actions — user needs to do those. |
-| G-18 | "End-to-end encryption" label | ⬜ | |
+| G-18 | "End-to-end encryption" label | ✅ Fixed (commit 0b413f1) | Settings label now "Vault: end-to-end encrypted on your device"; footnote corrected. Toggle stays locked/always-on (still gates Vault.js). No backend change needed — no API text made the false claim. |
 | G-03 | Twin Diary ledger coverage | ⬜ | |
 | G-17 | Family plan seats/billing | ⬜ | |
 | G-08 | Communications: one view, follow-ups | ⬜ | |
