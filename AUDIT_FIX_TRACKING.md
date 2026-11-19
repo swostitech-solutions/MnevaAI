@@ -18,7 +18,7 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | G-08 | Communications: one view, follow-ups | 🟡 Partial (commit 57993c9) | Follow-up/commitment tracking now also scans Outlook sent mail (new provider column + migration, reuses the same AI classifier). Merged Gmail+Outlook+Slack inbox UI with provider chips NOT done (user chose to scope this out) — separate screens stay as-is. No in-app wording needed a fix (overclaim was brochure-only, not found in-app). |
 | G-14 | Payments/UPI/biometric | ⏭️ Skipped by user request | Explicitly told to skip this one. |
 | G-15 | Portfolio/credit score data labeling | ✅ Fixed (commit 2b416fb) | get_portfolio tool description no longer claims Account Aggregator/CIBIL. ConnectedAccounts' "coming soon" chips were already correct from an earlier fix. Added "manually entered" note to Portfolio screen. |
-| G-12 | Daily Brief focus score/ranking | ⬜ | |
+| G-12 | Daily Brief focus score/ranking | ✅ Fixed (commit c938792) | Dashboard's top-3 priority cards now ranked by a real urgency score (time-until-due + overdue + urgent-email/meeting-request boost) instead of fixed category order. FocusRing's captions were already honestly profile-scoped, no fix needed there. |
 | G-13 | Trust levels manual set | ⬜ | |
 | G-09 | Drive/Docs/Sheets file reading | ⬜ | |
 | G-11 | Media & Discovery "real-time" claims | ⬜ | |
