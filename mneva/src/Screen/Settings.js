@@ -52,17 +52,23 @@ const DOMAIN_TABS = [
 
 // e2eEncryption and signedLedger are core security guarantees, not
 // user preferences — Vault's own encryption gate reads e2eEncryption
-// (see VaultScreen), so letting it be switched off would actually lock
+// (see Vault.js), so letting it be switched off would actually lock
 // the user out of their own encrypted files. `locked: true` keeps both
 // permanently on and un-toggleable; the backend enforces the same thing
 // (see trustRouter.patch("/settings")) so a modified client can't bypass it.
+// Audit item G-18: the label used to just say "End-to-end encryption",
+// which is only actually true for the Security Vault (client-side
+// encrypted on your own device) — chat messages, finance and health rows
+// are plain in Postgres, so that label read as a claim about the whole
+// app's data. Scoped the wording to what it actually guarantees instead of
+// changing what it does (still always-on, still gates Vault access).
 // Removed 'dataSharing' ("Share anonymised data for AI training") -- it
 // was never read anywhere (no backend pipeline, no anonymization, nothing
 // used it), purely a dead switch that looked like it did something and
 // didn't.
 const PRIVACY_TOGGLES = [
   { key: 'biometricGate',   label: 'Biometric gate for payments ≥ ₹1,000', icon: 'shield' },
-  { key: 'e2eEncryption',   label: 'End-to-end encryption',                 icon: 'lock', locked: true },
+  { key: 'e2eEncryption',   label: 'Vault: end-to-end encrypted on your device', icon: 'lock', locked: true },
   { key: 'signedLedger',    label: 'Signed action ledger (SHA-256)',         icon: 'file-text', locked: true },
 ];
 
@@ -1101,7 +1107,7 @@ export default function Settings({ navigation, route }) {
                 );
               })}
               <Text style={styles.appLockHint}>
-                End-to-end encryption and the signed action ledger are core security guarantees — always on, can't be turned off.
+                The Vault and the signed action ledger are core security guarantees — always on, can't be turned off. Everything else you send to Mneva is encrypted in transit (HTTPS), not end-to-end — only the Vault is encrypted on your own device.
               </Text>
             </View>
 
