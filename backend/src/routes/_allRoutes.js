@@ -1970,12 +1970,18 @@ dashboardRouter.get("/sidebar-counts", async (req, res) => {
     }
 
     // Health: upcoming appointments (from preferences or tasks)
+    // Audit item G-16: this used to count every PENDING task that ever had
+    // "appointment" in its title, with no date filter at all — so a task
+    // from a year ago, never marked done, inflated this forever. Tasks now
+    // carry a real dueDate (see Task.dueDate), so this can actually mean
+    // "upcoming" instead of "appointment-titled and still pending".
     const healthCount = await prisma.task
       .count({
         where: {
           userId,
           status: "PENDING",
           title: { contains: "appointment", mode: "insensitive" },
+          dueDate: { gte: new Date() },
         },
       })
       .catch(() => 0);

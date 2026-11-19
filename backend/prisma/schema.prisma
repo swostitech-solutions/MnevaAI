@@ -278,12 +278,18 @@ model VaultFile {
 }
 
 model Task {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   title       String
   description String?
-  status      String   @default("PENDING")
+  status      String    @default("PENDING")
+  // Audit item G-16: nothing persisted a task's scheduled time before this —
+  // a reminder fired once via a queued job, but the date itself only lived
+  // in a Notification's JSON blob, so the dashboard's "upcoming appointments"
+  // count had no date to filter on and just counted every PENDING task
+  // whose title happened to contain "appointment", forever.
+  dueDate     DateTime?
   userId      String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

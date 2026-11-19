@@ -1359,6 +1359,7 @@ export async function executeTool(name, input, userId, opts = {}) {
             title: input.message,
             description: reminderTimeStr ? `Reminder · ${reminderTimeStr}` : 'Reminder',
             status: 'PENDING',
+            dueDate: scheduledAt,
           },
         }),
       ])
@@ -1488,6 +1489,7 @@ export async function executeTool(name, input, userId, opts = {}) {
               title: input.title,
               description: `Meeting · ${startDt.toLocaleTimeString('en-IN', { timeZone, hour: '2-digit', minute: '2-digit', hour12: true })}`,
               status: 'PENDING',
+              dueDate: startDt,
             },
           }),
         ])

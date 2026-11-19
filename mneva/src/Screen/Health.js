@@ -8,6 +8,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
@@ -1087,6 +1088,126 @@ function HistoryModal({ visible, onClose, weeks, bottomInset, theme, styles }) {
   );
 }
 
+// Audit item G-16: the Health screen had no concept of an appointment at
+// all — the dashboard's "upcoming appointments" count only ever worked if a
+// user happened to create a generic task elsewhere with "appointment" in
+// the title, which nothing in this screen ever told them to do. This gives
+// Health its own add flow, reusing the same /api/tasks + reminder pipeline
+// every other "remind me" in the app already uses.
+function AddAppointmentSheet({ visible, onClose, onSaved, bottomInset, theme, styles }) {
+  const [title, setTitle] = useState('');
+  const [when, setWhen] = useState(() => new Date(Date.now() + 60 * 60 * 1000));
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setTitle('');
+      setWhen(new Date(Date.now() + 60 * 60 * 1000));
+      setShowDatePicker(false);
+      setShowTimePicker(false);
+    }
+  }, [visible]);
+
+  const fmtDate = (d) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const fmtTime = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+  const handleSave = async () => {
+    if (!title.trim() || saving) return;
+    setSaving(true);
+    try {
+      await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: {
+          title: `Appointment: ${title.trim()}`,
+          description: 'Health appointment',
+          status: 'PENDING',
+          reminderTime: when.toISOString(),
+          reminderDomain: 'health',
+        },
+      });
+      onSaved?.();
+      onClose();
+    } catch {
+      Alert.alert('Could not save', 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.sheetOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+        <View style={[styles.apptSheetContainer, { paddingBottom: 20 + bottomInset }]}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Add appointment</Text>
+          <Text style={styles.sheetSubtitle}>Mneva will remind you before it's due.</Text>
+
+          <TextInput
+            style={styles.apptInput}
+            placeholder="e.g. Dr. Sharma — dental checkup"
+            placeholderTextColor={theme.faint}
+            value={title}
+            onChangeText={setTitle}
+          />
+
+          <View style={styles.apptPickerRow}>
+            <TouchableOpacity style={styles.apptPickerBtn} onPress={() => setShowDatePicker(true)}>
+              <Feather name="calendar" size={14} color={theme.accent} />
+              <Text style={styles.apptPickerBtnText}>{fmtDate(when)}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.apptPickerBtn} onPress={() => setShowTimePicker(true)}>
+              <Feather name="clock" size={14} color={theme.accent} />
+              <Text style={styles.apptPickerBtnText}>{fmtTime(when)}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={when}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              minimumDate={new Date()}
+              onChange={(e, date) => {
+                setShowDatePicker(Platform.OS === 'ios');
+                if (date) setWhen(prev => { const next = new Date(prev); next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate()); return next; });
+              }}
+            />
+          )}
+          {showTimePicker && (
+            <DateTimePicker
+              value={when}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(e, time) => {
+                setShowTimePicker(Platform.OS === 'ios');
+                if (time) setWhen(prev => { const next = new Date(prev); next.setHours(time.getHours(), time.getMinutes(), 0, 0); return next; });
+              }}
+            />
+          )}
+          {Platform.OS === 'ios' && (showDatePicker || showTimePicker) && (
+            <TouchableOpacity style={styles.apptPickerDoneBtn} onPress={() => { setShowDatePicker(false); setShowTimePicker(false); }}>
+              <Text style={styles.apptPickerDoneBtnText}>Done</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={[styles.apptSaveBtn, (!title.trim() || saving) && styles.apptSaveBtnDisabled]}
+            onPress={handleSave}
+            disabled={!title.trim() || saving}
+          >
+            {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.apptSaveBtnText}>Save appointment</Text>}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 export default function Health({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -1116,6 +1237,8 @@ export default function Health({ navigation }) {
   const [syncVisible, setLogVisible] = useState(false);
   const [editSheet, setEditSheet] = useState(null); // { date, entry } | null, opened by tapping Edit on a logged day
   const [fitConnected, setFitConnected] = useState(false);
+  const [appointments, setAppointments] = useState([]);
+  const [addApptVisible, setAddApptVisible] = useState(false);
 
   const hasRealDataRef = useRef(false);
 
@@ -1164,6 +1287,24 @@ export default function Health({ navigation }) {
     finally { setLoading(false); setRefreshing(false); }
   };
 
+  const loadAppointments = async () => {
+    try {
+      const tasks = await apiFetch('/api/tasks');
+      const now = Date.now();
+      const upcoming = (Array.isArray(tasks) ? tasks : [])
+        .filter(t => t.status === 'PENDING' && /appointment/i.test(t.title) && t.dueDate && new Date(t.dueDate).getTime() >= now)
+        .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+        .slice(0, 5);
+      setAppointments(upcoming);
+    } catch {}
+  };
+
+  const markAppointmentDone = async (id) => {
+    setAppointments(prev => prev.filter(a => a.id !== id));
+    try { await apiFetch(`/api/tasks/${id}`, { method: 'PATCH', body: { status: 'COMPLETED' } }); }
+    catch { Alert.alert('Error', 'Could not update this appointment. Please try again.'); loadAppointments(); }
+  };
+
   // Paint the last known vitals/weekly-history immediately from cache —
   // otherwise this screen shows skeleton cards on every single open even
   // though nothing changed since last time. loadData() below still runs
@@ -1186,8 +1327,8 @@ export default function Health({ navigation }) {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { loadData(); }, []);
-  useEffect(() => onAppDataRefresh(() => loadData(true)), []);
+  useEffect(() => { loadData(); loadAppointments(); }, []);
+  useEffect(() => onAppDataRefresh(() => { loadData(true); loadAppointments(); }), []);
 
   // Re-fetch live Fit data whenever the Month tab's viewed month changes
   // (including the first time it's opened). A disconnected account, or any
@@ -1223,7 +1364,7 @@ export default function Health({ navigation }) {
         style={styles.container}
         contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPad, paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); }} tintColor={theme.danger} colors={[theme.danger]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(true); loadAppointments(); }} tintColor={theme.danger} colors={[theme.danger]} />}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -1262,6 +1403,35 @@ export default function Health({ navigation }) {
             ? [1, 2, 3, 4, 5, 6].map(i => <View key={i} style={styles.metricSkeleton} />)
             : METRIC_CARDS.map(m => <MetricCard key={m.label} {...m} styles={styles} />)
           }
+        </View>
+
+        {/* Appointments */}
+        <View style={[styles.sectionCard, { marginBottom: 16, paddingBottom: 14 }]}>
+          <View style={styles.apptHeaderRow}>
+            <Text style={[styles.sectionCardTitle, { marginBottom: 0 }]}>UPCOMING APPOINTMENTS</Text>
+            <TouchableOpacity onPress={() => setAddApptVisible(true)} style={styles.apptAddBtn}>
+              <Feather name="plus" size={14} color={theme.accent} />
+              <Text style={styles.apptAddBtnText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+          {appointments.length === 0 ? (
+            <Text style={styles.apptEmptyText}>No upcoming appointments. Tap Add to set one with a reminder.</Text>
+          ) : (
+            appointments.map(a => (
+              <View key={a.id} style={styles.apptRow}>
+                <View style={styles.apptIcon}><Feather name="calendar" size={16} color={theme.danger} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.apptTitle} numberOfLines={1}>{a.title.replace(/^Appointment:\s*/i, '')}</Text>
+                  <Text style={styles.apptMeta}>
+                    {new Date(a.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {new Date(a.dueDate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => markAppointmentDone(a.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="check-circle" size={20} color={theme.faint} />
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
         </View>
 
         {/* Activity Overview — Day / Week / Month tabs (styled after Google
@@ -1375,6 +1545,15 @@ export default function Health({ navigation }) {
         styles={styles}
       />
 
+      <AddAppointmentSheet
+        visible={addApptVisible}
+        onClose={() => setAddApptVisible(false)}
+        onSaved={loadAppointments}
+        bottomInset={insets.bottom}
+        theme={theme}
+        styles={styles}
+      />
+
       <LogDataSheet
         visible={!!editSheet}
         onClose={() => setEditSheet(null)}
@@ -1434,6 +1613,25 @@ const createStyles = (theme) => StyleSheet.create({
   connectBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.isDark ? 'rgba(107,184,240,0.16)' : '#EAF3FD', borderRadius: 12, padding: 12, marginBottom: 16 },
   connectBannerText: { fontSize: 12, color: theme.info, fontWeight: '600', flex: 1 },
   sectionHeader: { fontSize: 12, fontWeight: '700', color: theme.muted, letterSpacing: 0.5, marginBottom: 12 },
+  // Appointments card + add-appointment sheet (audit item G-16)
+  apptHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  apptAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  apptAddBtnText: { fontSize: 12, fontWeight: '700', color: theme.accent },
+  apptEmptyText: { fontSize: 13, color: theme.faint, paddingBottom: 12 },
+  apptRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.border },
+  apptIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: theme.isDark ? 'rgba(241,113,134,0.16)' : '#FCEAED', alignItems: 'center', justifyContent: 'center' },
+  apptTitle: { fontSize: 14, fontWeight: '700', color: theme.text },
+  apptMeta: { fontSize: 12, color: theme.faint, marginTop: 2 },
+  apptSheetContainer: { backgroundColor: theme.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12 },
+  apptInput: { backgroundColor: theme.surfaceAlt, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: theme.text, marginBottom: 14 },
+  apptPickerRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  apptPickerBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: theme.surfaceAlt, borderRadius: 12, paddingVertical: 11 },
+  apptPickerBtnText: { fontSize: 13, fontWeight: '700', color: theme.text },
+  apptPickerDoneBtn: { alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 4, marginBottom: 6 },
+  apptPickerDoneBtnText: { fontSize: 14, fontWeight: '700', color: theme.accent },
+  apptSaveBtn: { backgroundColor: theme.danger, borderRadius: 16, paddingVertical: 15, alignItems: 'center', marginTop: 4 },
+  apptSaveBtnDisabled: { opacity: 0.5 },
+  apptSaveBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   metricCard: {
     width: '30.5%', borderRadius: 16, padding: 12,

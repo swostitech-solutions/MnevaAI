@@ -34,6 +34,7 @@ router.post('/', async (req, res) => {
         description: description || null,
         userId: req.user.id,
         status: status || 'PENDING',
+        dueDate: hasValidReminder ? scheduledAt : null,
       },
     })
     // real-time push to all devices
