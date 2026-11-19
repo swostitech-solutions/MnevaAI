@@ -78,7 +78,10 @@ class LedgerService {
     }
   }
 
-  async getByUser(userId, limit = 100) {
+  // L-14: `cursor` (an entry id) paginates past a given point instead of
+  // always returning the same latest-N — callers that don't pass one keep
+  // getting exactly today's behavior (latest `limit`, default 100).
+  async getByUser(userId, limit = 100, cursor = null) {
     const entries = await prisma.agentLedger.findMany({
       // Failed creation attempts are retained in the audit database, but are
       // not user-facing actions. This keeps them out of every client that
@@ -86,42 +89,97 @@ class LedgerService {
       where: { userId, status: { not: 'failed' } },
       orderBy: { createdAt: 'desc' },
       take: limit,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     })
     return entries.map(entry => this.toPublicEntry(entry))
+  }
+
+  // L-14: the /ledger route used to report entries.length (capped at
+  // whatever `limit` was) as "total" — true count of a user's whole
+  // (non-failed) ledger, independent of how many entries were returned.
+  async countByUser(userId) {
+    return prisma.agentLedger.count({ where: { userId, status: { not: 'failed' } } })
   }
 
   // Walks a user's whole chain in order and recomputes everything from
   // scratch — the actual, checkable version of "tamper-proof": if any past
   // row's content, ordering, or signature has been altered, this fails at
   // the exact entry where the chain no longer matches what's stored.
-  async verifyChain(userId) {
-    const entries = await prisma.agentLedger.findMany({
-      where: { userId },
-      orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
-    })
-    let expectedPrevHash = GENESIS_HASH
+  //
+  // L-14: this used to load the ENTIRE chain into memory in one findMany —
+  // fine at hundreds of rows, not at tens of thousands. Now walks it in
+  // fixed-size pages (PAGE_SIZE rows in memory at once, regardless of total
+  // chain length) ordered by seq, which is what the chain is actually
+  // linked by. An optional {fromSeq, fromPrevHash} lets a caller resume a
+  // previously-interrupted verify instead of re-walking from genesis every
+  // time — this service itself doesn't persist that checkpoint anywhere
+  // (no new table), the caller is responsible for remembering where it
+  // left off between calls if it wants that.
+  async verifyChain(userId, { fromSeq = null, fromPrevHash = null } = {}) {
+    const PAGE_SIZE = 500
+    // A real count up front (cheap, index-backed) — the UI shows
+    // "checked X/total" even on a failed verify, so total has to be the
+    // true chain length, not just however many rows this walk happened to
+    // page through before it stopped.
+    const total = await prisma.agentLedger.count({ where: { userId } })
+    let expectedPrevHash = fromPrevHash || GENESIS_HASH
     let checked = 0
-    for (const entry of entries) {
-      if (entry.hash == null || entry.seq == null) {
-        return { valid: false, checked, total: entries.length, reason: 'unchained_entry', entryId: entry.id }
-      }
-      if (entry.prevHash !== expectedPrevHash) {
-        return { valid: false, checked, total: entries.length, reason: 'chain_broken', entryId: entry.id }
-      }
-      const recomputed = hashEntry({
-        id: entry.id, userId: entry.userId, tool: entry.tool, status: entry.status,
-        action: entry.action, createdAt: entry.createdAt, seq: entry.seq, prevHash: entry.prevHash,
+    let cursorSeq = fromSeq
+
+    for (;;) {
+      const page = await prisma.agentLedger.findMany({
+        where: { userId, ...(cursorSeq != null ? { seq: { gt: cursorSeq } } : {}) },
+        orderBy: { seq: 'asc' },
+        take: PAGE_SIZE,
       })
-      if (recomputed !== entry.hash) {
-        return { valid: false, checked, total: entries.length, reason: 'content_tampered', entryId: entry.id }
+      if (page.length === 0) break
+
+      for (const entry of page) {
+        if (entry.hash == null || entry.seq == null) {
+          return { valid: false, checked, total, reason: 'unchained_entry', entryId: entry.id }
+        }
+        if (entry.prevHash !== expectedPrevHash) {
+          return { valid: false, checked, total, reason: 'chain_broken', entryId: entry.id }
+        }
+        const recomputed = hashEntry({
+          id: entry.id, userId: entry.userId, tool: entry.tool, status: entry.status,
+          action: entry.action, createdAt: entry.createdAt, seq: entry.seq, prevHash: entry.prevHash,
+        })
+        if (recomputed !== entry.hash) {
+          return { valid: false, checked, total, reason: 'content_tampered', entryId: entry.id }
+        }
+        if (!entry.signature || !verifySignature(entry.hash, entry.signature)) {
+          return { valid: false, checked, total, reason: 'signature_invalid', entryId: entry.id }
+        }
+        expectedPrevHash = entry.hash
+        checked++
       }
-      if (!entry.signature || !verifySignature(entry.hash, entry.signature)) {
-        return { valid: false, checked, total: entries.length, reason: 'signature_invalid', entryId: entry.id }
-      }
-      expectedPrevHash = entry.hash
-      checked++
+      cursorSeq = page[page.length - 1].seq
+      if (page.length < PAGE_SIZE) break
     }
-    return { valid: true, checked, total: entries.length }
+    return { valid: true, checked, total, lastSeq: cursorSeq, lastHash: expectedPrevHash }
+  }
+
+  // L-14: yields pages of a user's whole chain in seq order (unbounded
+  // memory in the old /twin/export route's single findMany) so a caller can
+  // stream the response instead of buffering everything first.
+  async *iterateChain(userId, pageSize = 500) {
+    let cursorSeq = null
+    for (;;) {
+      const page = await prisma.agentLedger.findMany({
+        where: { userId, ...(cursorSeq != null ? { seq: { gt: cursorSeq } } : {}) },
+        orderBy: { seq: 'asc' },
+        take: pageSize,
+        select: {
+          id: true, userId: true, tool: true, status: true, action: true,
+          createdAt: true, seq: true, prevHash: true, hash: true, signature: true,
+        },
+      })
+      if (page.length === 0) return
+      yield page
+      if (page.length < pageSize) return
+      cursorSeq = page[page.length - 1].seq
+    }
   }
 
   toPublicEntry(entry) {

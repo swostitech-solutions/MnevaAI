@@ -1624,8 +1624,17 @@ Keep the whole reply as short as the original email warrants \u2014 under 150 wo
 });
 
 agentRouter.get("/ledger", async (req, res) => {
-  const entries = await ledger.getByUser(req.user.id);
-  res.json({ entries, total: entries.length });
+  // L-14: `total` used to be entries.length — silently capped at whatever
+  // the default limit was, so it undercounted the moment a user had more
+  // than that many entries. Now a real count, independent of page size.
+  // `cursor`/`limit` optional query params paginate past the first page;
+  // omitting them keeps exactly today's behavior (latest 100).
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+  const [entries, total] = await Promise.all([
+    ledger.getByUser(req.user.id, limit, req.query.cursor || null),
+    ledger.countByUser(req.user.id),
+  ]);
+  res.json({ entries, total });
 });
 agentRouter.get("/registry", (_req, res) => {
   res.json(getAgentRegistrySnapshot());
@@ -3212,7 +3221,14 @@ twinRouter.get("/ledger", async (req, res) =>
 // Twin Diary screen.
 twinRouter.get("/verify", async (req, res) => {
   try {
-    const result = await ledger.verifyChain(req.user.id);
+    // L-14: optional resume point — a client that already verified up to
+    // a given seq/hash (e.g. a prior call that only got partway before
+    // being cancelled) can continue from there instead of re-walking the
+    // whole chain from genesis every time. Omitting both keeps today's
+    // default behavior (full verify from genesis).
+    const fromSeq = req.query.fromSeq != null ? Number(req.query.fromSeq) : null;
+    const fromPrevHash = req.query.fromPrevHash || null;
+    const result = await ledger.verifyChain(req.user.id, { fromSeq, fromPrevHash });
     res.json(result);
   } catch (err) {
     res.status(500).json({ valid: false, error: err.message });
@@ -3224,23 +3240,34 @@ twinRouter.get("/verify", async (req, res) => {
 // take this JSON and, using only standard crypto (SHA-256 + Ed25519), redo
 // the same check /verify does above without trusting Mneva going forward.
 twinRouter.get("/export", async (req, res) => {
+  // L-14: this used to load a user's ENTIRE chain into memory in one
+  // findMany, then serialize it all in one res.json() call — unbounded on
+  // both sides as a chain grows into the tens of thousands of rows. Now
+  // streams the response in pages (ledger.iterateChain), writing valid JSON
+  // incrementally — the wire format (one JSON object with an `entries`
+  // array) is unchanged, so no client-side parsing changes; only this
+  // route's own memory footprint and time-to-first-byte do.
+  res.setHeader("Content-Type", "application/json");
+  res.write(
+    `{"exportedAt":${JSON.stringify(new Date().toISOString())},"algorithm":{"hash":"sha256","signature":"ed25519"},"publicKey":${JSON.stringify(LEDGER_PUBLIC_KEY_PEM)},"entries":[`,
+  );
   try {
-    const entries = await prisma.agentLedger.findMany({
-      where: { userId: req.user.id },
-      orderBy: { seq: "asc" },
-      select: {
-        id: true, userId: true, tool: true, status: true, action: true,
-        createdAt: true, seq: true, prevHash: true, hash: true, signature: true,
-      },
-    });
-    res.json({
-      exportedAt: new Date().toISOString(),
-      algorithm: { hash: "sha256", signature: "ed25519" },
-      publicKey: LEDGER_PUBLIC_KEY_PEM,
-      entries,
-    });
+    let first = true;
+    for await (const page of ledger.iterateChain(req.user.id)) {
+      for (const entry of page) {
+        res.write(`${first ? "" : ","}${JSON.stringify(entry)}`);
+        first = false;
+      }
+    }
+    res.write("]}");
+    res.end();
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Headers are already sent by the time a mid-stream error can happen —
+    // can't switch to a 500 JSON error body now, so end the stream with an
+    // explicit marker a client can detect instead of silently truncating
+    // valid-looking JSON.
+    res.write(`],"error":${JSON.stringify(err.message)}}`);
+    res.end();
   }
 });
 
