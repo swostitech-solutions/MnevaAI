@@ -143,6 +143,17 @@ async function getUserTimeZone(userId) {
   return validTimeZone(profile?.timezone || 'Asia/Kolkata')
 }
 
+// L-09: tool names with zero side effects — safe to execute concurrently
+// with one another within a single batch. Everything NOT in this set
+// writes, sends, or otherwise mutates something and keeps running strictly
+// sequentially.
+const READ_ONLY_TOOLS = new Set([
+  'get_daily_brief', 'get_full_summary', 'query_bills', 'get_portfolio',
+  'get_spending_summary', 'get_emails', 'get_health_data', 'search_contacts',
+  'get_contact', 'get_connected_accounts', 'personal_search', 'get_twin_diary',
+  'web_search', 'list_records', 'draft_reply',
+])
+
 function actionIdentity(name, input = {}) {
   if (name === 'set_reminder') return `${name}:${String(input.message || '').trim().toLowerCase()}:${input.time || ''}`
   if (name === 'schedule_event') return `${name}:${String(input.title || '').trim().toLowerCase()}:${input.start || ''}`
@@ -2680,13 +2691,28 @@ export async function runAutonomyEngine({ messages, user, context = {}, maxItera
 
     agentMsgs.push({ role: 'assistant', content: textBlocks.map(b => b.text).join('\n') || 'Using tools' })
 
+    // L-09: when every tool call in this batch is a pure read (no dedup
+    // identity, no DB writes, no ledger entry) they have no dependency on
+    // each other — run them together instead of one after another. Any
+    // batch containing a write/action tool still executes strictly
+    // sequentially, unchanged, since the dedup-by-identity check right
+    // below (executedActionResults) depends on each call completing before
+    // the next one is evaluated.
+    const allReadOnly = toolBlocks.every(tb => READ_ONLY_TOOLS.has(tb.name))
+    const executedResults = allReadOnly
+      ? await Promise.all(toolBlocks.map(tb => executeTool(tb.name, tb.input, user.id)))
+      : null
+
     const toolResults = []
-    for (const tb of toolBlocks) {
+    for (let tbIndex = 0; tbIndex < toolBlocks.length; tbIndex++) {
+      const tb = toolBlocks[tbIndex]
       logger.info(`  → Tool: ${tb.name}`)
       const identity = actionIdentity(tb.name, tb.input)
-      const result = identity && executedActionResults.has(identity)
-        ? executedActionResults.get(identity)
-        : await executeTool(tb.name, tb.input, user.id)
+      const result = executedResults
+        ? executedResults[tbIndex]
+        : identity && executedActionResults.has(identity)
+          ? executedActionResults.get(identity)
+          : await executeTool(tb.name, tb.input, user.id)
       if (identity) executedActionResults.set(identity, result)
 
       // book_cab/order_food/set_reminder aren't domain-gated (not one of the
