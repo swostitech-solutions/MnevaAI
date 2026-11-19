@@ -33,8 +33,8 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | L-02 | User message save blocks reply | ✅ Fixed (commit 7667157) | Askai.js + Home.js voice flow: persistMessage now fires in the background instead of being awaited before the model call. Doesn't reopen the earlier vanishing-message bug — loadConversation already no-ops while aiLoading is true and never shrinks visible history regardless. |
 | L-03 | Reply save blocks speech | ✅ Fixed (commit 7667157) | Same two files: speakText/Speech.speak now fires immediately on the reply text, save happens after/in background. |
 | L-04 | Sequential lookups + live Google calls on every message | ✅ Fixed (commit 7667157) | user/session/memory/profile lookups now Promise.all'd. Live health/contacts/calendar/email fetch is now skipped entirely unless the message text plausibly needs it (keyword check) — a greeting makes zero Google calls. |
-| L-05 | Qdrant collection check on every call | ⬜ | |
-| L-06 | Duplicate/unused memory work | ⬜ | |
+| L-05 | Qdrant collection check on every call | ✅ Fixed (commit 72b7a27) | ensureCollection memoized per process, only re-verified after a real failure (clearEnsuredCollection), not before every call. |
+| L-06 | Duplicate/unused memory work | ✅ Fixed (commit 72b7a27) | recall() no longer re-reads session context from Redis or writes it into the unused memory:search:* cache key. In-process fallback Map documented as single-process-only (current deployment has no clustering, so not an active bug). |
 | L-07 | Prompt size and caching | ⬜ | |
 | L-08 | No streaming anywhere | ⬜ | |
 | L-09 | Tool turns sequential, always full agent | ⬜ | |
