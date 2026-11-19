@@ -3,6 +3,7 @@ import express from "express";
 import { fileURLToPath } from "url";
 import path from "node:path";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import { createServer } from "http";
 import { Server as IO } from "socket.io";
 import cors from "cors";
@@ -10,6 +11,7 @@ import helmet from "helmet";
 import compression from "compression";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
+import jwt from "jsonwebtoken";
 import { logger } from "./config/logger.js";
 import { Sentry, sentryEnabled } from "./config/sentry.js";
 import { errorHandler } from "./middleware/errorHandler.js";
@@ -83,6 +85,15 @@ const app = express();
 // response, so conditional JSON responses arrive without a body and look like
 // empty application data. Always send the current JSON payload to mobile/API clients.
 app.disable("etag");
+// S-03: every request gets an id before anything else runs, so a masked
+// 500 (below) and the central errorHandler can both hand the client
+// something to quote back in a support message, while the full error only
+// ever reaches the logs.
+app.use((req, res, next) => {
+  req.id = randomUUID();
+  res.setHeader("X-Request-Id", req.id);
+  next();
+});
 let isShuttingDown = false;
 let databaseReady = false;
 let selfPingTimer = null;
@@ -220,6 +231,25 @@ const corsOptions = {
 app.options("*", cors(corsOptions));
 app.use(cors(corsOptions));
 app.use(compression());
+// S-05: these limiters run ahead of authMiddleware on purpose (rejecting
+// over-budget requests before spending CPU on auth/DB work), so req.user
+// isn't set yet here — but the JWT itself already carries a stable user id
+// once verified, which is what actually fixes "re-logging in resets the
+// bucket" (a fresh token's last-16-chars differ every login; the user id
+// inside it doesn't). Falls back to IP only for requests with no valid
+// token, which the limiter they're about to hit from authMiddleware's own
+// 401 will bound anyway.
+function rateLimitKey(req) {
+  const h = req.headers.authorization;
+  if (h?.startsWith("Bearer ")) {
+    try {
+      const decoded = jwt.verify(h.slice(7), process.env.JWT_SECRET);
+      const userId = decoded.id || decoded.userId;
+      if (userId) return `user:${userId}`;
+    } catch {}
+  }
+  return `ip:${req.ip}`;
+}
 app.use(
   rateLimit({
     windowMs: +process.env.RATE_LIMIT_WINDOW_MS || 900000,
@@ -243,13 +273,12 @@ app.use(
     // token itself is already unique per login/device (a fresh JWT is
     // minted every sign-in), so it alone already gives each device its own
     // budget without needing an IP component at all.
-    keyGenerator: (req) => req.headers["authorization"]?.slice(-16) || req.ip,
+    keyGenerator: rateLimitKey,
     skip: (req) => req.path === "/api/health",
     standardHeaders: true,
     legacyHeaders: false,
     handler: (req, res) => {
-      const key = req.headers["authorization"]?.slice(-16) || req.ip;
-      logger.warn(`Rate limit exceeded — ${req.method} ${req.originalUrl} — key: ${key}`);
+      logger.warn(`Rate limit exceeded — ${req.method} ${req.originalUrl} — key: ${rateLimitKey(req)}`);
       res.status(429).json({ error: "Too many requests — please wait a moment" });
     },
   }),
@@ -257,23 +286,35 @@ app.use(
 const agentLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
-  // req.user is NOT set yet at this point — authMiddleware runs later, on
-  // the /api/agent mount below, after this path-specific limiter. So
-  // `req.user?.id` was always undefined here and this silently fell back to
-  // the same unstable req.ip as the global limiter above (no `trust proxy`,
-  // Render's internal proxy hop rotates per request) — on a much tighter
-  // 60/min window, this was the more likely of the two bugs to actually
-  // 429 a real request, and it sits directly in front of Ask AI's chat and
-  // email-draft endpoints.
-  keyGenerator: (req) => req.headers["authorization"]?.slice(-16) || req.ip,
+  keyGenerator: rateLimitKey,
   message: { error: "Too many requests — please wait a moment" },
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use("/api/agent/chat", agentLimiter);
 app.use("/api/agent/draft", agentLimiter);
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+// S-05: /transcribe had no route-specific limit at all — only the generous
+// 6000/15min global one — despite hitting a paid STT provider per call.
+const transcribeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  keyGenerator: rateLimitKey,
+  message: { error: "Too many voice requests — please wait a moment" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/agent/transcribe", transcribeLimiter);
+// S-04: 50mb was the default for every route, including ones that only
+// ever take a few hundred bytes of JSON — easy memory pressure on a small
+// server. The only JSON (not multipart — those go through multer's own
+// per-route fileSize limit) bodies that legitimately run bigger are a
+// profile photo as base64 and the RN voice fallback's base64 audio, so
+// those two get a path-scoped parser with a higher limit, mounted ahead of
+// the 2mb default everything else gets.
+app.use("/api/auth/avatar", express.json({ limit: "8mb" }));
+app.use("/api/agent/transcribe", express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(morgan("short", { stream: { write: (m) => logger.info(m.trim()) } }));
 
 // Profile photos uploaded via PATCH /api/auth/avatar (routes/auth.js) —
@@ -307,8 +348,9 @@ if (process.env.NODE_ENV === "production") {
           delete cleaned[key];
         }
         if (leaked) {
-          logger.error(`500 ${req.method} ${req.originalUrl}: ${JSON.stringify(body).slice(0, 1000)}`);
+          logger.error(`500 ${req.method} ${req.originalUrl} requestId=${req.id}: ${JSON.stringify(body).slice(0, 1000)}`);
           cleaned.error = cleaned.error || "Something went wrong. Please try again.";
+          cleaned.requestId = req.id;
         }
         return json(cleaned);
       }
