@@ -429,9 +429,15 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
   // before giving up, instead of turning a few-second hiccup into a dead-end
   // chat reply the first time it happens.
   const maxAttempts = 3
+  // L-08: this fetch had no timeout at all — a stalled upstream call could
+  // hang the whole agent turn indefinitely instead of failing into the
+  // existing retry/error path below.
+  const REQUEST_TIMEOUT_MS = 25000
   let data = null
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let response
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
       response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -440,10 +446,13 @@ async function callOpenAI({ model, system, messages, tools, toolChoice = null })
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       })
     } catch (networkErr) {
       if (attempt < maxAttempts) { await new Promise(r => setTimeout(r, attempt * 800)); continue }
-      throw networkErr
+      throw networkErr?.name === 'AbortError' ? new Error('OpenAI request timed out') : networkErr
+    } finally {
+      clearTimeout(timeoutId)
     }
 
     data = await response.json().catch(() => ({}))
