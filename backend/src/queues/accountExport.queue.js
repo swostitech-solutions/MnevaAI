@@ -30,7 +30,9 @@ export async function queueAccountExport(userId) {
 // so this strips them, and the small number of other plainly-internal keys,
 // rather than exporting the entire preferences blob as-is.
 const GOOGLE_TOKEN_NAMESPACES = ['gmail', 'calendar', 'googleFit', 'googleContacts', 'googleDrive', 'googleTasks', 'outlook']
-function redactPreferences(preferences) {
+// Exported for S-11's export-job test coverage — this is the one function
+// standing between "no tokens in the export" and a real leak.
+export function redactPreferences(preferences) {
   if (!preferences || typeof preferences !== 'object') return {}
   const next = JSON.parse(JSON.stringify(preferences))
   for (const ns of GOOGLE_TOKEN_NAMESPACES) {

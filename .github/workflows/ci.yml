@@ -40,11 +40,17 @@ jobs:
         run: npx prisma validate
 
       - name: Run unit tests
-        # Excludes tests/ocr.pipeline.test.js on purpose — it needs a live
-        # Qdrant instance and an uploaded fixture file that isn't committed
-        # to the repo (storage/ is gitignored), so it's a local/manual
-        # integration test, not something a clean CI runner can pass.
-        run: node --test --test-timeout=15000 tests/autonomyEngine.test.js
+        # S-11: this used to name only tests/autonomyEngine.test.js — every
+        # other test file added since (gmailPoll, openaiStream, toolGrouping,
+        # biometricAuth, decideGate, ledgerSigning, accountExport) sat in the
+        # repo but never actually ran in CI. Explicitly excludes
+        # tests/ocr.pipeline.test.js — it needs a live Qdrant instance and an
+        # uploaded fixture file that isn't committed to the repo (storage/ is
+        # gitignored), so it's a local/manual integration test, not something
+        # a clean CI runner can pass.
+        run: |
+          test_files=$(find tests -name '*.test.js' ! -name 'ocr.pipeline.test.js')
+          node --test --test-timeout=15000 $test_files
 
   mneva:
     name: Mneva app (syntax check)
