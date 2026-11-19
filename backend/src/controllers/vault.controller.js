@@ -117,6 +117,28 @@ export async function downloadVaultFile(req, res) {
   }
 }
 
+// S-08: lets the client re-save a file's ciphertext in place (same id,
+// same fileName/mimeType) after migrating it from the old no-MAC AES-CBC
+// format to the new Encrypt-then-MAC one on first open — see Vault.js's
+// migrateIfLegacy. Keeps the file's identity/position in the list instead
+// of the migration looking like a delete-and-reupload.
+export async function reencryptVaultFile(req, res) {
+  try {
+    const file = await prisma.vaultFile.findUnique({ where: { id: req.params.id } })
+    if (!file || file.userId !== req.user.id) return res.status(404).json({ error: 'Not found' })
+    if (!req.file?.buffer?.length) return res.status(400).json({ error: 'file is required' })
+
+    const oldFilePath = file.filePath
+    const newFilePath = await persistVaultFile(req.file.buffer)
+    await prisma.vaultFile.update({ where: { id: file.id }, data: { filePath: newFilePath, size: req.file.buffer.length } })
+    await deleteVaultFileBlob(oldFilePath)
+    res.json({ success: true })
+  } catch (err) {
+    logger.error(`Vault re-encrypt failed: ${err.message}`)
+    res.status(500).json({ error: err.message })
+  }
+}
+
 export async function deleteVaultFile(req, res) {
   try {
     const file = await prisma.vaultFile.findUnique({ where: { id: req.params.id } })

@@ -306,13 +306,23 @@ const transcribeLimiter = rateLimit({
 app.use("/api/agent/transcribe", transcribeLimiter);
 // S-04: 50mb was the default for every route, including ones that only
 // ever take a few hundred bytes of JSON — easy memory pressure on a small
-// server. The only JSON (not multipart — those go through multer's own
-// per-route fileSize limit) bodies that legitimately run bigger are a
-// profile photo as base64 and the RN voice fallback's base64 audio, so
-// those two get a path-scoped parser with a higher limit, mounted ahead of
-// the 2mb default everything else gets.
+// server. A handful of routes do legitimately need more: the app's
+// apiFetch() helper always sends `body` as JSON (never real multipart —
+// see mneva/src/api/client.js), so every one of these base64-in-JSON
+// upload fallbacks needs its own override here, not just the ones that
+// are JSON-only to begin with.
+//   - avatar: a profile photo
+//   - transcribe: the RN voice-input fallback when native multipart upload fails
+//   - documents/upload: receipts/PDFs attached in chat or Bills/FD/Loan screens
+//     (multer's own limit there is 25MB; 35mb covers that after ~33% base64 inflation)
+//   - vault: Vault's device-encrypted files (multer's own limit is 40MB,
+//     plus the format adds an IV, so 55mb) — upload and the PATCH used to
+//     re-save a file after migrating it to S-08's new cipher format
 app.use("/api/auth/avatar", express.json({ limit: "8mb" }));
 app.use("/api/agent/transcribe", express.json({ limit: "15mb" }));
+app.use("/api/documents/upload", express.json({ limit: "35mb" }));
+// Matches both /api/vault/upload and /api/vault/:id (the PATCH re-save).
+app.use(/^\/api\/vault\/[^/]+$/, express.json({ limit: "55mb" }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(morgan("short", { stream: { write: (m) => logger.info(m.trim()) } }));

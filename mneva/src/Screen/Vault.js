@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import { getOrCreateVaultKey } from '../storage/vaultKey';
-import { encryptBase64, decryptToBase64 } from '../storage/vaultCrypto';
+import { encryptBase64, decryptToBase64, isLegacyFormat } from '../storage/vaultCrypto';
 
 const ACCENT = ['#6C5CE7', '#5A4BD1'];
 const WARNING_SEEN_KEY = 'mneva_vault_warning_seen';
@@ -109,6 +109,20 @@ export default function VaultScreen({ navigation }) {
         await Sharing.shareAsync(tempUri, { mimeType: file.mimeType, dialogTitle: file.fileName });
       } else {
         Alert.alert('Decrypted', `Saved to ${tempUri}`);
+      }
+
+      // S-08: this file decrypted fine with the old no-MAC format — now
+      // that it's open (so we already have the plaintext), re-encrypt it
+      // in the new Encrypt-then-MAC format and save it back in place.
+      // Best-effort: a failure here just means it migrates next time it's
+      // opened instead, never blocks viewing the file itself.
+      if (isLegacyFormat(data.dataBase64)) {
+        encryptBase64(decryptedBase64, deviceKey)
+          .then((migratedBlob) => apiFetch(`/api/vault/${file.id}`, {
+            method: 'PATCH',
+            body: { fileBase64: migratedBlob, fileName: file.fileName, mimeType: file.mimeType },
+          }))
+          .catch(() => {});
       }
     } catch {
       Alert.alert("Couldn't open file", 'This file may be corrupted, or was encrypted on a different device.');

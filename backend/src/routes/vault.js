@@ -7,6 +7,7 @@ import {
   uploadVaultFile,
   downloadVaultFile,
   deleteVaultFile,
+  reencryptVaultFile,
 } from '../controllers/vault.controller.js'
 
 const router = express.Router()
@@ -25,8 +26,7 @@ if (!process.env.AWS_S3_BUCKET) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
 
-router.get('/', listVaultFiles)
-router.post('/upload', (req, res, next) => {
+const parseFileOrBase64 = (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err || (!req.file && req.body?.fileBase64)) {
       if (req.body?.fileBase64 && req.body?.fileName) {
@@ -43,8 +43,15 @@ router.post('/upload', (req, res, next) => {
     }
     next()
   })
-}, uploadVaultFile)
+}
+
+router.get('/', listVaultFiles)
+router.post('/upload', parseFileOrBase64, uploadVaultFile)
 router.get('/:id/download', downloadVaultFile)
+// S-08: re-saves an existing file's ciphertext in place — used to migrate
+// a vault item from the old no-MAC format to the new Encrypt-then-MAC one
+// the first time it's opened.
+router.patch('/:id', parseFileOrBase64, reencryptVaultFile)
 router.delete('/:id', deleteVaultFile)
 
 export default router
