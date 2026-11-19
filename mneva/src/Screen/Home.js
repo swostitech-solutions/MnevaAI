@@ -6753,11 +6753,11 @@ import Svg, { Circle } from "react-native-svg";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { clearAuth, getStoredAuth } from "../storage/auth";
-import { apiFetch, BASE_URL, peekCachedResponse } from "../api/client";
+import { apiFetch, peekCachedResponse } from "../api/client";
 import { useSocket, resetSocket } from "../services/socket";
 import { onAppDataRefresh } from "../services/dataRefresh";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
+import { useAudioRecorder, AudioModule, IOSOutputFormat, AudioQuality } from "expo-audio";
 import * as Speech from "expo-speech";
 import * as FileSystem from "expo-file-system/legacy";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -6960,6 +6960,25 @@ const LANGUAGE_NAME_TO_LOCALE = {
 const localeForLanguageName = (language) => {
   const first = String(language || "").split(",")[0].trim().toLowerCase();
   return LANGUAGE_NAME_TO_LOCALE[first] || "en-IN";
+};
+
+// L-10: same reasoning as Askai.js's VOICE_RECORDING_OPTIONS — speech only
+// needs to be intelligible to STT, not hi-fi, so this records 16kHz mono at
+// a low bitrate instead of HIGH_QUALITY's 44.1kHz stereo/128kbps.
+const VOICE_RECORDING_OPTIONS = {
+  extension: '.m4a',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 32000,
+  android: { outputFormat: 'mpeg4', audioEncoder: 'aac' },
+  ios: {
+    outputFormat: IOSOutputFormat.MPEG4AAC,
+    audioQuality: AudioQuality.MEDIUM,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: { mimeType: 'audio/webm', bitsPerSecond: 32000 },
 };
 
 const fmtReminderDate = (d) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
@@ -7218,7 +7237,7 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
   const glowAnim = useRef(new Animated.Value(0)).current;
   const rippleLoop = useRef(null);
 
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
   const convIdRef = useRef(null);
   const historyRef = useRef([]); // full message history for multi-turn
   const [phase, setPhase] = useState("idle");
@@ -7398,23 +7417,22 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
       await audioRecorder.stop();
       const uri = audioRecorder.uri;
       if (!uri) throw new Error("no uri");
-      const { token } = await getStoredAuth();
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      const tRes = await fetch(`${BASE_URL}/api/agent/transcribe`, {
+      // L-10: this used to be a raw fetch with no timeout or retry — a
+      // stalled upload/transcription could hang "thinking" forever. apiFetch
+      // gives it the same 30s-abort + auth handling every other call here
+      // already gets.
+      const tData = await apiFetch("/api/agent/transcribe", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        body: {
           audioBase64: base64,
           fileName: "voice.m4a",
           mimeType: "audio/m4a",
-        }),
+        },
+        timeoutMs: 30000,
       });
-      const tData = await tRes.json();
       const text = tData?.text || "";
       if (!text) {
         setPhaseSync("error");

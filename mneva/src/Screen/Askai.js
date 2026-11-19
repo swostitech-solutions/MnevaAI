@@ -23,7 +23,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, Feather } from "@expo/vector-icons";
-import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
+import { useAudioRecorder, AudioModule, IOSOutputFormat, AudioQuality } from "expo-audio";
 import * as Speech from "expo-speech";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
@@ -880,6 +880,27 @@ function MeetingModal({ visible, onClose, onCreated, bottomInset, theme, styles 
   );
 }
 
+// L-10: voice input only needs to be intelligible to a speech-to-text
+// model, not hi-fi — HIGH_QUALITY recorded 44.1kHz stereo at 128kbps.
+// Speech is mono and 16kHz is plenty for Whisper/Groq transcription, so
+// this records a much smaller file (same .m4a/AAC container, still
+// base64-JSON-uploaded below — see that call site for why).
+const VOICE_RECORDING_OPTIONS = {
+  extension: '.m4a',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 32000,
+  android: { outputFormat: 'mpeg4', audioEncoder: 'aac' },
+  ios: {
+    outputFormat: IOSOutputFormat.MPEG4AAC,
+    audioQuality: AudioQuality.MEDIUM,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: { mimeType: 'audio/webm', bitsPerSecond: 32000 },
+};
+
 // ── Main Screen ──────────────────────────────────────────────────────────────
 export default function AskAI({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -887,7 +908,7 @@ export default function AskAI({ navigation }) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const scrollRef = useRef(null);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef(null);
 
