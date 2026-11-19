@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { getQdrantClient, ensureCollection } from '../config/qdrant.js'
+import { getQdrantClient, ensureCollection, clearEnsuredCollection } from '../config/qdrant.js'
 import { embeddingService } from './embedding.service.js'
 import { encryptToken, decryptToken, isEncryptedToken } from './tokenCrypto.js'
 
@@ -61,6 +61,7 @@ const qdrantService = {
 
       return { success: true, inserted: payload.length }
     } catch (error) {
+      clearEnsuredCollection(collectionName)
       return { success: false, inserted: 0, error: error.message }
     }
   },
@@ -77,6 +78,7 @@ const qdrantService = {
       })
       return { success: true, deleted: response?.deleted || 0 }
     } catch (error) {
+      clearEnsuredCollection(collectionName)
       return { success: false, deleted: 0, error: error.message }
     }
   },
@@ -105,6 +107,7 @@ const qdrantService = {
         payload: decryptPayload(item.payload || {}),
       }))
     } catch (error) {
+      clearEnsuredCollection(collectionName)
       return []
     }
   },
@@ -121,6 +124,7 @@ const qdrantService = {
       const response = await client.count(collectionName, { filter, exact: true })
       return response?.count || 0
     } catch {
+      clearEnsuredCollection(collectionName)
       return 0
     }
   },

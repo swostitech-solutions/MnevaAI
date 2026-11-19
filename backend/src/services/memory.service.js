@@ -5,6 +5,10 @@ import { embeddingService } from './embedding.service.js'
 import { logger } from '../config/logger.js'
 
 const MEMORY_COLLECTION = 'mneva_memory'
+// L-06: process-local by design — a real multi-instance deployment would
+// need this backed by Redis/Qdrant instead so every instance saw the same
+// fallback data. Current deployment is a single Node process (no
+// clustering/pm2), so this is a documented assumption, not an active bug.
 const fallbackMemoryStore = new Map()
 
 async function getUserMemoryKey(userId) {
@@ -40,27 +44,18 @@ export const memoryService = {
     return recentEntries.slice(0, limit)
   },
 
+  // Audit item L-06: this used to re-fetch session context from Redis on
+  // every call (callers like /chat already load it separately in the same
+  // request) purely to stash it in a `memory:search:{userId}:{query}` cache
+  // key that nothing ever reads back — both removed. Qdrant search is the
+  // only real work here.
   async recall(query = '', userId = null, limit = 5) {
-    const redis = getRedisClient()
-    const sessionContext = userId ? await this.getSessionContext(userId) : null
-
     const qdrantResults = await qdrantService.search(MEMORY_COLLECTION, query, {
       limit,
       filter: userId ? { must: [{ key: 'userId', match: { value: userId } }] } : undefined,
     })
 
     if (qdrantResults.length) {
-      try {
-        if (redis && userId) {
-          await redis.set(`memory:search:${userId}:${query.slice(0, 40)}`, JSON.stringify({
-            query,
-            results: qdrantResults,
-            sessionContext,
-          }), 'EX', 300)
-        }
-      } catch (error) {
-        logger.warn(`Memory cache write failed: ${error.message}`)
-      }
       return qdrantResults
     }
 

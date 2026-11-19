@@ -28,7 +28,22 @@ export async function connectQdrant() {
   }
 }
 
+// Audit item L-05: every upsert/search/delete used to call ensureCollection,
+// which made a real getCollection request to Qdrant first — one extra
+// network round trip per memory read or write. A collection that exists
+// doesn't stop existing between requests, so once it's been verified once
+// this process doesn't need to ask again; qdrantService's catch blocks call
+// clearEnsuredCollection() to force a re-check only when an operation
+// actually fails, not on every call.
+const ensuredCollections = new Set()
+
+export function clearEnsuredCollection(name) {
+  ensuredCollections.delete(name)
+}
+
 export async function ensureCollection(name, options = {}) {
+  if (ensuredCollections.has(name)) return true
+
   const client = getQdrantClient()
   if (!client) return null
 
@@ -37,6 +52,7 @@ export async function ensureCollection(name, options = {}) {
 
   try {
     await client.getCollection(name)
+    ensuredCollections.add(name)
     return true
   } catch (error) {
     const isMissing = error?.status === 404 || /not found/i.test(error?.message || '')
@@ -50,6 +66,7 @@ export async function ensureCollection(name, options = {}) {
       ...options,
     })
 
+    ensuredCollections.add(name)
     return true
   }
 }
