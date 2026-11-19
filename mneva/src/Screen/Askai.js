@@ -1266,7 +1266,13 @@ export default function AskAI({ navigation }) {
     const updatedMessages = [...baseMessages, userMsg];
     setMessages(updatedMessages);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    await persistMessage("user", content);
+    // L-02: this save doesn't block showing the loading state or calling
+    // /agent/chat anymore — setAiLoading(true) below is what actually
+    // protects this message from loadConversation's background refresh
+    // (it no-ops entirely while aiLoadingRef is true, see loadConversation),
+    // and its own length-guard is the backstop either way, so the save can
+    // safely run in the background instead of delaying the model call.
+    persistMessage("user", content);
 
     setAiLoading(true);
     try {
@@ -1304,8 +1310,11 @@ export default function AskAI({ navigation }) {
       const aiMsgId = String(Date.now() + 1);
       addMessage({ id: aiMsgId, sender: "ai", text: aiText, ts: new Date().toISOString() });
       setLiveTypingId(aiMsgId);
-      await persistMessage("assistant", aiText);
+      // L-03: speak as soon as the text is ready — the save (still fired,
+      // still retried) no longer has to finish first. aiLoading is still
+      // true here, so loadConversation still won't race this save.
       speakText(aiText);
+      persistMessage("assistant", aiText);
       setAiLoading(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 500);

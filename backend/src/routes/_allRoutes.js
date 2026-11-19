@@ -1287,6 +1287,7 @@ import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
 import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle, getGlobalTestModeLevel, transitionDomain } from "../services/pendingActions.service.js";
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
+import { createPerfTimer, getPerfStats } from "../services/perf.service.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1295,25 +1296,33 @@ const upload = multer({
 
 export const agentRouter = express.Router();
 agentRouter.post("/chat", async (req, res) => {
+  const perf = createPerfTimer("chat");
   try {
     const { messages, attachment } = req.body;
     if (!Array.isArray(messages))
       return res.status(400).json({ error: "messages[] required" });
-    const user = (await userStore.getById(req.user.id)) || req.user;
 
-    const sessionContext = await memoryService.getSessionSnapshot(req.user.id);
-    const recentMemory = await memoryService.recall(
-      messages[messages.length - 1]?.content || "",
-      req.user.id,
-      5,
-    );
-    const onboardingProfile = await prisma.userProfile.findUnique({
-      where: { userId: req.user.id },
-    });
+    // L-04: these four lookups are independent of each other (none needs
+    // another's result), so they used to cost 4 sequential round trips for
+    // no reason — run them together instead.
+    const lastUserText = messages[messages.length - 1]?.content || "";
+    const [user, sessionContext, recentMemory, onboardingProfile] = await Promise.all([
+      userStore.getById(req.user.id).then(u => u || req.user),
+      memoryService.getSessionSnapshot(req.user.id),
+      memoryService.recall(lastUserText, req.user.id, 5),
+      prisma.userProfile.findUnique({ where: { userId: req.user.id } }),
+    ]);
+    perf.mark("pre_lookups");
+
+    // L-04: a plain greeting or small-talk message has no reason to touch
+    // Google's APIs at all — only fetch live health/contacts/calendar/email
+    // when the message plausibly needs them, so most turns skip this
+    // entirely instead of spending quota and latency on every single message.
+    const needsLiveData = /\b(health|steps|heart rate|sleep|weight|fit|contact|phone number|email|mail|inbox|calendar|meeting|schedule|event|appointment|today|tomorrow|this week|next week)\b/i.test(lastUserText);
 
     // ── Fetch live connected data so AI knows real user data ──────────────
     const liveData = {};
-    await Promise.allSettled([
+    if (needsLiveData) await Promise.allSettled([
       // Google Fit / Health
       (async () => {
         try {
@@ -1381,12 +1390,14 @@ agentRouter.post("/chat", async (req, res) => {
         } catch {}
       })(),
     ]);
+    perf.mark(needsLiveData ? "live_data" : "live_data_skipped");
 
     const chatContext = {
       sessionContext,
       recentMemory,
       onboardingContext: onboardingProfile || null,
       liveData,
+      perf,
     };
 
     // A file/photo sent WITH a question goes straight to the AI with its real
@@ -1415,6 +1426,7 @@ agentRouter.post("/chat", async (req, res) => {
     } else {
       result = await runLangGraphOrchestrator({ messages: messages.slice(-20), user, context: chatContext });
     }
+    perf.mark("model_and_tools");
 
     res.json({
       ...result,
@@ -1422,9 +1434,18 @@ agentRouter.post("/chat", async (req, res) => {
       memories: recentMemory,
       ts: new Date().toISOString(),
     });
+    perf.finish();
   } catch (err) {
+    perf.finish({ note: "error" });
     res.status(500).json({ error: err.message });
   }
+});
+
+// L-01: raw p50/p95 per stage, read back from the in-process rolling window
+// perf.service.js keeps — a lightweight stand-in for a real metrics
+// dashboard until one is wired up (Grafana/Sentry are external, not code).
+agentRouter.get("/chat/perf", (_req, res) => {
+  res.json({ stats: getPerfStats() });
 });
 
 agentRouter.post("/orchestrate", async (req, res) => {

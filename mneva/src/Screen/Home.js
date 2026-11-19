@@ -6948,6 +6948,20 @@ const CATEGORY_COLORS = {
 };
 
 const defaultReminderTime = () => new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+// L-11: UserProfile.language is free text from onboarding ("English",
+// "Hindi", "Tamil, English", ...) — map the common Indian-language names to
+// a Speech.speak-compatible BCP-47 locale, default to en-IN for anything
+// unrecognized (empty, "English", or a language we don't have a voice for).
+const LANGUAGE_NAME_TO_LOCALE = {
+  hindi: "hi-IN", tamil: "ta-IN", telugu: "te-IN", kannada: "kn-IN",
+  malayalam: "ml-IN", marathi: "mr-IN", gujarati: "gu-IN", bengali: "bn-IN",
+  bangla: "bn-IN", punjabi: "pa-IN", urdu: "ur-IN",
+};
+const localeForLanguageName = (language) => {
+  const first = String(language || "").split(",")[0].trim().toLowerCase();
+  return LANGUAGE_NAME_TO_LOCALE[first] || "en-IN";
+};
+
 const fmtReminderDate = (d) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 const fmtReminderTime = (d) => d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
 
@@ -7415,15 +7429,14 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
         { role: "user", content: text },
       ];
 
-      // persist user message
+      // L-02: persist in the background — the model call below doesn't
+      // need this write to have landed first, it sends `text` directly.
       const convId = convIdRef.current;
       if (convId) {
-        try {
-          await apiFetch("/api/messages", {
-            method: "POST",
-            body: { conversationId: convId, role: "user", content: text },
-          });
-        } catch {}
+        apiFetch("/api/messages", {
+          method: "POST",
+          body: { conversationId: convId, role: "user", content: text },
+        }).catch(() => {});
       }
 
       // send full history to AI — same as AskAI screen
@@ -7440,20 +7453,6 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
         { role: "assistant", content: aiText },
       ];
 
-      // persist AI reply
-      if (convId) {
-        try {
-          await apiFetch("/api/messages", {
-            method: "POST",
-            body: {
-              conversationId: convId,
-              role: "assistant",
-              content: aiText,
-            },
-          });
-        } catch {}
-      }
-
       setReply(aiText);
       setPhaseSync("speaking");
       Vibration.vibrate(30);
@@ -7466,14 +7465,23 @@ function VoiceOrb({ visible, onClose, navigation, theme, styles }) {
         .replace(/https?:\/\/\S+/g, "")
         .replace(/\s{2,}/g, " ")
         .trim();
+      // L-03: speak right away, don't wait on the save below.
       Speech.speak(cleanReply, {
-        language: "en-IN",
+        language: speechLocaleRef.current,
         pitch: 1.0,
         rate: 0.95,
         onDone: () => setPhaseSync("idle"),
         onError: () => setPhaseSync("idle"),
         onStopped: () => setPhaseSync("idle"),
       });
+
+      // persist AI reply (background — see L-02 note above)
+      if (convId) {
+        apiFetch("/api/messages", {
+          method: "POST",
+          body: { conversationId: convId, role: "assistant", content: aiText },
+        }).catch(() => {});
+      }
     } catch {
       setPhaseSync("error");
       setReply("Something went wrong. Please try again.");
@@ -7724,6 +7732,10 @@ export default function Home({ navigation }) {
   const [profilePct, setProfilePct] = useState(null);
   const [profileCity, setProfileCity] = useState(null);
   const notificationBriefRefreshRef = useRef(null);
+  // L-11: the voice reply used to always speak en-IN regardless of the
+  // user's own "Preferred language" profile field — read via ref since
+  // stopListening (the voice flow) isn't re-created on every profile fetch.
+  const speechLocaleRef = useRef("en-IN");
 
   // FIX: distinguish "genuinely no data" from "the request never reached
   // the server" (flaky Wi-Fi/cellular handoff, DNS hiccup, etc). Previously
@@ -7958,6 +7970,7 @@ export default function Home({ navigation }) {
       const country = profileRes2?.profile?.country || null;
       setProfilePct(profileRes2?.profile?.completionPct ?? 0);
       setProfileCity(city);
+      speechLocaleRef.current = localeForLanguageName(profileRes2?.profile?.language);
       loadWeatherSmart(city, country);
     }
 
