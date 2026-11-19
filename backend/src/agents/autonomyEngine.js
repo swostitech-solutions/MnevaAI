@@ -9,13 +9,60 @@ import { GATED_DOMAINS, domainForCall, getDomainTrust, decideGate, blockedMessag
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from '../services/activityCalc.js'
 import { getToolMeta } from '../services/ledgerTaxonomy.js'
 
-function validTimeZone(value) {
+export function validTimeZone(value) {
   try {
     Intl.DateTimeFormat('en-US', { timeZone: value }).format()
     return value
   } catch {
     return 'Asia/Kolkata'
   }
+}
+
+// S-13: UserProfile.timezone exists in the schema but nothing in the app's
+// onboarding/profile screens actually sets it — AIProfile.js's "About You"
+// step only ever collects a free-text country name, no timezone field at
+// all. Every caller of this was therefore always falling through to the
+// 'Asia/Kolkata' default regardless of the user's real country, which is
+// exactly the "wrong times... for USA, UK, Canada or Dubai users" the
+// audit flagged. A representative zone per country is still approximate
+// for a multi-timezone country (the US spans several) — real per-user
+// precision needs a timezone field in the profile UI, out of scope here —
+// but it's a strict improvement over defaulting every non-Indian user to
+// India's zone regardless of what they actually entered.
+const COUNTRY_TIMEZONE = {
+  'india': 'Asia/Kolkata',
+  'united states': 'America/New_York',
+  'usa': 'America/New_York',
+  'united kingdom': 'Europe/London',
+  'uk': 'Europe/London',
+  'canada': 'America/Toronto',
+  'united arab emirates': 'Asia/Dubai',
+  'uae': 'Asia/Dubai',
+  'singapore': 'Asia/Singapore',
+  'australia': 'Australia/Sydney',
+}
+
+export function timeZoneForProfile(profile) {
+  if (profile?.timezone) return validTimeZone(profile.timezone)
+  const byCountry = COUNTRY_TIMEZONE[String(profile?.country || '').trim().toLowerCase()]
+  return validTimeZone(byCountry || 'Asia/Kolkata')
+}
+
+const COUNTRY_LOCALE = {
+  'india': 'en-IN',
+  'united states': 'en-US',
+  'usa': 'en-US',
+  'united kingdom': 'en-GB',
+  'uk': 'en-GB',
+  'canada': 'en-CA',
+  'united arab emirates': 'en-AE',
+  'uae': 'en-AE',
+  'singapore': 'en-SG',
+  'australia': 'en-AU',
+}
+
+export function localeForProfile(profile) {
+  return COUNTRY_LOCALE[String(profile?.country || '').trim().toLowerCase()] || 'en-IN'
 }
 
 function timeZoneOffsetAt(date, timeZone) {
@@ -140,8 +187,8 @@ export function normalizeScheduledTime(value, timeZone) {
 }
 
 async function getUserTimeZone(userId) {
-  const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } }).catch(() => null)
-  return validTimeZone(profile?.timezone || 'Asia/Kolkata')
+  const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true, country: true } }).catch(() => null)
+  return timeZoneForProfile(profile)
 }
 
 // L-09: tool names with zero side effects — safe to execute concurrently

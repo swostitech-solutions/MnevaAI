@@ -1,6 +1,7 @@
 
 
 import { logger } from "../config/logger.js";
+import { timeZoneForProfile, localeForProfile } from "../agents/autonomyEngine.js";
 // agent.js
 import express from "express";
 import { runLangGraphOrchestrator } from "../agents/langGraphOrchestrator.js";
@@ -236,7 +237,7 @@ agentRouter.post("/draft", async (req, res) => {
     let scheduleContext = "";
     try {
       const userId = req.user.id;
-      const [tasks, notifications] = await Promise.all([
+      const [tasks, notifications, profile] = await Promise.all([
         prisma.task.findMany({
           where: { userId, status: "PENDING" },
           orderBy: { createdAt: "desc" },
@@ -253,14 +254,19 @@ agentRouter.post("/draft", async (req, res) => {
           orderBy: { createdAt: "desc" },
           take: 10,
         }),
+        prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true, country: true } }),
       ]);
+      // S-13: was hard-coded to Asia/Kolkata + en-IN regardless of who the
+      // user actually is.
+      const userTimeZone = timeZoneForProfile(profile);
+      const userLocale = localeForProfile(profile);
       const scheduled = notifications
         .map((n) => {
           try {
             const meta = JSON.parse(n.message);
             if (!meta.start) return null;
-            const t = new Date(meta.start).toLocaleString("en-IN", {
-              timeZone: "Asia/Kolkata",
+            const t = new Date(meta.start).toLocaleString(userLocale, {
+              timeZone: userTimeZone,
               weekday: "short",
               day: "numeric",
               month: "short",

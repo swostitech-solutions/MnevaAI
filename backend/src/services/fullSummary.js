@@ -65,22 +65,27 @@ export async function buildFullSummary(userId) {
     if (user) urgentEmails = await getUrgentEmails(user, 20)
   } catch { /* not connected or token expired */ }
 
+  // S-13: `currency` existed on Bill/Subscription rows (defaults to 'INR')
+  // but was dropped here, which is what forced Priorities.js's timeline to
+  // hard-code a ₹ symbol for every item regardless of what's actually
+  // stored. Loan/EMI/FixedDeposit have no currency column of their own —
+  // 'INR' is the same default those models would use if they did.
   const upcomingBills = bills
     .filter(b => isWithinLookahead(b.dueDate, now))
-    .map(b => ({ id: b.id, name: b.name, amount: b.expectedAmount ?? b.lastBillAmount ?? 0, dueDate: b.dueDate, status: b.status }))
+    .map(b => ({ id: b.id, name: b.name, amount: b.expectedAmount ?? b.lastBillAmount ?? 0, currency: b.currency || 'INR', dueDate: b.dueDate, status: b.status }))
 
   const upcomingPayments = [
-    ...loans.filter(l => isWithinLookahead(l.nextEmiDate, now)).map(l => ({ id: l.id, kind: 'loan_emi', name: l.name, amount: l.emiAmount, dueDate: l.nextEmiDate })),
-    ...emis.filter(e => isWithinLookahead(e.nextPaymentDate, now)).map(e => ({ id: e.id, kind: 'emi', name: e.name, amount: e.emiAmount, dueDate: e.nextPaymentDate })),
+    ...loans.filter(l => isWithinLookahead(l.nextEmiDate, now)).map(l => ({ id: l.id, kind: 'loan_emi', name: l.name, amount: l.emiAmount, currency: 'INR', dueDate: l.nextEmiDate })),
+    ...emis.filter(e => isWithinLookahead(e.nextPaymentDate, now)).map(e => ({ id: e.id, kind: 'emi', name: e.name, amount: e.emiAmount, currency: 'INR', dueDate: e.nextPaymentDate })),
   ]
 
   const upcomingSubscriptions = subscriptions
     .filter(s => isWithinLookahead(s.nextBillingDate, now))
-    .map(s => ({ id: s.id, name: s.name, amount: s.amount, dueDate: s.nextBillingDate }))
+    .map(s => ({ id: s.id, name: s.name, amount: s.amount, currency: s.currency || 'INR', dueDate: s.nextBillingDate }))
 
   const maturingFixedDeposits = fixedDeposits
     .filter(f => isWithinLookahead(f.maturityDate, now))
-    .map(f => ({ id: f.id, name: f.name, amount: f.maturityAmount ?? f.principalAmount, maturityDate: f.maturityDate }))
+    .map(f => ({ id: f.id, name: f.name, amount: f.maturityAmount ?? f.principalAmount, currency: 'INR', maturityDate: f.maturityDate }))
 
   const medicationRefills = medications
     .filter(m => isWithinLookahead(m.refillDate, now))

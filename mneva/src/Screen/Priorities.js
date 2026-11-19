@@ -12,6 +12,7 @@ import { useSocket } from '../services/socket';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
 import { PrioritiesWidget } from '../widgets/PrioritiesWidget';
+import { formatAmount } from '../utils/currency';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 const TABS = ["TODAY", "UPCOMING", "MEETINGS"];
 
@@ -94,13 +95,13 @@ function buildAutoItems(summary) {
   (family?.upcoming || []).forEach((f) =>
     push(`fam-${f.id}`, f.title || `${f.type} (${f.domain})`, `Family${f.priority ? ' · ' + f.priority : ''}`, f.remindAt, 'home', '#9B72FF', 'Family'));
   (finance?.upcomingBills || []).forEach((b) =>
-    push(`bill-${b.id}`, `${b.name} bill due`, `₹${(b.amount || 0).toLocaleString('en-IN')}`, b.dueDate, 'file-text', '#F5A623', 'Finance'));
+    push(`bill-${b.id}`, `${b.name} bill due`, formatAmount(b.amount, b.currency), b.dueDate, 'file-text', '#F5A623', 'Finance'));
   (finance?.upcomingPayments || []).forEach((p) =>
-    push(`pay-${p.kind}-${p.id}`, `${p.name} payment`, `₹${(p.amount || 0).toLocaleString('en-IN')}`, p.dueDate, 'credit-card', '#4FA6E8', 'Finance'));
+    push(`pay-${p.kind}-${p.id}`, `${p.name} payment`, formatAmount(p.amount, p.currency), p.dueDate, 'credit-card', '#4FA6E8', 'Finance'));
   (finance?.upcomingSubscriptions || []).forEach((s) =>
-    push(`sub-${s.id}`, `${s.name} renewal`, `₹${(s.amount || 0).toLocaleString('en-IN')}`, s.dueDate, 'repeat', '#9B72FF', 'Finance'));
+    push(`sub-${s.id}`, `${s.name} renewal`, formatAmount(s.amount, s.currency), s.dueDate, 'repeat', '#9B72FF', 'Finance'));
   (finance?.maturingFixedDeposits || []).forEach((f) =>
-    push(`fd-${f.id}`, `${f.name} matures`, `₹${(f.amount || 0).toLocaleString('en-IN')}`, f.maturityDate, 'lock', '#06B6D4', 'Finance'));
+    push(`fd-${f.id}`, `${f.name} matures`, formatAmount(f.amount, f.currency), f.maturityDate, 'lock', '#06B6D4', 'Finance'));
 
   return items;
 }

@@ -86,10 +86,23 @@ export async function searchHotels({ cityName, checkIn, checkOut, adults = 1, ro
 }
 
 // Step 3 — generate booking reference + deep link (no public booking endpoint)
+//
+// S-13: this used to hard-code /hotel/in/ in the deep link regardless of
+// where the actual property is — wrong for any hotel outside India, which
+// matters now that launch markets beyond India are planned. searchHotels'
+// Booking.com autocomplete response doesn't reliably expose a per-property
+// country code in a documented, verifiable-without-a-live-API-key way, so
+// rather than guess a field name and silently build a wrong /hotel/<cc>/
+// link anyway (same class of bug, just with extra steps), this falls back
+// to Booking.com's own general search results page for the hotel name —
+// no assumed country, still a real, working link to the right property.
 export async function bookHotel({ hotelId, hotelName, roomType, price, checkIn, checkOut, city, guestName }) {
   const bookingId = 'BKG' + Date.now().toString(36).toUpperCase()
-  const slug = (hotelName || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-  const deepLink = `https://www.booking.com/hotel/in/${encodeURIComponent(slug)}.html?checkin=${checkIn}&checkout=${checkOut}`
+  const deepLink = `https://www.booking.com/searchresults.html?${new URLSearchParams({
+    ss: [hotelName, city].filter(Boolean).join(', '),
+    checkin: checkIn,
+    checkout: checkOut,
+  })}`
   return {
     bookingId,
     providerRef: hotelId,
