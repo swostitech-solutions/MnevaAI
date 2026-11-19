@@ -50,6 +50,10 @@ export default function Subscription({ navigation }) {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Choose your Mneva plan</Text>
         <Text style={styles.subtitle}>Start with Basic, then step up to Pro or Family whenever you need more.</Text>
+        {/* Audit item G-04 quick win: nothing here is actually billed yet
+            (no checkout exists — selectPlan below says so on tap), so this
+            makes that clear up front instead of only after tapping a plan. */}
+        <Text style={styles.launchPricingNote}>Planned launch pricing — not yet billed on any plan.</Text>
 
         {/* Placeholder only — no trial tracking or app lock wired up yet,
             this is just the copy/design for when that's built. */}
@@ -76,6 +80,11 @@ export default function Subscription({ navigation }) {
               {plan.popular && (
                 <View style={styles.popularBadge}>
                   <Text style={styles.popularText}>{plan.popularLabel}</Text>
+                </View>
+              )}
+              {plan.comingSoon && (
+                <View style={styles.comingSoonBadge}>
+                  <Text style={styles.comingSoonText}>Coming soon — seats not live yet</Text>
                 </View>
               )}
 
@@ -140,7 +149,8 @@ const createStyles = (theme) => StyleSheet.create({
 
   content: { paddingHorizontal: 20, paddingTop: 6, alignItems: 'center' },
   title: { fontSize: 22, fontWeight: '800', color: theme.text, textAlign: 'center' },
-  subtitle: { fontSize: 13, color: theme.muted, textAlign: 'center', lineHeight: 19, marginTop: 6, marginBottom: 18, maxWidth: 320 },
+  subtitle: { fontSize: 13, color: theme.muted, textAlign: 'center', lineHeight: 19, marginTop: 6, maxWidth: 320 },
+  launchPricingNote: { fontSize: 11, color: theme.faint, textAlign: 'center', marginBottom: 18 },
 
   trialBanner: { alignSelf: 'stretch', flexDirection: 'row', gap: 11, alignItems: 'flex-start', backgroundColor: theme.card, borderRadius: 12, borderWidth: 1, borderColor: theme.border, padding: 14, marginBottom: 18, overflow: 'hidden' },
   trialAccentBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: theme.accent },
@@ -153,6 +163,8 @@ const createStyles = (theme) => StyleSheet.create({
 
   popularBadge: { alignSelf: 'flex-start', backgroundColor: theme.isDark ? 'rgba(52,199,123,0.14)' : '#EFFBF4', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 12 },
   popularText: { color: theme.accent, fontSize: 10.5, fontWeight: '700' },
+  comingSoonBadge: { alignSelf: 'flex-start', backgroundColor: theme.isDark ? 'rgba(245,166,35,0.16)' : '#FFF6E8', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 12 },
+  comingSoonText: { color: '#D97706', fontSize: 10.5, fontWeight: '700' },
 
   planTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   planIconWrap: { width: 30, height: 30, borderRadius: 9, backgroundColor: theme.soft, alignItems: 'center', justifyContent: 'center' },

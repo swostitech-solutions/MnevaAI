@@ -56,6 +56,14 @@ export const PLANS = [
     id: 'family', name: 'Family', price: '$49.99', period: '/ month',
     seats: 'Up to 4 members',
     icon: 'users',
+    // Audit item G-17: there's no seat limit, add-on, or pooled-usage
+    // system behind this card yet (no FamilyGroup entity, no billing to
+    // tie entitlements to) — family CONNECTIONS and shared tasks already
+    // work today, but not as a priced, seat-limited plan. comingSoon drives
+    // a badge on this card only; Basic/Pro's individual features are real,
+    // just not charged for yet (see the page's own "planned launch
+    // pricing" note), which is a different, lesser gap than this one.
+    comingSoon: true,
     features: [
       'Pro features for every member',
       'Shared family calendar & tasks',
