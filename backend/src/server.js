@@ -61,7 +61,7 @@ import deviceNotificationRoutes from "./routes/deviceNotifications.js";
 import pushRoutes from "./routes/push.js";
 import tasksRoutes from "./routes/tasks.js";
 import { connectDatabase, disconnectDatabase, prisma } from "./config/prisma.js";
-import { startGmailPoller } from "./services/gmailPoller.js";
+import { startGmailPollWorker, scheduleGmailPoll } from "./queues/gmailPoll.queue.js";
 import { startCalendarPoller } from "./services/calendarPoller.js";
 import { startContactsPoller } from "./services/contactsPoller.js";
 import { connectQdrant } from "./config/qdrant.js";
@@ -565,22 +565,27 @@ async function connectDatabaseWithRetry() {
 // disconnected — meaning new-email/new-event alerts silently stopped once
 // the app had been closed for a few minutes. Every other proactive alert in
 // this app (medication doses, pet/family reminders, the advance-reminder
-// scan) runs globally regardless of app state; this brings Gmail/Calendar/
+// scan) runs globally regardless of app state; this brings Calendar/
 // Contacts in line with that by starting them here at boot for every user
 // who has a relevant account connected. socketService.js still calls the
 // same start functions on socket connect (harmless — each is a no-op if
 // already running for that user) so a brand-new connection made mid-session
 // doesn't have to wait for a server restart to start being polled.
+//
+// L-13: Gmail itself moved off this per-user setInterval pattern onto a
+// single BullMQ repeatable job (gmailPoll.queue.js) that re-discovers every
+// connected user fresh each tick — see startGmailPollWorker/
+// scheduleGmailPoll below, started unconditionally alongside the other
+// BullMQ workers rather than from here.
 async function startGoogleServicePollersForConnectedUsers(io) {
   const users = await prisma.user.findMany({ select: { id: true, preferences: true } });
-  let gmailCalendarCount = 0;
+  let calendarCount = 0;
   let contactsCount = 0;
   for (const user of users) {
     const prefs = user.preferences || {};
     if (prefs.gmail?.tokens || prefs.calendar?.tokens) {
-      startGmailPoller(user.id, io);
       startCalendarPoller(user.id, io);
-      gmailCalendarCount++;
+      calendarCount++;
     }
     if (prefs.googleContacts?.tokens && !prefs.googleContacts?.disconnected) {
       startContactsPoller(user.id, io);
@@ -588,7 +593,7 @@ async function startGoogleServicePollersForConnectedUsers(io) {
     }
   }
   logger.info(
-    `📡 Google-account pollers started — Gmail/Calendar: ${gmailCalendarCount} user(s), Contacts: ${contactsCount} user(s)`,
+    `📡 Google-account pollers started — Calendar: ${calendarCount} user(s), Contacts: ${contactsCount} user(s)`,
   );
 }
 
@@ -701,6 +706,8 @@ server.on("listening", () => {
         activeWorkers.push(startEmailInsightsWorker());
         await scheduleEmailInsightsScan();
         activeWorkers.push(startAccountExportWorker());
+        activeWorkers.push(startGmailPollWorker());
+        await scheduleGmailPoll();
         logger.info("✅ BullMQ workers started");
       } catch (error) {
         logger.warn(`⚠️ Could not start BullMQ workers: ${error.message}`);

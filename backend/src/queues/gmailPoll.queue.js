@@ -1,20 +1,51 @@
-import { listEmails, getEmailBody, classifyEmailsUrgency } from './gmail.service.js'
-import { userStore } from '../models/userStore.js'
-import { prisma } from '../config/prisma.js'
+import { Queue, Worker } from 'bullmq'
+import { getBullRedisClient } from '../config/redis.js'
 import { logger } from '../config/logger.js'
-import { sendEmail } from './gmail.service.js'
-import { sendPushToUser } from './pushService.js'
-import { applyModelCompat } from './openaiCompat.js'
+import { prisma } from '../config/prisma.js'
+import { userStore } from '../models/userStore.js'
+import { emitToUser } from '../services/realtime.js'
+import { listEmails, getEmailBody, classifyEmailsUrgency, sendEmail } from '../services/gmail.service.js'
+import { sendPushToUser } from '../services/pushService.js'
+import { applyModelCompat } from '../services/openaiCompat.js'
 
-const activePollers = new Map()
+// L-13: this used to be one setInterval per connected user, all started at
+// boot in one tight loop — every restart made every user's 60s tick land
+// in the same instant forever after. One repeatable job now re-discovers
+// every Gmail-connected user fresh each tick (same `prefs.gmail?.tokens`
+// check server.js already did at boot) and fans out over them with a
+// concurrency cap and a small stagger between batches, so Gmail's API
+// never sees every connected user's request at once.
 const POLL_INTERVAL_MS = 60_000
+const REPEAT_JOB_ID = 'gmail-poll-main'
+const CONCURRENCY = 5
+const STAGGER_MS = 400
+
+// lastSeenIds persists in-process across ticks, same guarantee the old
+// per-user Map had (reseeded from scratch after a restart — a handful of
+// already-unread emails re-surfacing once is a much smaller cost than a
+// DB write on every single poll tick for state nothing else needs).
+const lastSeenByUser = new Map()
+
+let queue
+
+export function getGmailPollQueue() {
+  if (!queue) {
+    queue = new Queue('gmail-poll', { connection: getBullRedisClient() })
+  }
+  return queue
+}
+
+export async function scheduleGmailPoll() {
+  const q = getGmailPollQueue()
+  await q.add('run-gmail-poll-tick', {}, { repeat: { every: POLL_INTERVAL_MS }, jobId: REPEAT_JOB_ID })
+  logger.info(`📬 Gmail poll scheduled — every ${POLL_INTERVAL_MS / 1000}s`)
+}
 
 async function generateReplyDraft(email, userName, userId) {
   try {
     const apiKey = process.env.OPENAI_API_KEY?.trim()
     if (!apiKey || apiKey.includes('replace')) return null
 
-    // Fetch user's upcoming tasks/reminders for schedule-aware drafting
     let scheduleContext = ''
     try {
       const tasks = await prisma.task.findMany({
@@ -60,8 +91,6 @@ async function generateReplyDraft(email, userName, userId) {
         },
       ],
     }, { temperature: 0.4 })
-    // L-13: this fetch had no timeout — a stalled draft call could hang
-    // this poll tick's whole per-email loop indefinitely.
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 20000)
     let res
@@ -82,46 +111,44 @@ async function generateReplyDraft(email, userName, userId) {
   }
 }
 
-async function pollOnce(userId, io) {
+async function pollOneUser(userId) {
   try {
     const user = await userStore.getById(userId)
-    if (!user?.preferences?.gmail?.tokens?.refresh_token) return
+    if (!user?.preferences?.gmail?.tokens?.refresh_token) {
+      lastSeenByUser.delete(userId) // disconnected since the last tick — drop stale state
+      return
+    }
 
     const { emails } = await listEmails(user, 'unread', 10)
     if (!emails?.length) return
 
-    const state = activePollers.get(userId)
-    if (!state) return
+    // First time this process has seen this user — seed from current
+    // unread mail without notifying, same as the old poller's "seed
+    // existing unread IDs first" step, so pre-existing mail never fires a
+    // notification just because the server restarted.
+    if (!lastSeenByUser.has(userId)) {
+      const { emails: seedEmails } = await listEmails(user, 'unread', 50).catch(() => ({ emails: [] }))
+      lastSeenByUser.set(userId, new Set((seedEmails || []).map(e => e.id)))
+      logger.info(`Gmail poller seeded ${lastSeenByUser.get(userId).size} existing unread IDs for user ${userId}`)
+      return
+    }
 
-    const newEmails = emails.filter(e => !state.lastSeenIds.has(e.id))
+    const seen = lastSeenByUser.get(userId)
+    const newEmails = emails.filter(e => !seen.has(e.id))
     if (!newEmails.length) return
+    emails.forEach(e => seen.add(e.id))
 
-    emails.forEach(e => state.lastSeenIds.add(e.id))
-
-    // Every new email still gets a Notification row (so the in-app Gmail
-    // panel/feed shows all of them, same as before) — but the phone's OS
-    // push notification is gated to genuinely urgent ones, using the same
-    // classifier "Urgent Emails Today" already uses, so a newsletter or a
-    // routine automated email no longer buzzes the phone just because it's
-    // unread. One batched call for the whole poll tick, not one per email.
     const urgency = await classifyEmailsUrgency(
       newEmails.map(e => ({ id: e.id, from: e.from, subject: e.subject, snippet: e.preview })),
     ).catch(() => new Map())
 
     for (const email of newEmails) {
-      // fetch full body for better draft quality
       let fullEmail = email
       try {
         const body = await getEmailBody(user, email.id)
         fullEmail = { ...email, body: body.body }
       } catch { /* use preview fallback */ }
 
-      // L-13: drafting costs one real OpenAI call per email regardless of
-      // whether the user will ever act on it — only worth doing for mail
-      // the same urgency classifier (already computed once per poll tick,
-      // no extra cost) actually flagged. Routine/newsletter mail still gets
-      // its Notification row and shows in the in-app Gmail panel either
-      // way, just without a pre-written reply.
       const isUrgent = !!urgency.get(email.id)?.urgent
       const draft = isUrgent ? await generateReplyDraft(fullEmail, user.name || 'User', userId) : null
 
@@ -137,7 +164,7 @@ async function pollOnce(userId, io) {
         },
       })
 
-      io.to(`u:${userId}`).emit('gmail:notification', {
+      emitToUser(userId, 'gmail:notification', {
         id: notif.id,
         emailId: email.id,
         title: notif.title,
@@ -160,45 +187,37 @@ async function pollOnce(userId, io) {
   }
 }
 
+// Exported for a focused unit test on the batching math itself, without
+// having to mock prisma/userStore/Gmail just to exercise chunk boundaries.
+export function chunkArray(arr, size) {
+  const chunks = []
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
+  return chunks
+}
+
+async function runGmailPollTick() {
+  const users = await prisma.user.findMany({ select: { id: true, preferences: true } })
+  const connected = users.filter(u => u.preferences?.gmail?.tokens?.refresh_token).map(u => u.id)
+  const batches = chunkArray(connected, CONCURRENCY)
+
+  for (let i = 0; i < batches.length; i++) {
+    await Promise.all(batches[i].map(userId => pollOneUser(userId)))
+    if (i < batches.length - 1) await new Promise(r => setTimeout(r, STAGGER_MS))
+  }
+}
+
+export function startGmailPollWorker() {
+  const worker = new Worker('gmail-poll', async () => { await runGmailPollTick() }, {
+    connection: getBullRedisClient(),
+    concurrency: 1, // one tick at a time — fan-out concurrency is handled inside runGmailPollTick
+  })
+  worker.on('failed', (job, err) => logger.error(`Gmail poll tick failed: ${err.message}`))
+  return worker
+}
+
+// Still exported for sendGmailReply's existing call sites (socket's
+// gmail:send_reply handler) — unrelated to the polling mechanism itself.
 export async function sendGmailReply(userId, emailId, recipient, subject, draft) {
   const user = await userStore.getById(userId)
   return sendEmail(user, recipient, `Re: ${subject}`, draft)
-}
-
-export function startGmailPoller(userId, io) {
-  if (activePollers.has(userId)) return
-
-  const state = { lastSeenIds: new Set(), timer: null }
-  activePollers.set(userId, state)
-
-  // L-13: a server restart calls this for every connected user in one tight
-  // loop (see server.js's startGoogleServicePollersForConnectedUsers) — a
-  // random spread-out start means their 60s ticks land at different
-  // moments from then on instead of every user polling in lockstep forever.
-  const jitterMs = Math.floor(Math.random() * POLL_INTERVAL_MS)
-
-  // seed existing unread IDs first, THEN start polling so old emails never trigger cards
-  userStore.getById(userId).then(async (user) => {
-    if (!user?.preferences?.gmail?.tokens?.refresh_token) {
-      state.timer = setTimeout(() => { state.timer = setInterval(() => pollOnce(userId, io), POLL_INTERVAL_MS) }, jitterMs)
-      return
-    }
-    try {
-      const { emails } = await listEmails(user, 'unread', 50)
-      emails?.forEach(e => state.lastSeenIds.add(e.id))
-      logger.info(`Gmail poller seeded ${state.lastSeenIds.size} existing unread IDs for user ${userId}`)
-    } catch { /* not connected yet */ }
-    // start polling only after seed is done
-    state.timer = setTimeout(() => { state.timer = setInterval(() => pollOnce(userId, io), POLL_INTERVAL_MS) }, jitterMs)
-  })
-
-  logger.info(`Gmail poller started for user ${userId}`)
-}
-
-export function stopGmailPoller(userId) {
-  const state = activePollers.get(userId)
-  if (!state) return
-  clearInterval(state.timer)
-  activePollers.delete(userId)
-  logger.info(`Gmail poller stopped for user ${userId}`)
 }

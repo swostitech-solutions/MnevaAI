@@ -138,16 +138,19 @@ import { runLangGraphOrchestrator } from "../agents/langGraphOrchestrator.js";
 import { userStore } from "../models/userStore.js";
 import { ledger } from "./ledgerService.js";
 import { prisma } from "../config/prisma.js";
-import { startGmailPoller, sendGmailReply } from "./gmailPoller.js";
+import { sendGmailReply } from "../queues/gmailPoll.queue.js";
 import { startCalendarPoller } from "./calendarPoller.js";
 import { startContactsPoller } from "./contactsPoller.js";
 import { setSocketServer } from "./realtime.js";
 import { resolvePendingAction } from "./pendingActions.service.js";
 
-// Gmail/Calendar/Contacts pollers now run globally from server boot
+// Calendar/Contacts pollers run globally from server boot
 // (server.js's startGoogleServicePollersForConnectedUsers), independent of
 // whether this user has a live socket — so nothing here stops them on
 // disconnect anymore. This map only tracks connection count for logging.
+// Gmail itself moved off per-socket polling entirely (L-13) — a single
+// BullMQ tick re-discovers connected users on its own, so there's no
+// per-user start/stop call left to make here.
 const userSocketCounts = new Map();
 
 export function setupSocket(io) {
@@ -274,7 +277,6 @@ export function setupSocket(io) {
       },
     );
 
-    startGmailPoller(socket.user.id, io);
     startCalendarPoller(socket.user.id, io);
     startContactsPoller(socket.user.id, io);
 

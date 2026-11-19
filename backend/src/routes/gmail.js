@@ -4,7 +4,6 @@ import { saveCalendarTokens, clearCalendarConnection } from '../services/calenda
 import { logger } from '../config/logger.js'
 import { userStore } from '../models/userStore.js'
 import { ledger } from '../services/ledgerService.js'
-import { stopGmailPoller } from '../services/gmailPoller.js'
 import { stopCalendarPoller } from '../services/calendarPoller.js'
 
 const router = express.Router()
@@ -98,7 +97,9 @@ router.post('/disconnect', async (req, res) => {
   try {
     await clearGmailConnection(req.user.id)
     await clearCalendarConnection(req.user.id)
-    stopGmailPoller(req.user.id)
+    // Gmail polling (L-13) re-discovers connected users fresh every tick —
+    // clearing the tokens above is enough; the next tick just won't find
+    // this user anymore, no explicit stop call needed.
     stopCalendarPoller(req.user.id)
     ledger.add({
       userId: req.user.id,

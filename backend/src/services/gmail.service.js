@@ -617,7 +617,7 @@ async function classifyUrgencyWithAI(emails) {
 }
 
 // Shared by getUrgentEmails (the "Urgent Emails Today" card/digest) and
-// gmailPoller.js (gates which new emails actually push a phone
+// queues/gmailPoll.queue.js (gates which new emails actually push a phone
 // notification) — one definition of "urgent" for both, instead of each
 // maintaining its own criteria that quietly drift apart over time. Takes
 // [{id, from, subject, snippet}], returns a Map id -> {urgent, score, reason}.
