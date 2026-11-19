@@ -17,13 +17,18 @@ async function withTempFile(buffer, filename, fn) {
   }
 }
 
+// S-07: neither client call below used to carry a timeout — a stalled
+// Groq/OpenAI request held the connection (and the temp file) open
+// indefinitely instead of falling through to the next provider or failing.
+const STT_TIMEOUT_MS = 20000
+
 async function tryGroq(audioBuffer, filename, mimetype) {
   const apiKey = process.env.GROQ_API_KEY?.trim()
   if (!apiKey) return null
 
   try {
     const { default: OpenAI } = await import('openai')
-    const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' })
+    const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1', timeout: STT_TIMEOUT_MS })
 
     return await withTempFile(audioBuffer, filename, async (tmpPath) => {
       const response = await client.audio.transcriptions.create({
@@ -45,7 +50,7 @@ async function tryOpenAI(audioBuffer, filename, mimetype) {
 
   try {
     const { default: OpenAI } = await import('openai')
-    const client = new OpenAI({ apiKey })
+    const client = new OpenAI({ apiKey, timeout: STT_TIMEOUT_MS })
 
     return await withTempFile(audioBuffer, filename, async (tmpPath) => {
       const response = await client.audio.transcriptions.create({

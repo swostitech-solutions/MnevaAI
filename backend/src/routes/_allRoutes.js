@@ -1601,12 +1601,21 @@ agentRouter.post("/draft", async (req, res) => {
     }
 
     const userName = req.user?.name || "the user";
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    // S-07: this fetch had no timeout and never checked response.ok — a
+    // stalled call hung the request indefinitely, and a non-2xx response
+    // (e.g. a quota error) fell straight into `data.choices?.[0]` being
+    // undefined, silently returning an empty draft as if it had succeeded.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    let r;
+    try {
+      r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: controller.signal,
       body: JSON.stringify(applyModelCompat({
         model,
         messages: [
@@ -1623,8 +1632,16 @@ Keep the whole reply as short as the original email warrants \u2014 under 150 wo
           { role: "user", content },
         ],
       }, { temperature: 0.4 })),
-    });
+      });
+    } catch (fetchErr) {
+      throw fetchErr?.name === "AbortError" ? new Error("Draft request timed out, please try again") : fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      throw new Error(data?.error?.message || `AI draft request failed (${r.status})`);
+    }
     const draft = collapseHardWrappedLines(data.choices?.[0]?.message?.content?.trim() || "");
     res.json({ draft });
   } catch (err) {
