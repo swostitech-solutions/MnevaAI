@@ -25,8 +25,24 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | G-16 | Health appointment reminders | ✅ Fixed (commit 0d8ef66) | Health screen had zero appointment concept — the dashboard count relied on a user creating a plain task elsewhere with "appointment" in the title, no date filter at all. Root cause: Task never persisted a due date. Added Task.dueDate (migration, applied clean on VPS), persisted it from the manual task-create path, set_reminder, and schedule_event. Health.js now has an "Upcoming appointments" card: add with title + date/time picker, reuses existing reminder pipeline, mark done. Dashboard count now filters dueDate >= now. |
 | G-21 | Priorities answers not saved | ✅ Fixed (commit 211065a) | The past-due "Did you complete this?" Yes/No answer lived only in React state — gone on every screen unmount, re-asked on every reopen. Added a generic PriorityConfirmation store (new migration, applied clean) + GET/POST /api/priorities/confirmations, since these items span many modules with no shared "mark complete" field. Also fixed buildAutoItems' itemKey, which was the array INDEX not the record's real id (fullSummary.js now returns each record's actual id) — a persisted answer would've silently attached to the wrong item once list order shifted. |
 
-## Part B — Speed (14) — not started yet
-L-01 through L-14 — ⬜ all not started.
+## Part B — Speed (14)
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| L-01 | Measurement | ✅ Fixed (commit 7667157) | New perf.service.js: request-scoped stage timers, one structured log line per /chat turn, in-process p50/p95 rolling window via GET /api/agent/chat/perf. Not a real 24h time-series dashboard (that's Grafana/Sentry, external) — stats reset on restart and only cover the last 500 samples/stage. |
+| L-02 | User message save blocks reply | ✅ Fixed (commit 7667157) | Askai.js + Home.js voice flow: persistMessage now fires in the background instead of being awaited before the model call. Doesn't reopen the earlier vanishing-message bug — loadConversation already no-ops while aiLoading is true and never shrinks visible history regardless. |
+| L-03 | Reply save blocks speech | ✅ Fixed (commit 7667157) | Same two files: speakText/Speech.speak now fires immediately on the reply text, save happens after/in background. |
+| L-04 | Sequential lookups + live Google calls on every message | ✅ Fixed (commit 7667157) | user/session/memory/profile lookups now Promise.all'd. Live health/contacts/calendar/email fetch is now skipped entirely unless the message text plausibly needs it (keyword check) — a greeting makes zero Google calls. |
+| L-05 | Qdrant collection check on every call | ⬜ | |
+| L-06 | Duplicate/unused memory work | ⬜ | |
+| L-07 | Prompt size and caching | ⬜ | |
+| L-08 | No streaming anywhere | ⬜ | |
+| L-09 | Tool turns sequential, always full agent | ⬜ | |
+| L-10 | Voice input heavy batch upload | ⬜ | |
+| L-11 | Voice output: speak after full text, fixed language | 🟡 Partial (commit 7667157) | Home.js's voice-orb flow hardcoded en-IN — now follows UserProfile.language (mapped to a BCP-47 locale, en-IN default). Askai.js's speakText already auto-detected language from the reply's script (better signal than a stated preference) — no fix needed there, audit's complaint didn't actually apply to that path. Sentence-by-sentence streaming speech still not done — real benefit needs L-08's token streaming landed first. |
+| L-12 | Hash-vector fallback | ⬜ | |
+| L-13 | Gmail poller cost/scale | ⬜ | |
+| L-14 | Ledger scale | ⬜ | |
 
 ## Part C — Security & Quality (13) — not started yet
 S-01 through S-13 — ⬜ all not started.
