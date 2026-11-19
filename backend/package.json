@@ -11,6 +11,7 @@
     "db:clean-demo": "node scripts/cleanDemoData.js",
     "db:encrypt-google-tokens": "node scripts/encryptGoogleTokens.js",
     "db:encrypt-vector-memory": "node scripts/encryptVectorMemory.js",
+    "db:encrypt-messages": "node scripts/encryptMessages.js",
     "db:backfill-loan-emis": "node scripts/backfillLoanEmis.js"
   },
   "dependencies": {

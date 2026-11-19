@@ -85,6 +85,26 @@ function decryptResult(result) {
   return result;
 }
 
+// S-09: chat message text is plaintext in Postgres today — the audit's own
+// example of "chat messages... plaintext". Message.content is never
+// filtered/searched at the SQL level anywhere in this codebase (grepped
+// every prisma.message.* call site: create, findMany, findFirst,
+// deleteMany only, all by id/conversationId, never `content: {contains}`),
+// so it's a safe, contained candidate for the same transparent
+// encrypt-on-write/decrypt-on-read extension already used for OAuth
+// tokens — unlike finance amounts or health metrics, which this file does
+// NOT touch (see the Part C tracking note for why: those are SUMmed,
+// ORDER BY'd and filtered directly in SQL all over the finance/health
+// routes and AI tools — encrypting them blind would silently break every
+// one of those queries, and fixing that properly is a much larger,
+// dedicated project, not safe to do in this pass).
+function decryptMessageResult(result) {
+  if (!result) return result;
+  if (Array.isArray(result)) return result.map(decryptMessageResult);
+  if (isEncryptedToken(result.content)) return { ...result, content: decryptToken(result.content) };
+  return result;
+}
+
 export const prisma = basePrisma.$extends({
   name: "googleTokenEncryption",
   query: {
@@ -110,6 +130,31 @@ export const prisma = basePrisma.$extends({
       },
       async findMany({ args, query }) {
         return decryptResult(await query(args));
+      },
+    },
+    message: {
+      async create({ args, query }) {
+        if (typeof args.data?.content === "string" && !isEncryptedToken(args.data.content)) {
+          args.data.content = encryptToken(args.data.content);
+        }
+        return decryptMessageResult(await query(args));
+      },
+      // Nothing in this codebase calls message.update today (messages are
+      // immutable after creation) — this exists so scripts/encryptMessages.js's
+      // backfill (re-saving an old plaintext row through this same client)
+      // actually gets encrypted, instead of silently bypassing the
+      // extension the way a raw/unhooked update would.
+      async update({ args, query }) {
+        if (typeof args.data?.content === "string" && !isEncryptedToken(args.data.content)) {
+          args.data.content = encryptToken(args.data.content);
+        }
+        return decryptMessageResult(await query(args));
+      },
+      async findFirst({ args, query }) {
+        return decryptMessageResult(await query(args));
+      },
+      async findMany({ args, query }) {
+        return decryptMessageResult(await query(args));
       },
     },
   },
