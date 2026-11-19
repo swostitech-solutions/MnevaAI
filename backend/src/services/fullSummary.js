@@ -67,24 +67,24 @@ export async function buildFullSummary(userId) {
 
   const upcomingBills = bills
     .filter(b => isWithinLookahead(b.dueDate, now))
-    .map(b => ({ name: b.name, amount: b.expectedAmount ?? b.lastBillAmount ?? 0, dueDate: b.dueDate, status: b.status }))
+    .map(b => ({ id: b.id, name: b.name, amount: b.expectedAmount ?? b.lastBillAmount ?? 0, dueDate: b.dueDate, status: b.status }))
 
   const upcomingPayments = [
-    ...loans.filter(l => isWithinLookahead(l.nextEmiDate, now)).map(l => ({ kind: 'loan_emi', name: l.name, amount: l.emiAmount, dueDate: l.nextEmiDate })),
-    ...emis.filter(e => isWithinLookahead(e.nextPaymentDate, now)).map(e => ({ kind: 'emi', name: e.name, amount: e.emiAmount, dueDate: e.nextPaymentDate })),
+    ...loans.filter(l => isWithinLookahead(l.nextEmiDate, now)).map(l => ({ id: l.id, kind: 'loan_emi', name: l.name, amount: l.emiAmount, dueDate: l.nextEmiDate })),
+    ...emis.filter(e => isWithinLookahead(e.nextPaymentDate, now)).map(e => ({ id: e.id, kind: 'emi', name: e.name, amount: e.emiAmount, dueDate: e.nextPaymentDate })),
   ]
 
   const upcomingSubscriptions = subscriptions
     .filter(s => isWithinLookahead(s.nextBillingDate, now))
-    .map(s => ({ name: s.name, amount: s.amount, dueDate: s.nextBillingDate }))
+    .map(s => ({ id: s.id, name: s.name, amount: s.amount, dueDate: s.nextBillingDate }))
 
   const maturingFixedDeposits = fixedDeposits
     .filter(f => isWithinLookahead(f.maturityDate, now))
-    .map(f => ({ name: f.name, amount: f.maturityAmount ?? f.principalAmount, maturityDate: f.maturityDate }))
+    .map(f => ({ id: f.id, name: f.name, amount: f.maturityAmount ?? f.principalAmount, maturityDate: f.maturityDate }))
 
   const medicationRefills = medications
     .filter(m => isWithinLookahead(m.refillDate, now))
-    .map(m => ({ medName: m.medName, parent: m.parent, refillDate: m.refillDate }))
+    .map(m => ({ id: m.id, medName: m.medName, parent: m.parent, refillDate: m.refillDate }))
 
   // Health has no stored "needs attention" flag today — report today's
   // logged snapshot as informational context, not a flagged alert.
@@ -98,16 +98,16 @@ export async function buildFullSummary(userId) {
   const sections = {
     communications: {
       urgentEmails: urgentEmails.map(e => ({ subject: e.subject, from: e.from, time: e.time, urgencyScore: e.urgencyScore })),
-      unreadAlerts: unreadAlerts.map(n => ({ title: n.title, priority: n.priority })),
+      unreadAlerts: unreadAlerts.map(n => ({ id: n.id, title: n.title, priority: n.priority })),
     },
     priorities: {
       pendingTasks: pendingTasks.map(t => ({ title: t.title, description: t.description })),
     },
     family: {
-      tasks: familyTasks.map(t => ({ title: t.title, status: t.status, priority: t.priority, dueDate: t.dueDate })),
+      tasks: familyTasks.map(t => ({ id: t.id, title: t.title, status: t.status, priority: t.priority, dueDate: t.dueDate })),
       medicationRefills,
-      petReminders: petReminders.map(r => ({ title: r.title, type: r.type, remindAt: r.remindAt })),
-      upcoming: familyItems.map(i => ({ domain: i.domain, type: i.type, remindAt: i.remindAt, title: i.data?.title || null, priority: i.data?.priority || null })),
+      petReminders: petReminders.map(r => ({ id: r.id, title: r.title, type: r.type, remindAt: r.remindAt })),
+      upcoming: familyItems.map(i => ({ id: i.id, domain: i.domain, type: i.type, remindAt: i.remindAt, title: i.data?.title || null, priority: i.data?.priority || null })),
     },
     health: {
       today: healthToday,

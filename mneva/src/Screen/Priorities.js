@@ -70,6 +70,11 @@ function TaskCard({ task, onCheck, styles }) {
 // alongside the priorities the user set manually. Urgent emails and pending
 // tasks are deliberately left out here — they already have their own
 // sections above, sourced from the same underlying data.
+// Audit item G-21: ids used to be the array INDEX ("bill-0", "bill-1"...),
+// not the record's own id — so as soon as list order shifted (one bill paid
+// off, a new one appearing earlier), the same index pointed at a different
+// real item. A persisted Yes/No answer (see confirmations below) has to key
+// off something that actually stays attached to the same record.
 function buildAutoItems(summary) {
   if (!summary?.sections) return [];
   const items = [];
@@ -78,24 +83,24 @@ function buildAutoItems(summary) {
   };
   const { communications, family, finance } = summary.sections;
 
-  (communications?.unreadAlerts || []).forEach((a, i) =>
-    push(`alert-${i}`, a.title, 'Phone alert', null, 'bell', '#E0546E', 'Alert'));
-  (family?.tasks || []).forEach((t, i) =>
-    push(`famtask-${i}`, t.title, `Family task${t.priority ? ' · ' + t.priority : ''}`, t.dueDate, 'users', '#615FF8', 'Family'));
-  (family?.medicationRefills || []).forEach((m, i) =>
-    push(`med-${i}`, `${m.medName} refill`, m.parent, m.refillDate, 'plus-square', '#E0546E', 'Medication'));
-  (family?.petReminders || []).forEach((p, i) =>
-    push(`pet-${i}`, p.title, 'Pet reminder', p.remindAt, 'heart', '#F5A623', 'Pet'));
-  (family?.upcoming || []).forEach((f, i) =>
-    push(`fam-${i}`, f.title || `${f.type} (${f.domain})`, `Family${f.priority ? ' · ' + f.priority : ''}`, f.remindAt, 'home', '#9B72FF', 'Family'));
-  (finance?.upcomingBills || []).forEach((b, i) =>
-    push(`bill-${i}`, `${b.name} bill due`, `₹${(b.amount || 0).toLocaleString('en-IN')}`, b.dueDate, 'file-text', '#F5A623', 'Finance'));
-  (finance?.upcomingPayments || []).forEach((p, i) =>
-    push(`pay-${i}`, `${p.name} payment`, `₹${(p.amount || 0).toLocaleString('en-IN')}`, p.dueDate, 'credit-card', '#4FA6E8', 'Finance'));
-  (finance?.upcomingSubscriptions || []).forEach((s, i) =>
-    push(`sub-${i}`, `${s.name} renewal`, `₹${(s.amount || 0).toLocaleString('en-IN')}`, s.dueDate, 'repeat', '#9B72FF', 'Finance'));
-  (finance?.maturingFixedDeposits || []).forEach((f, i) =>
-    push(`fd-${i}`, `${f.name} matures`, `₹${(f.amount || 0).toLocaleString('en-IN')}`, f.maturityDate, 'lock', '#06B6D4', 'Finance'));
+  (communications?.unreadAlerts || []).forEach((a) =>
+    push(`alert-${a.id}`, a.title, 'Phone alert', null, 'bell', '#E0546E', 'Alert'));
+  (family?.tasks || []).forEach((t) =>
+    push(`famtask-${t.id}`, t.title, `Family task${t.priority ? ' · ' + t.priority : ''}`, t.dueDate, 'users', '#615FF8', 'Family'));
+  (family?.medicationRefills || []).forEach((m) =>
+    push(`med-${m.id}`, `${m.medName} refill`, m.parent, m.refillDate, 'plus-square', '#E0546E', 'Medication'));
+  (family?.petReminders || []).forEach((p) =>
+    push(`pet-${p.id}`, p.title, 'Pet reminder', p.remindAt, 'heart', '#F5A623', 'Pet'));
+  (family?.upcoming || []).forEach((f) =>
+    push(`fam-${f.id}`, f.title || `${f.type} (${f.domain})`, `Family${f.priority ? ' · ' + f.priority : ''}`, f.remindAt, 'home', '#9B72FF', 'Family'));
+  (finance?.upcomingBills || []).forEach((b) =>
+    push(`bill-${b.id}`, `${b.name} bill due`, `₹${(b.amount || 0).toLocaleString('en-IN')}`, b.dueDate, 'file-text', '#F5A623', 'Finance'));
+  (finance?.upcomingPayments || []).forEach((p) =>
+    push(`pay-${p.kind}-${p.id}`, `${p.name} payment`, `₹${(p.amount || 0).toLocaleString('en-IN')}`, p.dueDate, 'credit-card', '#4FA6E8', 'Finance'));
+  (finance?.upcomingSubscriptions || []).forEach((s) =>
+    push(`sub-${s.id}`, `${s.name} renewal`, `₹${(s.amount || 0).toLocaleString('en-IN')}`, s.dueDate, 'repeat', '#9B72FF', 'Finance'));
+  (finance?.maturingFixedDeposits || []).forEach((f) =>
+    push(`fd-${f.id}`, `${f.name} matures`, `₹${(f.amount || 0).toLocaleString('en-IN')}`, f.maturityDate, 'lock', '#06B6D4', 'Finance'));
 
   return items;
 }
@@ -538,13 +543,14 @@ export default function Priorities({ navigation }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [taskRes, meetRes, doneRes, cancelRes, brief, summary] = await Promise.all([
+      const [taskRes, meetRes, doneRes, cancelRes, brief, summary, confirmations] = await Promise.all([
         peekCachedResponse("/api/tasks"),
         peekCachedResponse("/api/calendar/meetings"),
         peekCachedResponse("/api/tasks/meeting-done"),
         peekCachedResponse("/api/tasks/meeting-cancelled"),
         peekCachedResponse("/api/dashboard/brief"),
         peekCachedResponse("/api/dashboard/full-summary"),
+        peekCachedResponse("/api/priorities/confirmations"),
       ]);
       if (cancelled) return;
       if (!hasRealDataRef.current && (taskRes || meetRes || doneRes)) {
@@ -557,6 +563,7 @@ export default function Priorities({ navigation }) {
       if (!hasRealSummaryRef.current && summary) {
         setAutoSummary(summary);
       }
+      if (confirmations?.confirmations) applyConfirmations(confirmations.confirmations);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -569,6 +576,7 @@ export default function Priorities({ navigation }) {
     const briefPromise = apiFetch("/api/dashboard/brief").catch(() => null);
     const summaryPromise = apiFetch("/api/dashboard/full-summary").catch(() => null);
     const insightsPromise = apiFetch("/api/comms/insights").catch(() => null);
+    const confirmationsPromise = apiFetch("/api/priorities/confirmations").catch(() => null);
     try {
       // These feeds are supplemental to tasks.  Do not blank the whole
       // Priorities screen when Calendar or the meeting-completion feed is
@@ -602,7 +610,32 @@ export default function Priorities({ navigation }) {
     }
     const insights = await insightsPromise;
     if (insights) setEmailInsights({ followUps: insights.followUps || [], commitments: insights.commitments || [] });
+    const confirmations = await confirmationsPromise;
+    applyConfirmations(confirmations?.confirmations);
   }, []);
+
+  // Audit item G-21: restores the past-due Yes/No answer from the server
+  // instead of re-asking "Did you complete this?" on every reopen —
+  // "meeting-<id>" entries settle the meeting card's own set, everything
+  // else (already-prefixed, e.g. "bill-<id>") settles the auto-item sets.
+  const applyConfirmations = (rows) => {
+    if (!Array.isArray(rows) || !rows.length) return;
+    const pendingMeetingIds = [];
+    const pendingAutoIds = [];
+    const doneAutoIdsFromServer = [];
+    rows.forEach((c) => {
+      if (c.itemKey.startsWith('meeting-')) {
+        if (c.action === 'pending') pendingMeetingIds.push(c.itemKey.slice('meeting-'.length));
+      } else if (c.action === 'pending') {
+        pendingAutoIds.push(c.itemKey);
+      } else if (c.action === 'done') {
+        doneAutoIdsFromServer.push(c.itemKey);
+      }
+    });
+    if (pendingMeetingIds.length) setConfirmedPendingIds(prev => new Set([...prev, ...pendingMeetingIds]));
+    if (pendingAutoIds.length) setConfirmedAutoPendingIds(prev => new Set([...prev, ...pendingAutoIds]));
+    if (doneAutoIdsFromServer.length) setDoneAutoIds(prev => new Set([...prev, ...doneAutoIdsFromServer]));
+  };
 
   const handleDismissInsight = async (id) => {
     setInsightActed((prev) => ({ ...prev, [id]: true }));
@@ -842,15 +875,20 @@ export default function Priorities({ navigation }) {
   // re-asking on every render, without marking it complete.
   const handleConfirmPending = (m) => {
     setConfirmedPendingIds(prev => new Set([...prev, m.id]));
+    apiFetch("/api/priorities/confirmations", { method: "POST", body: { itemKey: `meeting-${m.id}`, action: "pending" } }).catch(() => {});
   };
 
-  // Same pair, for AI-detected items — see the comment on AutoTimelineRow
-  // for why this is local-only instead of calling a backend "mark done".
+  // Same pair, for AI-detected items. These span many different backend
+  // modules with no one shared "mark complete" field, so the Yes/No answer
+  // persists to the generic PriorityConfirmation store (audit item G-21)
+  // instead of each one needing its own per-module "mark done" call.
   const handleCheckAutoItem = (item) => {
     setDoneAutoIds(prev => new Set([...prev, item.id]));
+    apiFetch("/api/priorities/confirmations", { method: "POST", body: { itemKey: item.id, action: "done" } }).catch(() => {});
   };
   const handleConfirmAutoPending = (item) => {
     setConfirmedAutoPendingIds(prev => new Set([...prev, item.id]));
+    apiFetch("/api/priorities/confirmations", { method: "POST", body: { itemKey: item.id, action: "pending" } }).catch(() => {});
   };
 
 

@@ -89,6 +89,7 @@ model User {
   workflows     Workflow[]
   documents     Document[]
   tasks         Task[]
+  priorityConfirmations PriorityConfirmation[]
 }
 
 model UserProfile {
@@ -293,6 +294,28 @@ model Task {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+// Audit item G-21: the Priorities screen's past-due "Did you complete
+// this?" Yes/No answer (for bills, EMIs, medication refills, pet
+// reminders, family tasks, and meetings) used to live only in React state —
+// gone the moment the screen unmounted, so the same item got re-asked on
+// every reopen. These items span many different backend modules with no
+// one shared "mark complete" field, so this is a generic, module-agnostic
+// confirmation store keyed by the same stable itemKey the UI already
+// builds for each item, rather than a field added to every module.
+model PriorityConfirmation {
+  id        String   @id @default(uuid())
+  userId    String
+  itemKey   String
+  action    String   // 'done' | 'pending'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemKey])
   @@index([userId])
 }
 

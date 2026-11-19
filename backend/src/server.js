@@ -41,6 +41,7 @@ import contactsRoutes, {
   googleContactsCallbackHandler,
 } from "./routes/contacts.js";
 import gdriveRoutes, { gdriveCallbackHandler } from "./routes/gdrive.js";
+import prioritiesRoutes from "./routes/priorities.js";
 import gtasksRoutes, { gtasksCallbackHandler } from "./routes/gtasks.js";
 import outlookRoutes, { outlookCallbackHandler } from "./routes/outlook.js";
 import { smsRouter, meetingsRouter } from "./routes/_allRoutes.js";
@@ -446,6 +447,7 @@ app.use("/api/calendar", authMiddleware, calendarRoutes);
 app.use("/api/googlefit", authMiddleware, googleFitRoutes);
 app.use("/api/contacts", authMiddleware, contactsRoutes);
 app.use("/api/gdrive", authMiddleware, gdriveRoutes);
+app.use("/api/priorities", authMiddleware, prioritiesRoutes);
 app.use("/api/gtasks", authMiddleware, gtasksRoutes);
 app.use("/api/outlook", authMiddleware, outlookRoutes);
 
