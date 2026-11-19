@@ -14,7 +14,7 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | G-07 | Slack distribution/token storage | 🟡 Partial (commit 42831cc) | Token encryption + token_revoked/app_uninstalled handler done & migrated (0 plaintext found). Distribution check + Events Subscription URL wiring are external Slack dashboard actions — user needs to do those. |
 | G-18 | "End-to-end encryption" label | ✅ Fixed (commit 0b413f1) | Settings label now "Vault: end-to-end encrypted on your device"; footnote corrected. Toggle stays locked/always-on (still gates Vault.js). No backend change needed — no API text made the false claim. |
 | G-03 | Twin Diary ledger coverage | ✅ Fixed (commit 77c004c) | Added ledger logging to: task create, task status update, meeting-done, meeting-cancelled (routes/tasks.js), Communications email send, document upload/delete, and AI's mark_meeting_done tool. New taxonomy entries added. |
-| G-17 | Family plan seats/billing | ⬜ | |
+| G-17 | Family plan seats/billing | 🟡 Partial (commit 210086d) | Quick-win labeling only ("Coming soon" badge on Family card, "Planned launch pricing" banner). Full fix (FamilyGroup entity, pooled usage) blocked on G-04 (billing doesn't exist) — deferred together. |
 | G-08 | Communications: one view, follow-ups | ⬜ | |
 | G-14 | Payments/UPI/biometric | ⏭️ Skipped by user request | Explicitly told to skip this one. |
 | G-15 | Portfolio/credit score data labeling | ⬜ | |
