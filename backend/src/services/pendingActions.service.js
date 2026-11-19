@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js'
 import { ledger } from './ledgerService.js'
 import { emitToUser } from './realtime.js'
+import { checkPaymentBiometricGate } from './biometricAuth.service.js'
 
 // Which trust-autonomy domain gates each AI tool. Only tools with a real,
 // hard-to-reverse, externally-visible side effect are gated — pure
@@ -359,13 +360,13 @@ export async function resolvePendingAction(userId, actionId, decision, opts = {}
   // as tapping "Pay" directly in Bills — approving in chat isn't a way
   // around that gate. (Biometric gate is a privacy setting, unrelated to
   // per-domain trust level — read directly rather than through DomainTrust.)
+  // S-02: same checkPaymentBiometricGate as finance.js's /pay — a signed
+  // challenge, not a client-asserted boolean.
   if (action.tool === 'initiate_payment') {
     const amount = Number(action.input?.amount) || 0
-    if (amount >= 1000) {
-      const user = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
-      const gateOn = user?.preferences?.privacy?.biometricGate !== false
-      if (gateOn && opts.biometricConfirmed !== true) return { error: 'biometric_required' }
-    }
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } })
+    const gateFailure = await checkPaymentBiometricGate(userId, amount, user?.preferences?.privacy?.biometricGate, opts)
+    if (gateFailure) return { error: 'biometric_required' }
   }
 
   // Dynamic import avoids a circular import — autonomyEngine.js imports

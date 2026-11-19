@@ -6760,7 +6760,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAudioRecorder, AudioModule, IOSOutputFormat, AudioQuality } from "expo-audio";
 import * as Speech from "expo-speech";
 import * as FileSystem from "expo-file-system/legacy";
-import * as LocalAuthentication from "expo-local-authentication";
+import { getBiometricApproval } from "../storage/biometricKey";
 import { useTheme } from "../context/ThemeContext";
 import * as Location from "expo-location";
 import { getCurrentCoords } from "../services/location";
@@ -8656,25 +8656,20 @@ export default function Home({ navigation }) {
     // this same biometric gate before approving — moved here so a ≥₹1000
     // payment still asks for biometric confirmation no matter where it's
     // approved from).
-    let biometricConfirmed = false;
+    // S-02: biometricConfirmed used to be a plain client-side flag — now a
+    // server-issued challenge HMAC-signed with a device key that only
+    // exists behind the OS's own biometric prompt (getBiometricApproval
+    // triggers that prompt itself; LocalAuthentication is no longer called
+    // directly here).
+    let biometricFields = {};
     if (type === "approve") {
       const action = pendingActions.find((a) => a.id === actionId);
       const amount = Number(action?.input?.amount) || 0;
       if (action?.domain === "finance" && amount >= 1000) {
         try {
-          const hasHardware = await LocalAuthentication.hasHardwareAsync();
-          const isEnrolled = hasHardware && (await LocalAuthentication.isEnrolledAsync());
-          if (hasHardware && isEnrolled) {
-            const result = await LocalAuthentication.authenticateAsync({
-              promptMessage: `Confirm payment of ₹${amount.toLocaleString("en-IN")}`,
-              cancelLabel: "Cancel",
-              disableDeviceFallback: false,
-            });
-            if (!result.success) return; // cancelled — card stays as-is, nothing acted
-            biometricConfirmed = true;
-          }
+          biometricFields = await getBiometricApproval();
         } catch {
-          return;
+          return; // cancelled/failed — card stays as-is, nothing acted
         }
       }
     }
@@ -8682,7 +8677,7 @@ export default function Home({ navigation }) {
     try {
       await apiFetch(`/api/agent/${type}`, {
         method: "POST",
-        body: { actionId, biometricConfirmed },
+        body: { actionId, ...biometricFields },
       });
     } catch {}
     setTimeout(() => {

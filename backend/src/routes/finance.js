@@ -1,6 +1,7 @@
 import express from 'express'
 import { prisma } from '../config/prisma.js'
 import { ledger, changedFields } from '../services/ledgerService.js'
+import { checkPaymentBiometricGate } from '../services/biometricAuth.service.js'
 
 export const financeRouter = express.Router()
 
@@ -970,10 +971,12 @@ financeRouter.post('/pay', async (req, res) => {
     const amount = Number(req.body.amount) || 0
     if (amount >= 1000) {
       const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { preferences: true } })
-      const gateOn = user?.preferences?.privacy?.biometricGate !== false
-      if (gateOn && req.body.biometricConfirmed !== true) {
-        return res.status(403).json({ error: 'biometric_required', message: 'Biometric confirmation is required for payments ≥ ₹1,000.' })
-      }
+      // S-02: biometricConfirmed used to be a plain client-asserted boolean
+      // with nothing behind it — now a server-issued challenge the device
+      // HMAC-signs with a key it can only read behind its own OS biometric
+      // prompt (see biometricAuth.service.js for the full design).
+      const gateFailure = await checkPaymentBiometricGate(req.user.id, amount, user?.preferences?.privacy?.biometricGate, req.body)
+      if (gateFailure) return res.status(gateFailure.status).json(gateFailure.body)
     }
     const entry = await ledger.add({
       userId: req.user.id,

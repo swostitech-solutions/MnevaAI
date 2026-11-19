@@ -1286,6 +1286,7 @@ import { sendPushToUser } from "../services/pushService.js";
 import { applyModelCompat } from "../services/openaiCompat.js";
 import { LEDGER_PUBLIC_KEY_PEM } from "../services/ledgerSigning.js";
 import { resolvePendingAction, listPendingActions, getAllDomainTrust, getDomainTrust, DOMAINS, confirmFinanceL2, confirmInnerCircle, declineInnerCircle, leaveInnerCircle, getGlobalTestModeLevel, transitionDomain } from "../services/pendingActions.service.js";
+import { issueBiometricChallenge } from "../services/biometricAuth.service.js";
 import { getBodyMetricsForActivity, metForActivity, computeBmi, computeDistanceKmFromSteps, computeStepsFromDistanceKm, computeCaloriesBurned, getLatestKnownField } from "../services/activityCalc.js";
 import { createPerfTimer, getPerfStats } from "../services/perf.service.js";
 import { emitToUser } from "../services/realtime.js";
@@ -1670,7 +1671,10 @@ agentRouter.get("/pending-actions", async (req, res) => {
   res.json({ actions });
 });
 agentRouter.post("/approve", async (req, res) => {
-  const outcome = await resolvePendingAction(req.user.id, req.body.actionId, "approve", { biometricConfirmed: req.body.biometricConfirmed });
+  const outcome = await resolvePendingAction(req.user.id, req.body.actionId, "approve", {
+    biometricChallenge: req.body.biometricChallenge,
+    biometricSignature: req.body.biometricSignature,
+  });
   if (outcome.error) return res.status(outcome.error === "biometric_required" ? 403 : 404).json(outcome);
   res.json({
     actionId: req.body.actionId,
@@ -3802,6 +3806,18 @@ trustRouter.patch("/test-mode-level", async (req, res) => {
   prefs.testModeLevel = n;
   await prisma.user.update({ where: { id: req.user.id }, data: { preferences: prefs } });
   res.json({ success: true, testModeLevel: n });
+});
+
+// S-02: short-lived, single-use nonce the app signs with its biometric-
+// gated device key before approving a >= ₹1000 payment, in chat or in
+// Bills. Called right before the actual approve/pay request.
+trustRouter.post("/biometric-challenge", async (req, res) => {
+  try {
+    const challenge = await issueBiometricChallenge(req.user.id);
+    res.json({ challenge });
+  } catch (err) {
+    res.status(503).json({ error: err.message });
+  }
 });
 
 trustRouter.patch("/settings", async (req, res) => {

@@ -15,6 +15,7 @@ import { deleteVaultFileBlob } from '../controllers/vault.controller.js'
 import { logger } from '../config/logger.js'
 import { authMiddleware, setSessionCache } from '../middleware/auth.js'
 import { queueAccountExport } from '../queues/accountExport.queue.js'
+import { registerBiometricKey } from '../services/biometricAuth.service.js'
 
 const router = express.Router()
 const SECRET = process.env.JWT_SECRET
@@ -445,6 +446,20 @@ const AVATAR_MAX_BYTES = 5 * 1024 * 1024 // decoded size — the picker already 
 // already uses to avoid React Native's FormData binary issues. A plain
 // `avatar` URL string is still accepted too, for a future flow that sets a
 // photo without uploading bytes (e.g. a Google profile picture URL).
+// S-02: registers this device's biometric-gated secret (generated and
+// stored behind expo-secure-store's requireAuthentication on the client —
+// see mneva/src/storage/biometricKey.js). Re-registering (new device,
+// reinstall) simply overwrites the previous key; this app doesn't track
+// multiple simultaneous device keys per user.
+router.post('/biometric-key', authMiddleware, async (req, res) => {
+  try {
+    await registerBiometricKey(req.user.id, req.body.key)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
 router.patch('/avatar', authMiddleware, async (req, res) => {
   try {
     const { avatar, imageBase64, mimeType } = req.body

@@ -9,7 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as LocalAuthentication from 'expo-local-authentication';
+import { getBiometricApproval } from '../../storage/biometricKey';
 import { apiFetch, peekCachedResponse } from '../../api/client';
 import { useSocket } from '../../services/socket';
 import { useTheme } from '../../context/ThemeContext';
@@ -183,23 +183,20 @@ export default function BillScreen({ navigation }) {
     setPayError(null);
     setPaying(true);
     try {
-      let biometricConfirmed = false;
+      // S-02: a server-signed challenge, not a plain client-side flag — see
+      // storage/biometricKey.js.
+      let biometricFields = {};
       if (amount >= 1000 && biometricGateOn) {
-        const hasHardware = await LocalAuthentication.hasHardwareAsync();
-        const isEnrolled = hasHardware && await LocalAuthentication.isEnrolledAsync();
-        if (hasHardware && isEnrolled) {
-          const result = await LocalAuthentication.authenticateAsync({
-            promptMessage: `Confirm payment of ₹${amount.toLocaleString('en-IN')}`,
-            cancelLabel: 'Cancel',
-            disableDeviceFallback: false,
-          });
-          if (!result.success) { setPaying(false); return; }
-          biometricConfirmed = true;
+        try {
+          biometricFields = await getBiometricApproval();
+        } catch {
+          setPaying(false);
+          return;
         }
       }
       await apiFetch('/api/finance/pay', {
         method: 'POST',
-        body: { billId: payModal.id, amount: payModal.amount, payee: payModal.name, category: payModal.category, biometricConfirmed },
+        body: { billId: payModal.id, amount: payModal.amount, payee: payModal.name, category: payModal.category, ...biometricFields },
       });
       setPayModal(null);
       loadData(true);
