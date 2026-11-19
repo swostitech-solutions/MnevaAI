@@ -23,7 +23,7 @@ Working doc for the "Issues to Fix" audit shared 2026-11-18. Updated as each ite
 | G-09 | Drive/Docs/Sheets file reading | ⏭️ Deferred | In-app Docs/Sheets/Drive screens only ever claimed "browse and open" (already honest, confirmed no overclaim). Real AI content-reading needs drive.readonly/documents.readonly/spreadsheets.readonly scopes; current scope was deliberately narrowed to drive.metadata.readonly only (list filenames, open externally) — broadening it again re-triggers Google OAuth verification, same external blocker as G-19. Needs G-19 resolved first. |
 | G-11 | Media & Discovery "real-time" claims | ✅ Fixed (commit 169d484) | Sports/Music/Movie/News Discovery banners said "tracking/summarising in real-time" (News also had a fabricated "1,200+ sources") when it's actually one on-demand web search per request, no live feed/polling/caching. Reworded all 4 to "searching the web ... right now". Mobile-only — ships with next app build (no backend change, no CI/VPS step needed). |
 | G-16 | Health appointment reminders | ✅ Fixed (commit 0d8ef66) | Health screen had zero appointment concept — the dashboard count relied on a user creating a plain task elsewhere with "appointment" in the title, no date filter at all. Root cause: Task never persisted a due date. Added Task.dueDate (migration, applied clean on VPS), persisted it from the manual task-create path, set_reminder, and schedule_event. Health.js now has an "Upcoming appointments" card: add with title + date/time picker, reuses existing reminder pipeline, mark done. Dashboard count now filters dueDate >= now. |
-| G-21 | Priorities answers not saved | ⬜ | |
+| G-21 | Priorities answers not saved | ✅ Fixed (commit 211065a) | The past-due "Did you complete this?" Yes/No answer lived only in React state — gone on every screen unmount, re-asked on every reopen. Added a generic PriorityConfirmation store (new migration, applied clean) + GET/POST /api/priorities/confirmations, since these items span many modules with no shared "mark complete" field. Also fixed buildAutoItems' itemKey, which was the array INDEX not the record's real id (fullSummary.js now returns each record's actual id) — a persisted answer would've silently attached to the wrong item once list order shifted. |
 
 ## Part B — Speed (14) — not started yet
 L-01 through L-14 — ⬜ all not started.
@@ -32,4 +32,4 @@ L-01 through L-14 — ⬜ all not started.
 S-01 through S-13 — ⬜ all not started.
 
 ---
-**Currently working on:** Part A Low items. Next up: G-21.
+**Part A complete** (except the 3 deferred Criticals and explicitly-skipped G-14). Next up: Part B — Speed (L-01 through L-14).
