@@ -189,6 +189,59 @@ export async function getEmailBody(user, messageId) {
   }
 }
 
+// ── Follow-up / commitment detection (audit item G-08 partial fix) ─────────
+// Same idea as gmail.service.js's searchEmails('in:sent ...') +
+// getEmailBody thread-reply check, adapted to Graph's sentitems folder and
+// conversationId (Graph's equivalent of a Gmail threadId) for grouping
+// replies. Added so a promise made over Outlook gets tracked as a
+// follow-up/commitment too, not just Gmail ones — emailInsights.queue.js
+// calls these the same way it already calls the Gmail equivalents.
+export async function listSentEmailsForInsights(user, days, limit) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+  const params = new URLSearchParams({
+    $top: String(Math.min(limit, 50)),
+    $select: 'id,subject,toRecipients,sentDateTime,bodyPreview,conversationId',
+    $orderby: 'sentDateTime desc',
+    $filter: `sentDateTime ge ${cutoff}`,
+  })
+  const data = await graphFetch(user, `/me/mailFolders/sentitems/messages?${params.toString()}`)
+  return (data.value || []).map(m => ({
+    id: m.id,
+    subject: m.subject || '(No subject)',
+    to: (m.toRecipients || []).map(r => r.emailAddress?.address).filter(Boolean).join(', ') || null,
+    date: m.sentDateTime,
+    snippet: m.bodyPreview || '',
+    conversationId: m.conversationId,
+  }))
+}
+
+export async function getSentEmailPlainBody(user, messageId) {
+  const m = await graphFetch(user, `/me/messages/${encodeURIComponent(messageId)}?$select=body`, {
+    headers: { Prefer: 'outlook.body-content-type="text"' },
+  })
+  return m.body?.content || ''
+}
+
+// Graph has no per-thread "list messages" call the way Gmail's
+// getEmailBody returns a whole thread — conversationId has to be queried
+// separately. selfEmail excludes the user's own later messages in the same
+// conversation (a follow-up to their own email) from counting as a reply.
+export async function conversationHasReplyAfter(user, conversationId, sinceIso, selfEmail) {
+  const params = new URLSearchParams({
+    $filter: `conversationId eq '${conversationId}'`,
+    $select: 'from,receivedDateTime',
+    $orderby: 'receivedDateTime desc',
+    $top: '25',
+  })
+  const data = await graphFetch(user, `/me/messages?${params.toString()}`)
+  const since = new Date(sinceIso).getTime()
+  const self = (selfEmail || '').toLowerCase()
+  return (data.value || []).some(m => {
+    const addr = (m.from?.emailAddress?.address || '').toLowerCase()
+    return addr && addr !== self && new Date(m.receivedDateTime).getTime() > since
+  })
+}
+
 export async function sendEmail(user, recipient, subject, body) {
   return graphFetch(user, '/me/sendMail', {
     method: 'POST',

@@ -898,7 +898,12 @@ model EmailInsight {
   id        String    @id @default(uuid())
   userId    String
   type      String // 'follow_up' | 'commitment'
-  messageId String // Gmail message id the insight was found in
+  // Audit item G-08: this used to be Gmail-only (both the data and the
+  // scan that populates it) — provider distinguishes a Gmail-sourced row
+  // from an Outlook-sourced one now that emailInsights.queue.js scans both,
+  // since the two providers' message ids come from unrelated id spaces.
+  provider  String    @default("gmail") // 'gmail' | 'outlook'
+  messageId String // the provider's own message id the insight was found in
   threadId  String?
   subject   String
   // follow_up: who the ask was sent to and hasn't replied.
@@ -913,6 +918,6 @@ model EmailInsight {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, messageId, type])
+  @@unique([userId, messageId, type, provider])
   @@index([userId, status])
 }

@@ -49,7 +49,7 @@ async function scanUserEmails(userId) {
   if (!sent.length) return
 
   const existingRows = await prisma.emailInsight.findMany({
-    where: { userId, messageId: { in: sent.map(e => e.id) } },
+    where: { userId, provider: 'gmail', messageId: { in: sent.map(e => e.id) } },
   })
   const existingByKey = new Map(existingRows.map(r => [`${r.messageId}:${r.type}`, r]))
 
@@ -100,7 +100,7 @@ async function scanUserEmails(userId) {
       const hasReply = t.thread.messages.some(m => !m.fromSelf && new Date(m.date).getTime() > sentAt.getTime())
       if (!hasReply) {
         rows.push({
-          userId, type: 'follow_up', messageId: t.email.id, threadId: t.thread.threadId || null,
+          userId, provider: 'gmail', type: 'follow_up', messageId: t.email.id, threadId: t.thread.threadId || null,
           subject: t.email.subject, recipient: t.thread.to || null,
           snippet: c.followUpSnippet || t.email.snippet || '', sentAt, status: 'pending',
         })
@@ -108,9 +108,92 @@ async function scanUserEmails(userId) {
     }
     if (c.isCommitment) {
       rows.push({
-        userId, type: 'commitment', messageId: t.email.id, threadId: t.thread.threadId || null,
+        userId, provider: 'gmail', type: 'commitment', messageId: t.email.id, threadId: t.thread.threadId || null,
         subject: t.email.subject, recipient: t.thread.to || null,
         snippet: c.commitmentSnippet || t.email.snippet || '', sentAt,
+        dueText: c.commitmentDueText || null, status: 'pending',
+      })
+    }
+  }
+
+  if (rows.length) {
+    await prisma.emailInsight.createMany({ data: rows, skipDuplicates: true })
+  }
+}
+
+// Outlook side of the same scan (audit item G-08 partial fix) — Graph has
+// no single "get whole thread" call the way Gmail's getEmailBody does, so
+// reply-checking goes through conversationHasReplyAfter per candidate
+// instead of a pre-fetched thread; otherwise this mirrors scanUserEmails
+// above field-for-field.
+async function scanUserOutlookEmails(userId) {
+  const user = await userStore.getById(userId)
+  if (!user?.preferences?.outlook?.tokens?.refresh_token) return // Outlook not connected — nothing to scan
+
+  const { listSentEmailsForInsights, getSentEmailPlainBody, conversationHasReplyAfter, getOutlookProfile } = await import('../services/outlook.service.js')
+  const { classifySentEmailsForInsights } = await import('../services/gmail.service.js')
+
+  const sent = await listSentEmailsForInsights(user, SCAN_WINDOW_DAYS, MAX_EMAILS_PER_USER)
+  if (!sent.length) return
+
+  const profile = await getOutlookProfile(user).catch(() => null)
+  const selfEmail = profile?.mail || profile?.userPrincipalName || null
+
+  const existingRows = await prisma.emailInsight.findMany({
+    where: { userId, provider: 'outlook', messageId: { in: sent.map(e => e.id) } },
+  })
+  const existingByKey = new Map(existingRows.map(r => [`${r.messageId}:${r.type}`, r]))
+
+  // Resolve pending follow-ups that have since gotten a reply.
+  for (const e of sent) {
+    const row = existingByKey.get(`${e.id}:follow_up`)
+    if (!row || row.status !== 'pending' || !e.conversationId || !selfEmail) continue
+    const hasReply = await conversationHasReplyAfter(user, e.conversationId, row.sentAt, selfEmail).catch(() => false)
+    if (hasReply) {
+      await prisma.emailInsight.update({ where: { id: row.id }, data: { status: 'resolved' } }).catch(() => {})
+    }
+  }
+
+  const candidates = sent.filter(e =>
+    !existingByKey.has(`${e.id}:follow_up`) && !existingByKey.has(`${e.id}:commitment`)
+  )
+  if (!candidates.length) return
+
+  const bodies = await Promise.all(candidates.map(async (e) => {
+    try { return { email: e, body: await getSentEmailPlainBody(user, e.id) } }
+    catch { return { email: e, body: '' } }
+  }))
+
+  const classified = await classifySentEmailsForInsights(
+    bodies.map(b => ({ id: b.email.id, subject: b.email.subject, body: (b.body || '').slice(0, 800) }))
+  )
+  if (!classified) return
+
+  const rows = []
+  const now = Date.now()
+  for (const b of bodies) {
+    const c = classified.get(b.email.id)
+    if (!c) continue
+    const sentAt = new Date(b.email.date)
+    const daysSince = (now - sentAt.getTime()) / (24 * 60 * 60 * 1000)
+
+    if (c.isFollowUp && daysSince >= FOLLOW_UP_MIN_DAYS) {
+      const hasReply = selfEmail && b.email.conversationId
+        ? await conversationHasReplyAfter(user, b.email.conversationId, sentAt.toISOString(), selfEmail).catch(() => false)
+        : false
+      if (!hasReply) {
+        rows.push({
+          userId, provider: 'outlook', type: 'follow_up', messageId: b.email.id, threadId: b.email.conversationId || null,
+          subject: b.email.subject, recipient: b.email.to || null,
+          snippet: c.followUpSnippet || b.email.snippet || '', sentAt, status: 'pending',
+        })
+      }
+    }
+    if (c.isCommitment) {
+      rows.push({
+        userId, provider: 'outlook', type: 'commitment', messageId: b.email.id, threadId: b.email.conversationId || null,
+        subject: b.email.subject, recipient: b.email.to || null,
+        snippet: c.commitmentSnippet || b.email.snippet || '', sentAt,
         dueText: c.commitmentDueText || null, status: 'pending',
       })
     }
@@ -129,12 +212,13 @@ export function startEmailInsightsWorker() {
       logger.info(`✉️ Running email insights scan for ${users.length} user(s)`)
       let scanned = 0
       for (const { id: userId } of users) {
-        try {
-          await scanUserEmails(userId)
-          scanned++
-        } catch (err) {
-          logger.warn(`Email insights scan failed for user=${userId}: ${err.message}`)
-        }
+        // Independent try/catch per provider — one account's expired Gmail
+        // token shouldn't also skip that same user's Outlook scan.
+        try { await scanUserEmails(userId) }
+        catch (err) { logger.warn(`Gmail insights scan failed for user=${userId}: ${err.message}`) }
+        try { await scanUserOutlookEmails(userId) }
+        catch (err) { logger.warn(`Outlook insights scan failed for user=${userId}: ${err.message}`) }
+        scanned++
       }
       return { ok: true, scanned }
     },
