@@ -12,6 +12,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { apiFetch, peekCachedResponse } from '../api/client';
 import { onAppDataRefresh } from '../services/dataRefresh';
 import { useTheme } from '../context/ThemeContext';
+import { isHealthConnectSupported, getHealthConnectGrantedTypes, syncHealthConnectData } from '../services/healthConnect';
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
 const PERIODS = [
@@ -1237,6 +1238,7 @@ export default function Health({ navigation }) {
   const [syncVisible, setLogVisible] = useState(false);
   const [editSheet, setEditSheet] = useState(null); // { date, entry } | null, opened by tapping Edit on a logged day
   const [fitConnected, setFitConnected] = useState(false);
+  const [hcConnected, setHcConnected] = useState(false);
   const [appointments, setAppointments] = useState([]);
   const [addApptVisible, setAddApptVisible] = useState(false);
 
@@ -1276,6 +1278,13 @@ export default function Health({ navigation }) {
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     try {
+      // If Health Connect is already granted, push fresh on-device data first
+      // so /metrics reflects today's real reading instead of a stale sync.
+      if (isHealthConnectSupported()) {
+        const granted = await getHealthConnectGrantedTypes().catch(() => []);
+        setHcConnected(granted.length > 0);
+        if (granted.length > 0) await syncHealthConnectData().catch(() => {});
+      }
       const [m, fitStatus, logRes] = await Promise.all([
         apiFetch('/api/health-data/metrics'),
         apiFetch('/api/googlefit/status').catch(() => ({ connected: false })),
@@ -1378,21 +1387,29 @@ export default function Health({ navigation }) {
         </View>
 
         {/* Not connected banner */}
-        {!fitConnected && !loading && (
+        {!fitConnected && !hcConnected && !loading && (
           <TouchableOpacity
             style={styles.connectBanner}
             onPress={() => navigation?.navigate?.('ConnectedAccounts')}
             activeOpacity={0.8}
           >
             <Feather name="activity" size={15} color={theme.accent} />
-            <Text style={styles.connectBannerText}>  Google Fit not connected — tap to connect and see live vitals</Text>
+            <Text style={styles.connectBannerText}>
+              {'  '}{isHealthConnectSupported() ? 'Health Connect not connected — tap to connect and see live vitals' : 'Connect a health source — tap to see live vitals'}
+            </Text>
             <Feather name="chevron-right" size={14} color={theme.accent} />
           </TouchableOpacity>
+        )}
+        {hcConnected && metrics?.source === 'health_connect' && !loading && (
+          <View style={[styles.connectBanner, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' }]}>
+            <Feather name="check-circle" size={15} color={theme.accent} />
+            <Text style={[styles.connectBannerText, { color: theme.accent }]}>  Health Connect connected · Live data</Text>
+          </View>
         )}
         {fitConnected && metrics?.source === 'google_fit' && !loading && (
           <View style={[styles.connectBanner, { backgroundColor: theme.isDark ? 'rgba(52,199,123,0.16)' : '#EFFDF6' }]}>
             <Feather name="check-circle" size={15} color={theme.accent} />
-            <Text style={[styles.connectBannerText, { color: theme.accent }]}>  Google Fit connected · Live data</Text>
+            <Text style={[styles.connectBannerText, { color: theme.accent }]}>  Google Fit connected · Live data (being retired — switch to Health Connect)</Text>
           </View>
         )}
 

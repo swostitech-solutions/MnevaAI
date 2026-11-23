@@ -284,7 +284,8 @@ Swostitech Solutions operates Mneva AI. This is a summary — the full policy ex
 • Account info: name, email, phone (optional), password (hashed)
 • What you give Mneva: messages, voice recordings, photos, documents, Vault files (end-to-end encrypted)
 • What you enter: tasks, family, health, medication, finance, pet and home records
-• Google accounts you connect: Gmail, Calendar, Contacts, Drive, Tasks, Google Fit
+• Google accounts you connect: Gmail, Calendar, Contacts, Drive, Tasks
+• Optional, Android only: health data (steps, heart rate, sleep, weight, height) you grant through Health Connect, which stays on your device until you choose to sync it
 • Optional, Android only: text of notifications from other apps, if you turn on notification analysis
 • Push token, server logs and crash reports
 

@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, useWindowDimensions, Linking, AppState,
+  RefreshControl, useWindowDimensions, Linking, AppState, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { apiFetch, BASE_URL, peekCachedResponse } from '../api/client';
 import { getStoredAuth } from '../storage/auth';
 import { useTheme } from '../context/ThemeContext';
+import {
+  isHealthConnectSupported, getHealthConnectAvailability, getHealthConnectGrantedTypes,
+  connectHealthConnect, disconnectHealthConnect, syncHealthConnectData, openHealthConnectSettings,
+} from '../services/healthConnect';
 
 const TAB_BAR_CONTENT_HEIGHT = 50;
 
@@ -251,16 +255,18 @@ const INTEGRATIONS = [
     connectMethod: 'oauth',
   },
   {
-    id: 'googlefit',
-    title: 'Google Fit',
-    subtitle: 'Steps, heart rate & sleep',
+    id: 'healthconnect',
+    title: 'Health Connect',
+    subtitle: Platform.OS === 'android'
+      ? 'Steps, heart rate & sleep — on-device'
+      : 'Android only — Google Fit is being retired',
     icon: 'activity',
     color: '#1F9A5A',
     bg: '#EFFDF6',
-    statusEndpoint: '/api/googlefit/status',
-    connectEndpoint: '/api/googlefit/connect',
-    disconnectEndpoint: '/api/googlefit/disconnect',
-    connectMethod: 'oauth',
+    statusEndpoint: null,
+    connectEndpoint: null,
+    disconnectEndpoint: null,
+    connectMethod: 'health_connect',
   },
   {
     id: 'contacts',
@@ -377,16 +383,26 @@ export default function ConnectedAccounts({ navigation }) {
   const loadStatuses = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     const results = {};
-    await Promise.all(
-      INTEGRATIONS.filter(i => i.statusEndpoint).map(async (intg) => {
+    await Promise.all([
+      ...INTEGRATIONS.filter(i => i.statusEndpoint).map(async (intg) => {
         try {
           const data = await apiFetch(intg.statusEndpoint);
           results[intg.id] = { connected: data.connected, email: data.email || null };
         } catch {
           results[intg.id] = { connected: false, email: null };
         }
-      })
-    );
+      }),
+      // Health Connect has no server-side status — it's an on-device grant,
+      // checked locally instead of over the network.
+      (async () => {
+        try {
+          const granted = await getHealthConnectGrantedTypes();
+          results.healthconnect = { connected: granted.length > 0, email: null };
+        } catch {
+          results.healthconnect = { connected: false, email: null };
+        }
+      })(),
+    ]);
     hasRealDataRef.current = true;
     setStatuses(results);
     setLoading(false);
@@ -452,6 +468,39 @@ export default function ConnectedAccounts({ navigation }) {
 
   const handleConnect = async (intg) => {
     if (intg.connectMethod === 'coming_soon') return;
+
+    if (intg.connectMethod === 'health_connect') {
+      if (!isHealthConnectSupported()) {
+        Alert.alert('Android only', 'Health Connect is part of Android — it isn\'t available on iOS.');
+        return;
+      }
+      setActionLoading(prev => ({ ...prev, [intg.id]: true }));
+      try {
+        const { available, updateRequired } = await getHealthConnectAvailability();
+        if (updateRequired) {
+          Alert.alert('Update needed', 'Please update the Health Connect app from the Play Store, then try again.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => openHealthConnectSettings() },
+          ]);
+          return;
+        }
+        if (!available) {
+          Alert.alert('Health Connect not found', 'Install the Health Connect app from the Play Store to sync your vitals.');
+          return;
+        }
+        await connectHealthConnect();
+        await syncHealthConnectData().catch(() => {});
+        setStatuses(prev => ({ ...prev, [intg.id]: { connected: true, email: null } }));
+      } catch (err) {
+        if (err?.message !== 'health_connect_permission_denied') {
+          Alert.alert('Could not connect', 'Something went wrong connecting to Health Connect. Please try again.');
+        }
+      } finally {
+        setActionLoading(prev => ({ ...prev, [intg.id]: false }));
+      }
+      return;
+    }
+
     setActionLoading(prev => ({ ...prev, [intg.id]: true }));
     try {
       const data = await apiFetch(`${intg.connectEndpoint}?platform=mobile`);
@@ -463,6 +512,16 @@ export default function ConnectedAccounts({ navigation }) {
   };
 
   const handleDisconnect = async (intg) => {
+    if (intg.connectMethod === 'health_connect') {
+      setActionLoading(prev => ({ ...prev, [intg.id]: true }));
+      try {
+        await disconnectHealthConnect();
+        setStatuses(prev => ({ ...prev, [intg.id]: { connected: false, email: null } }));
+      } catch {}
+      finally { setActionLoading(prev => ({ ...prev, [intg.id]: false })); }
+      return;
+    }
+
     setActionLoading(prev => ({ ...prev, [intg.id]: true }));
     try {
       await apiFetch(intg.disconnectEndpoint, { method: 'POST' });

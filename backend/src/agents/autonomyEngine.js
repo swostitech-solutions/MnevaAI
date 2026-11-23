@@ -897,7 +897,7 @@ export const MNEVA_TOOLS = [
   },
   {
     name: 'get_connected_accounts',
-    description: 'Get the status of all connected accounts and integrations — Gmail, Google Calendar, Google Drive, Google Contacts, Google Fit, Google Tasks. Use this when the user asks which accounts are connected, what is linked, or about their integrations.',
+    description: 'Get the status of all connected accounts and integrations — Gmail, Google Calendar, Google Drive, Google Contacts, Health Connect, Google Tasks. Use this when the user asks which accounts are connected, what is linked, or about their integrations.',
     input_schema: { type: 'object', properties: {}, required: [] }
   },
   {
@@ -1765,6 +1765,9 @@ export async function executeTool(name, input, userId, opts = {}) {
         drive:    { connected: isConnected(drive),    email: drive.email    || null },
         contacts: { connected: isConnected(contacts), email: contacts.email || null },
         googleFit:{ connected: isConnected(fit),      email: fit.email      || null },
+        // Health Connect is on-device only (no OAuth tokens) — the only
+        // server-visible signal is a sync already recorded with this source.
+        healthConnect: { connected: p.healthSync?.source === 'health_connect' },
         tasks:    { connected: isConnected(tasks),    email: tasks.email    || null },
       }
     }
@@ -2480,7 +2483,13 @@ function buildLiveDataContext(liveData = {}) {
     if (h.calories?.consumed != null) parts.push(`Calories: ${h.calories.consumed} kcal`)
     if (h.weight?.value != null)    parts.push(`Weight: ${h.weight.value} kg`)
     if (h.height?.value != null)    parts.push(`Height: ${h.height.value} cm`)
-    if (parts.length) lines.push(`HEALTH DATA (Google Fit, live):\n${parts.map(p => `  • ${p}`).join('\n')}`)
+    if (parts.length) {
+      const srcLabel = h.source === 'health_connect' ? 'Health Connect, live'
+        : h.source === 'google_fit' ? 'Google Fit, live'
+        : h.source ? `${h.source}, synced`
+        : 'synced'
+      lines.push(`HEALTH DATA (${srcLabel}):\n${parts.map(p => `  • ${p}`).join('\n')}`)
+    }
   }
 
   // Contacts
@@ -2548,12 +2557,19 @@ function buildConnectionStatus(user) {
     return `  • ${name}: ${connected ? `✅ Connected${email ? ` (${email})` : ''}` : '❌ Not connected'}`
   }
   const calConnected = ok(cal) || ok(gmail)
+  // Health Connect has no OAuth tokens (on-device, native permission grant
+  // only) — the only server-visible signal is that its own sync endpoint
+  // has written data with this source at least once.
+  const healthConnectLinked = p.healthSync?.source === 'health_connect'
+  const healthLine = ok(fit)
+    ? `  • Google Fit / Health: ✅ Connected${fit.email ? ` (${fit.email})` : ''} (Google Fit is being retired — user should switch to Health Connect)`
+    : `  • Health Connect: ${healthConnectLinked ? '✅ Connected (on-device, Android)' : '❌ Not connected'}`
   return `CONNECTED ACCOUNTS (real-time status — use this to answer any question about integrations):
 ${fmt('Gmail', gmail, gmail.email)}
   • Google Calendar: ${calConnected ? `✅ Connected${(cal.email || gmail.email) ? ` (${cal.email || gmail.email})` : ''}` : '❌ Not connected'}
 ${fmt('Google Drive', drive, drive.email)}
 ${fmt('Google Contacts', contacts, contacts.email)}
-${fmt('Google Fit / Health', fit, fit.email)}
+${healthLine}
 ${fmt('Google Tasks', tasks, tasks.email)}`
 }
 

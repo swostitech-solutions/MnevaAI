@@ -234,7 +234,7 @@ const AUTONOMY_STAGE_META = {
 
 const TRUST_LEVEL_NAMES = ['', 'Observe', 'Suggest', 'Draft & Prepare', 'Act'];
 const AUTONOMY_TOGGLE_LABELS = { finance: 'Finance', communications: 'Communications', health: 'Health', lifeops: 'Life Ops' };
-const CONNECTED_SERVICE_LABELS = { gmail: 'Gmail', calendar: 'Calendar', drive: 'Google Drive', contacts: 'Contacts', googleFit: 'Google Fit', tasks: 'Google Tasks' };
+const CONNECTED_SERVICE_LABELS = { gmail: 'Gmail', calendar: 'Calendar', drive: 'Google Drive', contacts: 'Contacts', googleFit: 'Google Fit', healthConnect: 'Health Connect', tasks: 'Google Tasks' };
 
 // A plain-language line for Security & Trust entries — these are account
 // setting changes, not AI actions, so they get a description instead of the
