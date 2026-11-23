@@ -1,5 +1,5 @@
 import express from 'express'
-import { createFitAuthUrl, exchangeFitCode, saveFitTokens, clearFitTokens, getHealthData } from '../services/googleFit.service.js'
+import { exchangeFitCode, saveFitTokens, clearFitTokens, getHealthData } from '../services/googleFit.service.js'
 import { userStore } from '../models/userStore.js'
 import { logger } from '../config/logger.js'
 import { ledger } from '../services/ledgerService.js'
@@ -69,12 +69,16 @@ export async function googleFitCallbackHandler(req, res) {
 }
 
 // GET /api/googlefit/connect
-router.get('/connect', async (req, res) => {
-  try {
-    const platform = req.query.platform || 'web'
-    const url = createFitAuthUrl(req.user.id, REDIRECT_URI(), platform)
-    res.json({ url })
-  } catch (err) { res.status(500).json({ error: err.message }) }
+// Google Fit is being replaced by Health Connect (G-06) — new connections are
+// retired so the app stops being able to request the fitness.* OAuth scopes
+// at all (fewer restricted scopes = a simpler Google OAuth verification,
+// G-19). /status, /disconnect and /data stay working for the handful of
+// already-connected users until Fit's own API shuts down.
+router.get('/connect', async (_req, res) => {
+  res.status(410).json({
+    error: 'google_fit_retired',
+    message: 'Google Fit is being retired. Please connect Health Connect instead from the Health screen.',
+  })
 })
 
 // GET /api/googlefit/status
