@@ -11,7 +11,17 @@ const toFloat = (v) => (v === undefined || v === null || v === '') ? undefined :
 const toInt = (v) => (v === undefined || v === null || v === '') ? undefined : parseInt(v, 10)
 const toBool = (v) => (v === undefined || v === null || v === '') ? undefined : Boolean(v)
 const toStr = (v) => (v === undefined || v === null) ? undefined : String(v).trim() || null
-const toDate = (v) => (v === undefined || v === null || v === '') ? undefined : v
+// Every client (mobile's DateField.js and the web app) sends plain
+// YYYY-MM-DD for date pickers, never a full timestamp — but these are all
+// plain `DateTime` Prisma fields, and newer Prisma client versions reject a
+// date-only string for those ("premature end of input. Expected ISO-8601
+// DateTime."). Normalizing here, in the one shared helper, fixes every
+// date field in this file at once instead of each caller needing to know.
+const toDate = (v) => {
+  if (v === undefined || v === null || v === '') return undefined
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v}T00:00:00.000Z`
+  return v
+}
 
 // Matches the fixed chip options in mneva/src/Screen/finance/LoanScreen.js
 // exactly, and the enum create_loan's own tool schema already restricts the
@@ -205,13 +215,13 @@ financeRouter.post('/loans', async (req, res) => {
       interestCalculation: b.interestCalculation,
       emiAmount: toFloat(b.emiAmount),
       emiFrequency: b.emiFrequency || 'Monthly',
-      emiStartDate: b.emiStartDate,
+      emiStartDate: toDate(b.emiStartDate),
       nextEmiDate: toDate(b.nextEmiDate),
       emiEndDate: toDate(b.emiEndDate),
       numberOfEmis: toInt(b.numberOfEmis),
       emisPaid: toInt(b.emisPaid) ?? 0,
       emisRemaining: toInt(b.emisRemaining),
-      loanStartDate: b.loanStartDate,
+      loanStartDate: toDate(b.loanStartDate),
       loanMaturityDate: toDate(b.loanMaturityDate),
       autoDebit: toBool(b.autoDebit) ?? false,
       paymentAccount: toStr(b.paymentAccount),
@@ -255,13 +265,13 @@ financeRouter.patch('/loans/:id', async (req, res) => {
       ...(b.interestCalculation !== undefined && { interestCalculation: b.interestCalculation }),
       ...(b.emiAmount !== undefined && { emiAmount: toFloat(b.emiAmount) }),
       ...(b.emiFrequency !== undefined && { emiFrequency: b.emiFrequency }),
-      ...(b.emiStartDate !== undefined && { emiStartDate: b.emiStartDate }),
+      ...(b.emiStartDate !== undefined && { emiStartDate: toDate(b.emiStartDate) }),
       ...(b.nextEmiDate !== undefined && { nextEmiDate: toDate(b.nextEmiDate) }),
       ...(b.emiEndDate !== undefined && { emiEndDate: toDate(b.emiEndDate) }),
       ...(b.numberOfEmis !== undefined && { numberOfEmis: toInt(b.numberOfEmis) }),
       ...(b.emisPaid !== undefined && { emisPaid: toInt(b.emisPaid) }),
       ...(b.emisRemaining !== undefined && { emisRemaining: toInt(b.emisRemaining) }),
-      ...(b.loanStartDate !== undefined && { loanStartDate: b.loanStartDate }),
+      ...(b.loanStartDate !== undefined && { loanStartDate: toDate(b.loanStartDate) }),
       ...(b.loanMaturityDate !== undefined && { loanMaturityDate: toDate(b.loanMaturityDate) }),
       ...(b.autoDebit !== undefined && { autoDebit: toBool(b.autoDebit) }),
       ...(b.paymentAccount !== undefined && { paymentAccount: toStr(b.paymentAccount) }),
@@ -347,7 +357,7 @@ financeRouter.post('/emis', async (req, res) => {
         numberOfInstallments: toInt(b.numberOfInstallments),
         installmentsPaid: toInt(b.installmentsPaid) ?? 0,
         installmentsRemaining: toInt(b.installmentsRemaining),
-        startDate: b.startDate,
+        startDate: toDate(b.startDate),
         nextPaymentDate: toDate(b.nextPaymentDate),
         endDate: toDate(b.endDate),
         frequency: b.frequency || 'Monthly',
@@ -392,7 +402,7 @@ financeRouter.patch('/emis/:id', async (req, res) => {
       ...(b.numberOfInstallments !== undefined && { numberOfInstallments: toInt(b.numberOfInstallments) }),
       ...(b.installmentsPaid !== undefined && { installmentsPaid: toInt(b.installmentsPaid) }),
       ...(b.installmentsRemaining !== undefined && { installmentsRemaining: toInt(b.installmentsRemaining) }),
-      ...(b.startDate !== undefined && { startDate: b.startDate }),
+      ...(b.startDate !== undefined && { startDate: toDate(b.startDate) }),
       ...(b.nextPaymentDate !== undefined && { nextPaymentDate: toDate(b.nextPaymentDate) }),
       ...(b.endDate !== undefined && { endDate: toDate(b.endDate) }),
       ...(b.frequency !== undefined && { frequency: b.frequency }),
@@ -455,7 +465,7 @@ financeRouter.post('/subscriptions', async (req, res) => {
         billingCycle: b.billingCycle,
         tax: toFloat(b.tax),
         totalCharged: toFloat(b.totalCharged),
-        startDate: b.startDate,
+        startDate: toDate(b.startDate),
         nextBillingDate: toDate(b.nextBillingDate),
         renewalDate: toDate(b.renewalDate),
         cancellationDate: toDate(b.cancellationDate),
@@ -491,7 +501,7 @@ financeRouter.patch('/subscriptions/:id', async (req, res) => {
       ...(b.billingCycle !== undefined && { billingCycle: b.billingCycle }),
       ...(b.tax !== undefined && { tax: toFloat(b.tax) }),
       ...(b.totalCharged !== undefined && { totalCharged: toFloat(b.totalCharged) }),
-      ...(b.startDate !== undefined && { startDate: b.startDate }),
+      ...(b.startDate !== undefined && { startDate: toDate(b.startDate) }),
       ...(b.nextBillingDate !== undefined && { nextBillingDate: toDate(b.nextBillingDate) }),
       ...(b.renewalDate !== undefined && { renewalDate: toDate(b.renewalDate) }),
       ...(b.cancellationDate !== undefined && { cancellationDate: toDate(b.cancellationDate) }),
@@ -556,7 +566,7 @@ financeRouter.post('/bills', async (req, res) => {
         currency: b.currency || 'INR',
         billingCycle: b.billingCycle || 'Monthly',
         billDate: toDate(b.billDate),
-        dueDate: b.dueDate,
+        dueDate: toDate(b.dueDate),
         nextDueDate: toDate(b.nextDueDate),
         gracePeriod: toInt(b.gracePeriod),
         paymentMethod: toStr(b.paymentMethod),
@@ -596,7 +606,7 @@ financeRouter.patch('/bills/:id', async (req, res) => {
       ...(b.currency !== undefined && { currency: b.currency }),
       ...(b.billingCycle !== undefined && { billingCycle: b.billingCycle }),
       ...(b.billDate !== undefined && { billDate: toDate(b.billDate) }),
-      ...(b.dueDate !== undefined && { dueDate: b.dueDate }),
+      ...(b.dueDate !== undefined && { dueDate: toDate(b.dueDate) }),
       ...(b.nextDueDate !== undefined && { nextDueDate: toDate(b.nextDueDate) }),
       ...(b.gracePeriod !== undefined && { gracePeriod: toInt(b.gracePeriod) }),
       ...(b.paymentMethod !== undefined && { paymentMethod: toStr(b.paymentMethod) }),
@@ -742,8 +752,8 @@ financeRouter.post('/fixed-deposits', async (req, res) => {
         interestRate: toFloat(b.interestRate),
         compoundingFrequency: b.compoundingFrequency || 'Quarterly',
         interestPayout: b.interestPayout || 'On Maturity',
-        startDate: b.startDate,
-        maturityDate: b.maturityDate,
+        startDate: toDate(b.startDate),
+        maturityDate: toDate(b.maturityDate),
         tenureMonths: toInt(b.tenureMonths),
         maturityAmount: toFloat(b.maturityAmount),
         interestEarned: toFloat(b.interestEarned),
@@ -777,8 +787,8 @@ financeRouter.patch('/fixed-deposits/:id', async (req, res) => {
       ...(b.interestRate !== undefined && { interestRate: toFloat(b.interestRate) }),
       ...(b.compoundingFrequency !== undefined && { compoundingFrequency: b.compoundingFrequency }),
       ...(b.interestPayout !== undefined && { interestPayout: b.interestPayout }),
-      ...(b.startDate !== undefined && { startDate: b.startDate }),
-      ...(b.maturityDate !== undefined && { maturityDate: b.maturityDate }),
+      ...(b.startDate !== undefined && { startDate: toDate(b.startDate) }),
+      ...(b.maturityDate !== undefined && { maturityDate: toDate(b.maturityDate) }),
       ...(b.tenureMonths !== undefined && { tenureMonths: toInt(b.tenureMonths) }),
       ...(b.maturityAmount !== undefined && { maturityAmount: toFloat(b.maturityAmount) }),
       ...(b.interestEarned !== undefined && { interestEarned: toFloat(b.interestEarned) }),
