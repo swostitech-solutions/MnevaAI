@@ -129,13 +129,6 @@ export const memoryApi = {
   overview: () => api.get('/dashboard/memory-overview').then(r => r.data),
   records: (module, params = {}) => api.get(`/dashboard/memory-overview/records?${new URLSearchParams({ module, ...params })}`).then(r => r.data),
 }
-export const tmdbApi = {
-  trending: (window = 'week') => api.get(`/tmdb/trending?window=${window}`).then(r => r.data),
-  discover: (params = {}) => api.get(`/tmdb/discover?${new URLSearchParams(params)}`).then(r => r.data),
-  search: (query, type = 'movie') => api.get(`/tmdb/search?query=${encodeURIComponent(query)}&type=${type}`).then(r => r.data),
-  movie: (id) => api.get(`/tmdb/movie/${id}`).then(r => r.data),
-  genres: () => api.get('/tmdb/genres').then(r => r.data),
-}
 export const newsApi = {
   stories: (type = 'foryou', filter) => api.post('/news/stories', { type, filter }).then(r => r.data),
 }
