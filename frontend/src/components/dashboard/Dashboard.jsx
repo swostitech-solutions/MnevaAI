@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { agentApi, dashApi, notifApi, onboardingApi, gmailApi, googleFitApi } from '../../services/api'
+import { agentApi, dashApi, notifApi, onboardingApi, gmailApi, googleFitApi, trustApi } from '../../services/api'
 import { useAuth, useBrief, useOnboarding } from '../../store'
 import { useSocket } from '../../services/socket'
 import toast from 'react-hot-toast'
@@ -145,6 +145,7 @@ export default function Dashboard() {
 
   const { data: brief, isLoading } = useQuery({ queryKey: ['brief'], queryFn: dashApi.brief, staleTime: 60000 })
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: dashApi.stats, staleTime: 60000 })
+  const { data: trustSettings } = useQuery({ queryKey: ['trustSettings'], queryFn: trustApi.settings, staleTime: 60000 })
   const { data: notifData } = useQuery({ queryKey: ['notifications'], queryFn: notifApi.all, staleTime: 15000 })
 
   const dbNotifs = notifData?.notifications || []
@@ -198,13 +199,19 @@ export default function Dashboard() {
     { label: 'Trust Score',       value: `${stats?.trustScore ?? 0}%`,     color: 'var(--violet)', change: 'Builds with approvals' },
   ]
 
+  // Real per-domain trust (same 4 domains + levels Settings.jsx's trust tab
+  // reads from /trust/settings) — this used to be a hardcoded mock array
+  // with made-up domains/percentages that didn't match the real model at all.
+  const TRUST_LEVEL_COLOR = { 1: 'var(--ink4)', 2: 'var(--warn)', 3: 'var(--pulse2)', 4: 'var(--go)' }
   const TRUST_DOMAINS = [
-    { icon: '💡', name: 'Utility Bills',  level: 3, pct: 90, color: 'var(--go)' },
-    { icon: '🚗', name: 'Cab Booking',    level: 3, pct: 85, color: 'var(--go)' },
-    { icon: '📧', name: 'Email Drafting', level: 2, pct: 62, color: 'var(--pulse2)' },
-    { icon: '📈', name: 'Finance / SIP',  level: 2, pct: 42, color: 'var(--warn)' },
-    { icon: '🏥', name: 'Health',         level: 1, pct: 26, color: 'var(--ink4)' },
-  ]
+    { icon: '💳', name: 'Finance', key: 'finance' },
+    { icon: '📧', name: 'Communications', key: 'communications' },
+    { icon: '❤️', name: 'Health', key: 'health' },
+    { icon: '👥', name: 'Family', key: 'family' },
+  ].map(d => {
+    const level = trustSettings?.domains?.[d.key]?.level || 1
+    return { ...d, level, pct: (level / 4) * 100, color: TRUST_LEVEL_COLOR[level] }
+  })
 
   const handleApprove = async (action) => {
     try {

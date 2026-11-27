@@ -31,6 +31,8 @@ export const authApi = {
   register:     d => api.post('/auth/register', d).then(r => r.data),
   verifyEmail:  d => api.post('/auth/verify-email', d).then(r => r.data),
   resendOtp:    d => api.post('/auth/resend-otp', d).then(r => r.data),
+  forgotPassword: d => api.post('/auth/forgot-password', d).then(r => r.data),
+  resetPassword:  d => api.post('/auth/reset-password', d).then(r => r.data),
   me:           () => api.get('/auth/me').then(r => r.data),
   updateAvatar: (avatar) => api.patch('/auth/avatar', { avatar }).then(r => r.data),
 }
@@ -71,12 +73,111 @@ export const finApi = {
   portfolio: ()          => api.get('/finance/portfolio').then(r => r.data),
   spending:  (p = 'month') => api.get(`/finance/spending?period=${p}`).then(r => r.data),
   pay:       d           => api.post('/finance/pay', d).then(r => r.data),
+  createBill: d => api.post('/finance/bills', d).then(r => r.data),
+  updateBill: (id, d) => api.patch(`/finance/bills/${id}`, d).then(r => r.data),
+  deleteBill: id => api.delete(`/finance/bills/${id}`).then(r => r.data),
+
+  loans:       () => api.get('/finance/loans').then(r => r.data.loans),
+  createLoan:  d => api.post('/finance/loans', d).then(r => r.data),
+  updateLoan:  (id, d) => api.patch(`/finance/loans/${id}`, d).then(r => r.data),
+  deleteLoan:  id => api.delete(`/finance/loans/${id}`).then(r => r.data),
+
+  emis:        () => api.get('/finance/emis').then(r => r.data.emis),
+  createEmi:   d => api.post('/finance/emis', d).then(r => r.data),
+  updateEmi:   (id, d) => api.patch(`/finance/emis/${id}`, d).then(r => r.data),
+  deleteEmi:   id => api.delete(`/finance/emis/${id}`).then(r => r.data),
+
+  expenses:       () => api.get('/finance/expenses').then(r => r.data.expenses),
+  createExpense:  d => api.post('/finance/expenses', d).then(r => r.data),
+  updateExpense:  (id, d) => api.patch(`/finance/expenses/${id}`, d).then(r => r.data),
+  deleteExpense:  id => api.delete(`/finance/expenses/${id}`).then(r => r.data),
+
+  fixedDeposits:       () => api.get('/finance/fixed-deposits').then(r => r.data.fixedDeposits),
+  createFixedDeposit:  d => api.post('/finance/fixed-deposits', d).then(r => r.data),
+  updateFixedDeposit:  (id, d) => api.patch(`/finance/fixed-deposits/${id}`, d).then(r => r.data),
+  deleteFixedDeposit:  id => api.delete(`/finance/fixed-deposits/${id}`).then(r => r.data),
+
+  holdings:       () => api.get('/finance/portfolio/holdings').then(r => r.data.holdings),
+  createHolding:  d => api.post('/finance/portfolio/holdings', d).then(r => r.data),
+  updateHolding:  (id, d) => api.patch(`/finance/portfolio/holdings/${id}`, d).then(r => r.data),
+  deleteHolding:  id => api.delete(`/finance/portfolio/holdings/${id}`).then(r => r.data),
+
+  subscriptions:       () => api.get('/finance/subscriptions').then(r => r.data.subscriptions),
+  createSubscription:  d => api.post('/finance/subscriptions', d).then(r => r.data),
+  updateSubscription:  (id, d) => api.patch(`/finance/subscriptions/${id}`, d).then(r => r.data),
+  deleteSubscription:  id => api.delete(`/finance/subscriptions/${id}`).then(r => r.data),
 }
 export const commsApi = {
   emails:  (f = 'all', limit = 20) => api.get(`/comms/emails?filter=${f}&limit=${limit}`).then(r => r.data),
   getEmail:(id)                    => api.get(`/comms/emails/${id}`).then(r => r.data),
   draft:   (id)                    => api.get(`/comms/emails/${id}/draft`).then(r => r.data),
   send:    (id, body)              => api.post(`/comms/emails/${id}/send`, body).then(r => r.data),
+  insights: () => api.get('/comms/insights').then(r => r.data),
+  dismissInsight: (id) => api.post(`/comms/insights/${id}/dismiss`).then(r => r.data),
+  confirmInsight: (id) => api.post(`/comms/insights/${id}/confirm`).then(r => r.data),
+}
+export const tasksApi = {
+  list: () => api.get('/tasks').then(r => r.data),
+  create: (d) => api.post('/tasks', d).then(r => r.data),
+  updateStatus: (id, status) => api.patch(`/tasks/${id}`, { status }).then(r => r.data),
+}
+export const priorityApi = {
+  confirmations: () => api.get('/priorities/confirmations').then(r => r.data.confirmations),
+  setConfirmation: (itemKey, action) => api.post('/priorities/confirmations', { itemKey, action }).then(r => r.data),
+}
+export const memoryApi = {
+  overview: () => api.get('/dashboard/memory-overview').then(r => r.data),
+  records: (module, params = {}) => api.get(`/dashboard/memory-overview/records?${new URLSearchParams({ module, ...params })}`).then(r => r.data),
+}
+export const tmdbApi = {
+  trending: (window = 'week') => api.get(`/tmdb/trending?window=${window}`).then(r => r.data),
+  discover: (params = {}) => api.get(`/tmdb/discover?${new URLSearchParams(params)}`).then(r => r.data),
+  search: (query, type = 'movie') => api.get(`/tmdb/search?query=${encodeURIComponent(query)}&type=${type}`).then(r => r.data),
+  movie: (id) => api.get(`/tmdb/movie/${id}`).then(r => r.data),
+  genres: () => api.get('/tmdb/genres').then(r => r.data),
+}
+export const newsApi = {
+  stories: (type = 'foryou', filter) => api.post('/news/stories', { type, filter }).then(r => r.data),
+}
+
+export const familyApi = {
+  connections: () => api.get('/family/connections').then(r => r.data.connections),
+  createConnection: (d) => api.post('/family/connections', d).then(r => r.data),
+  respondConnection: (id, status) => api.patch(`/family/connections/${id}`, { status }).then(r => r.data),
+  deleteConnection: (id) => api.delete(`/family/connections/${id}`).then(r => r.data),
+  tasks: () => api.get('/family/tasks').then(r => r.data.tasks),
+  createTask: (d) => api.post('/family/tasks', d).then(r => r.data),
+  updateTask: (id, d) => api.patch(`/family/tasks/${id}`, d).then(r => r.data),
+  updateTaskStatus: (id, status) => api.patch(`/family/tasks/${id}/status`, { status }).then(r => r.data),
+  toggleChecklist: (id, itemId) => api.patch(`/family/tasks/${id}/checklist`, { itemId }).then(r => r.data),
+  addComment: (id, text) => api.post(`/family/tasks/${id}/comments`, { text }).then(r => r.data),
+  deleteTask: (id) => api.delete(`/family/tasks/${id}`).then(r => r.data),
+  medications: () => api.get('/family/parent-medications').then(r => r.data.medications),
+  createMedication: (d) => api.post('/family/parent-medications', d).then(r => r.data),
+  updateMedication: (id, d) => api.patch(`/family/parent-medications/${id}`, d).then(r => r.data),
+  deleteMedication: (id) => api.delete(`/family/parent-medications/${id}`).then(r => r.data),
+}
+export const familyItemsApi = {
+  list: (domain) => api.get(`/family-items/${domain}`).then(r => r.data.items),
+  create: (domain, d) => api.post(`/family-items/${domain}`, d).then(r => r.data),
+  update: (domain, id, d) => api.patch(`/family-items/${domain}/${id}`, d).then(r => r.data),
+  remove: (domain, id) => api.delete(`/family-items/${domain}/${id}`).then(r => r.data),
+}
+export const vaultApi = {
+  list: () => api.get('/vault').then(r => r.data.files),
+  upload: (d) => api.post('/vault/upload', d).then(r => r.data),
+  download: (id) => api.get(`/vault/${id}/download`).then(r => r.data),
+  remove: (id) => api.delete(`/vault/${id}`).then(r => r.data),
+}
+export const petApi = {
+  list: () => api.get('/pet').then(r => r.data.pets),
+  create: (d) => api.post('/pet', d).then(r => r.data),
+  update: (id, d) => api.patch(`/pet/${id}`, d).then(r => r.data),
+  remove: (id) => api.delete(`/pet/${id}`).then(r => r.data),
+  reminders: (petId) => api.get(`/pet/${petId}/reminders`).then(r => r.data.reminders),
+  createReminder: (petId, d) => api.post(`/pet/${petId}/reminders`, d).then(r => r.data),
+  updateReminder: (petId, id, d) => api.patch(`/pet/${petId}/reminders/${id}`, d).then(r => r.data),
+  deleteReminder: (petId, id) => api.delete(`/pet/${petId}/reminders/${id}`).then(r => r.data),
 }
 export const gmailApi = {
   configStatus: () => api.get('/gmail/config-status').then(r => r.data),
@@ -98,7 +199,7 @@ export const calendarApi = {
   connect: () => api.get('/calendar/connect').then(r => r.data),
   status: () => api.get('/calendar/status').then(r => r.data),
   disconnect: () => api.post('/calendar/disconnect').then(r => r.data),
-  events: (timeMin, timeMax) => api.get(`/calendar/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`).then(r => r.data),
+  events: (timeMin, timeMax) => api.get(`/calendar/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`).then(r => r.data.events),
   createMeeting: (d) => api.post('/calendar/meetings', d).then(r => r.data),
 }
 export const healthApi = {
@@ -151,17 +252,46 @@ export const gdriveApi = {
   connect:    () => api.get('/gdrive/connect').then(r => r.data),
   status:     () => api.get('/gdrive/status').then(r => r.data),
   disconnect: () => api.post('/gdrive/disconnect').then(r => r.data),
+  files:      (type = 'drive') => api.get(`/gdrive/files?type=${type}`).then(r => r.data.files),
 }
 export const gtasksApi = {
   connect:    () => api.get('/gtasks/connect').then(r => r.data),
   status:     () => api.get('/gtasks/status').then(r => r.data),
   disconnect: () => api.post('/gtasks/disconnect').then(r => r.data),
+  list:       () => api.get('/gtasks/list').then(r => r.data.tasks),
+  complete:   (listId, taskId) => api.patch(`/gtasks/${listId}/${taskId}/complete`).then(r => r.data),
 }
 export const trustApi = {
   status: () => api.get('/trust/status').then(r => r.data),
   settings: () => api.get('/trust/settings').then(r => r.data),
-  updateLevel: (level) => api.patch('/trust/level', { level }).then(r => r.data),
-  upgrade: () => api.post('/trust/upgrade').then(r => r.data),
+  updateSettings: (patch) => api.patch('/trust/settings', patch).then(r => r.data),
+  setDomainLevel: (domain, level) => api.patch('/trust/domain-level', { domain, level }).then(r => r.data),
+  confirmLevel: (domain, level) => api.post('/trust/confirm-level', { domain, level }).then(r => r.data),
+  declineLevel: (domain) => api.post('/trust/decline-level', { domain }).then(r => r.data),
+  leaveInnerCircle: (domain) => api.post('/trust/leave-inner-circle', { domain }).then(r => r.data),
+}
+export const slackApi = {
+  configStatus: () => api.get('/slack/config-status').then(r => r.data),
+  connect: () => api.get('/slack/connect').then(r => r.data),
+  status: () => api.get('/slack/status').then(r => r.data),
+  disconnect: () => api.post('/slack/disconnect').then(r => r.data),
+  channels: () => api.get('/slack/channels').then(r => r.data.channels),
+  channelMessages: (id, limit = 30) => api.get(`/slack/channels/${id}/messages?limit=${limit}`).then(r => r.data.messages),
+  sendTest: (text) => api.post('/slack/send-test', { text }).then(r => r.data),
+}
+export const outlookApi = {
+  configStatus: () => api.get('/outlook/config-status').then(r => r.data),
+  connect: () => api.get('/outlook/connect').then(r => r.data),
+  status: () => api.get('/outlook/status').then(r => r.data),
+  disconnect: () => api.post('/outlook/disconnect').then(r => r.data),
+  emails: (filter = 'all', limit = 20) => api.get(`/outlook/emails?filter=${filter}&limit=${limit}`).then(r => r.data),
+  getEmail: (id) => api.get(`/outlook/emails/${id}`).then(r => r.data),
+  sendEmail: (recipient, subject, body) => api.post('/outlook/emails/send', { recipient, subject, body }).then(r => r.data),
+  events: (limit = 20) => api.get(`/outlook/events?limit=${limit}`).then(r => r.data),
+  createEvent: (d) => api.post('/outlook/events', d).then(r => r.data),
+  files: (type = 'all', limit = 50) => api.get(`/outlook/files?type=${type}&limit=${limit}`).then(r => r.data.files),
+  tasks: () => api.get('/outlook/tasks').then(r => r.data.tasks),
+  completeTask: (listId, taskId) => api.patch(`/outlook/tasks/${listId}/${taskId}/complete`).then(r => r.data),
 }
 export const onboardingApi = {
   profile:  ()             => api.get('/onboarding/profile').then(r => r.data),

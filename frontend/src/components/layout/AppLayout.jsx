@@ -16,12 +16,21 @@ const NAV_BASE = [
   { path: '/health',   icon: '❤️', label: 'Health',         bc: 'var(--go)' },
   { path: '/lifeops',  icon: '🏠', label: 'Life Ops' },
   { path: '/contacts', icon: '👥', label: 'Contacts' },
+  { path: '/workspace', icon: '🧰', label: 'Workspace' },
+  { path: '/family', icon: '👨‍👩‍👧', label: 'Family' },
+  { path: '/priorities', icon: '🎯', label: 'Priorities' },
+  { path: '/search',   icon: '🔍', label: 'Search' },
+  { path: '/alerts',   icon: '🔔', label: 'Alerts' },
+  { path: '/discovery', icon: '🧭', label: 'Discovery' },
   { path: '/twin',     icon: '📓', label: 'Twin Diary' },
+  { path: '/vault',    icon: '🔒', label: 'Vault' },
+  { path: '/memory',   icon: '🧠', label: 'Memory' },
+  { path: '/subscription', icon: '⭐', label: 'Subscription' },
   { path: '/settings',   icon: '⚙️', label: 'Settings' },
   { path: '/ai-profile', icon: '🧠', label: 'AI Profile' },
 ]
 
-const TITLES = { '/': 'Daily Brief', '/chat': 'Ask Mneva', '/finance': 'Finance & Payments', '/comms': 'Communications', '/health': 'Health & Wellness', '/lifeops': 'Life Operations', '/contacts': 'Contacts', '/twin': 'Twin Diary', '/settings': 'Settings & Trust', '/ai-profile': 'AI Profile' }
+const TITLES = { '/': 'Daily Brief', '/chat': 'Ask Mneva', '/finance': 'Finance & Payments', '/comms': 'Communications', '/health': 'Health & Wellness', '/lifeops': 'Life Operations', '/contacts': 'Contacts', '/workspace': 'Workspace', '/family': 'Family', '/priorities': 'Priorities', '/search': 'Search', '/alerts': 'Alerts', '/discovery': 'Discovery', '/twin': 'Twin Diary', '/vault': 'Vault', '/memory': 'Memory Overview', '/subscription': 'Subscription', '/settings': 'Settings & Trust', '/ai-profile': 'AI Profile' }
 
 // ── Professional chime using Web Audio API ───────────────────────────────────
 function playReminderChime() {
@@ -207,10 +216,10 @@ export default function AppLayout() {
           {NAV.slice(0, 2).map(item => <SidebarItem key={item.path} item={item} active={loc.pathname === item.path} collapsed={sidebarCollapsed} onClick={() => nav(item.path)} />)}
 
           {!sidebarCollapsed && <div style={{ fontSize: 9.5, color: 'var(--ink4)', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '10px 8px 5px', marginTop: 4 }}>Domains</div>}
-          {NAV.slice(2, 7).map(item => <SidebarItem key={item.path} item={item} active={loc.pathname === item.path} collapsed={sidebarCollapsed} onClick={() => nav(item.path)} />)}
+          {NAV.slice(2, 13).map(item => <SidebarItem key={item.path} item={item} active={loc.pathname === item.path || loc.pathname.startsWith(item.path + '/')} collapsed={sidebarCollapsed} onClick={() => nav(item.path)} />)}
 
           {!sidebarCollapsed && <div style={{ fontSize: 9.5, color: 'var(--ink4)', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '10px 8px 5px', marginTop: 4 }}>System</div>}
-          {NAV.slice(7).map(item => <SidebarItem key={item.path} item={item} active={loc.pathname === item.path} collapsed={sidebarCollapsed} onClick={() => nav(item.path)} />)}
+          {NAV.slice(13).map(item => <SidebarItem key={item.path} item={item} active={loc.pathname === item.path} collapsed={sidebarCollapsed} onClick={() => nav(item.path)} />)}
         </nav>
 
         {/* User */}

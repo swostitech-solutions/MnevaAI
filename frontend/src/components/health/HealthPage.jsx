@@ -65,11 +65,13 @@ export default function HealthPage() {
   const { data: medsData }  = useQuery({ queryKey: ['medications'],  queryFn: healthApi.meds,  staleTime: 5 * 60000 })
   const { data: logData, refetch: refetchLog } = useQuery({ queryKey: ['health-log'], queryFn: healthApi.log, staleTime: 0 })
 
-  const handleConnect = async () => {
-    try {
-      const { url } = await googleFitApi.connect()
-      window.location.href = url
-    } catch (err) { toast.error(err.message || 'Could not connect Google Fit') }
+  // Google Fit (G-06) is being retired — /api/googlefit/connect now returns
+  // 410 for everyone, so offering it as a live connect option here would
+  // just error. Health Connect replaces it, but it's Android-only (native
+  // permission grants, no OAuth/browser flow), so there's no web
+  // equivalent to offer — only point people at the mobile app.
+  const handleConnect = () => {
+    toast('Google Fit is being retired. Open the Mneva mobile app and connect Health Connect from the Health screen instead.', { duration: 6000 })
   }
 
   const handleSync = async () => {
@@ -112,11 +114,11 @@ export default function HealthPage() {
           <span style={{ fontSize: 28 }}>❤️</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>Connect a health source</div>
-            <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Use Google Fit (Android) or sync manually from Apple Health / Google Health</div>
+            <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Google Fit is being retired — connect Health Connect from the Mneva mobile app, or sync manually here</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button className="btn-secondary" style={{ fontSize: 12, padding: '8px 14px' }} onClick={openSync}>📲 Sync manually</button>
-            <button className="btn-primary"   style={{ fontSize: 12, padding: '8px 14px' }} onClick={handleConnect}>Connect Google Fit</button>
+            <button className="btn-ghost"   style={{ fontSize: 12, padding: '8px 14px' }} onClick={handleConnect}>About Google Fit</button>
           </div>
         </motion.div>
       )}
@@ -124,8 +126,8 @@ export default function HealthPage() {
       {/* Source + status bar */}
       {(fitConnected || metrics?.source) && (
         <motion.div variants={up} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          {fitConnected && <div className="anim-pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--go)', flexShrink: 0 }} />}
-          {src && <span style={{ fontSize: 12, color: src.color, fontWeight: 600 }}>{src.icon} {src.label} · {fitConnected ? 'Live data' : `Last synced ${metrics?.lastUpdated ? new Date(metrics.lastUpdated).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}`}</span>}
+          {fitConnected && <div className="anim-pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--warn)', flexShrink: 0 }} />}
+          {src && <span style={{ fontSize: 12, color: src.color, fontWeight: 600 }}>{src.icon} {src.label} · {fitConnected ? 'Live data — being retired, switch to Health Connect on the app' : `Last synced ${metrics?.lastUpdated ? new Date(metrics.lastUpdated).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}`}</span>}
           {<button style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink3)', background: 'none', border: '1px solid var(--rim1)', borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }} onClick={openSync}>📲 Sync data</button>}
         </motion.div>
       )}

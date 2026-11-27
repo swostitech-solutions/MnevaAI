@@ -170,7 +170,7 @@ function OtpInput({ value, onChange }) {
 }
 
 export default function LoginPage() {
-  const [mode, setMode] = useState('login') // 'login' | 'register' | 'verify'
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'verify' | 'forgot' | 'resetpw'
   const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '', agreedToTerms: false })
   const [otp, setOtp] = useState('')
   const [pendingEmail, setPendingEmail] = useState('')
@@ -180,7 +180,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)
   const [policyModal, setPolicyModal] = useState(null) // 'terms' | 'privacy' | null
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const { setAuth } = useAuth()
+  const navigate = useNavigate()
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -253,10 +256,48 @@ export default function LoginPage() {
     } finally { setLoading(false) }
   }
 
+  const submitForgot = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const data = await authApi.forgotPassword({ email: form.email.trim() })
+      setPendingEmail(form.email.trim())
+      setOtp('')
+      setMode('resetpw')
+      if (data.devOtp) {
+        setDevOtp(data.devOtp)
+        setOtp(data.devOtp)
+        toast('📋 OTP auto-filled — domain not verified yet', { icon: '⚠️' })
+      } else {
+        toast.success('If that email is registered, a reset code has been sent.')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not send reset code')
+    } finally { setLoading(false) }
+  }
+
+  const submitResetPassword = async (e) => {
+    e.preventDefault()
+    if (otp.length < 6) { toast.error('Enter the 6-digit code'); return }
+    if (newPassword.length < 8) { toast.error('New password must be at least 8 characters'); return }
+    if (newPassword !== confirmNewPassword) { toast.error('Passwords do not match'); return }
+    setLoading(true)
+    try {
+      const data = await authApi.resetPassword({ email: pendingEmail, otp, newPassword })
+      setAuth(data.user, data.token)
+      toast.success('Password reset — you are now signed in.')
+      navigate('/', { replace: true })
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Reset failed')
+    } finally { setLoading(false) }
+  }
+
   const resendOtp = async () => {
     if (resendCooldown > 0) return
     try {
-      const data = await authApi.resendOtp({ email: pendingEmail })
+      const data = mode === 'resetpw'
+        ? await authApi.forgotPassword({ email: pendingEmail })
+        : await authApi.resendOtp({ email: pendingEmail })
       setResendCooldown(60)
       if (data.devOtp) {
         setDevOtp(data.devOtp)
@@ -317,9 +358,12 @@ export default function LoginPage() {
                     {loading ? 'Signing in…' : 'Sign In'}
                   </button>
                 </form>
-                <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--ink3)' }}>
+                <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--ink3)', marginBottom: 8 }}>
                   No account?{' '}
                   <span onClick={() => setMode('register')} style={{ color: 'var(--pulse2)', cursor: 'pointer', fontWeight: 600 }}>Create one</span>
+                </div>
+                <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--ink4)' }}>
+                  <span onClick={() => { setForm(f => ({ ...f, password: '' })); setMode('forgot') }} style={{ cursor: 'pointer', textDecoration: 'underline' }}>Forgot password?</span>
                 </div>
               </div>
             </motion.div>
@@ -429,6 +473,76 @@ export default function LoginPage() {
                 </div>
                 <div style={{ marginTop: 14, fontSize: 12, color: 'var(--ink4)' }}>
                   <span onClick={() => setMode('register')} style={{ cursor: 'pointer', textDecoration: 'underline' }}>← Back to sign up</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── FORGOT PASSWORD — request code ── */}
+          {mode === 'forgot' && (
+            <motion.div key="forgot" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
+              <div style={{ background: 'var(--depth2)', border: '1px solid var(--rim2)', borderRadius: 20, padding: 36, boxShadow: '0 24px 80px rgba(0,0,0,0.5)' }}>
+                <div style={{ marginBottom: 24 }}>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Reset your password</h2>
+                  <p style={{ fontSize: 13, color: 'var(--ink3)' }}>Enter your email and we'll send a reset code.</p>
+                </div>
+                <form onSubmit={submitForgot}>
+                  <div style={{ ...fieldStyle, marginBottom: 24 }}>
+                    <label style={labelStyle}>Email Address</label>
+                    <input style={inputStyle} type="email" placeholder="you@example.com" required value={form.email} onChange={e => set('email', e.target.value)} />
+                  </div>
+                  <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: 14, marginBottom: 10 }}>
+                    {loading ? 'Sending…' : 'Send Reset Code'}
+                  </button>
+                </form>
+                <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--ink3)' }}>
+                  <span onClick={() => setMode('login')} style={{ color: 'var(--pulse2)', cursor: 'pointer', fontWeight: 600 }}>← Back to sign in</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── RESET PASSWORD — code + new password ── */}
+          {mode === 'resetpw' && (
+            <motion.div key="resetpw" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
+              <div style={{ background: 'var(--depth2)', border: '1px solid var(--rim2)', borderRadius: 20, padding: 36, boxShadow: '0 24px 80px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+                <div style={{ fontSize: 44, marginBottom: 12 }}>🔑</div>
+                <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Enter reset code</h2>
+                <p style={{ fontSize: 13, color: 'var(--ink3)', lineHeight: 1.6, marginBottom: 4 }}>Sent to</p>
+                <p style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--pulse2)', marginBottom: 4 }}>{pendingEmail}</p>
+
+                {devOtp && (
+                  <div style={{ margin: '12px 0 0', padding: '10px 14px', background: 'rgba(255,176,32,0.08)', border: '1px solid rgba(255,176,32,0.3)', borderRadius: 10, fontSize: 12, color: '#ffb020', textAlign: 'left' }}>
+                    ⚠️ <strong>Dev mode</strong> — Resend domain not verified. Your OTP is auto-filled: <strong style={{ fontFamily: 'monospace', letterSpacing: 2 }}>{devOtp}</strong>
+                  </div>
+                )}
+
+                <form onSubmit={submitResetPassword}>
+                  <OtpInput value={otp} onChange={setOtp} />
+                  <div style={{ ...fieldStyle, textAlign: 'left' }}>
+                    <label style={labelStyle}>New Password</label>
+                    <input style={inputStyle} type="password" placeholder="Min. 8 characters" required minLength={8} value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                    <PasswordStrength password={newPassword} />
+                  </div>
+                  <div style={{ ...fieldStyle, textAlign: 'left' }}>
+                    <label style={labelStyle}>Confirm New Password</label>
+                    <input style={{ ...inputStyle, borderColor: confirmNewPassword && confirmNewPassword !== newPassword ? '#ff4560' : undefined }} type="password" placeholder="Re-enter password" required value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} />
+                  </div>
+                  <button className="btn-primary" type="submit" disabled={loading || otp.length < 6} style={{ width: '100%', padding: '12px', fontSize: 14, marginBottom: 14 }}>
+                    {loading ? 'Resetting…' : 'Reset Password & Sign In →'}
+                  </button>
+                </form>
+
+                <div style={{ fontSize: 13, color: 'var(--ink3)' }}>
+                  Didn't receive it?{' '}
+                  <span
+                    onClick={resendOtp}
+                    style={{ color: resendCooldown > 0 ? 'var(--ink4)' : 'var(--pulse2)', cursor: resendCooldown > 0 ? 'default' : 'pointer', fontWeight: 600 }}>
+                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
+                  </span>
+                </div>
+                <div style={{ marginTop: 14, fontSize: 12, color: 'var(--ink4)' }}>
+                  <span onClick={() => setMode('login')} style={{ cursor: 'pointer', textDecoration: 'underline' }}>← Back to sign in</span>
                 </div>
               </div>
             </motion.div>
