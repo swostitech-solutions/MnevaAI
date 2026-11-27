@@ -1,5 +1,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { notifApi } from '../../services/api'
@@ -12,13 +13,10 @@ const TYPE_ICON = { email: '📧', sms: '💬', calendar: '📅', reminder: '�
 
 export default function PhoneAlertsPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { data, isLoading } = useQuery({ queryKey: ['notifications'], queryFn: notifApi.all })
   const notifications = Array.isArray(data) ? data : data?.notifications || []
 
-  const markRead = async (id) => {
-    try { await notifApi.markRead(id); qc.invalidateQueries({ queryKey: ['notifications'] }) }
-    catch { toast.error('Could not mark as read') }
-  }
   const readAll = async () => {
     try { await notifApi.readAll(); toast.success('All marked as read'); qc.invalidateQueries({ queryKey: ['notifications'] }) }
     catch { toast.error('Could not mark all as read') }
@@ -36,8 +34,8 @@ export default function PhoneAlertsPage() {
       {notifications.length > 0 && (
         <motion.div variants={up} className="card" style={{ padding: 8 }}>
           {notifications.map(n => (
-            <div key={n.id} onClick={() => !n.read && markRead(n.id)}
-              style={{ display: 'flex', gap: 12, padding: '13px 14px', borderRadius: 10, cursor: n.read ? 'default' : 'pointer', background: n.read ? 'transparent' : 'rgba(61,139,255,0.05)' }}>
+            <div key={n.id} onClick={() => navigate(`/alerts/${n.id}`)}
+              style={{ display: 'flex', gap: 12, padding: '13px 14px', borderRadius: 10, cursor: 'pointer', background: n.read ? 'transparent' : 'rgba(61,139,255,0.05)' }}>
               <span style={{ fontSize: 18 }}>{TYPE_ICON[n.type] || '🔔'}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: n.read ? 400 : 700 }}>{n.title}</div>

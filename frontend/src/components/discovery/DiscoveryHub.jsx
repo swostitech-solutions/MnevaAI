@@ -5,11 +5,11 @@ import { Link } from 'react-router-dom'
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } }
 const up = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.22 } } }
 
-// Mirrors mobile's MediaDiscovery.js hub — Music/Sports Discovery are
-// intentionally left out (no backend route for either, confirmed earlier;
-// user chose to defer rather than add new backend scope for this pass).
+// Mirrors mobile's MediaDiscovery.js hub.
 const LINKS = [
   { to: '/discovery/movies', icon: '🎬', label: 'Movies' },
+  { to: '/discovery/music', icon: '🎵', label: 'Music' },
+  { to: '/discovery/sports', icon: '🏆', label: 'Sports' },
   { to: '/discovery/news', icon: '📰', label: 'News' },
 ]
 

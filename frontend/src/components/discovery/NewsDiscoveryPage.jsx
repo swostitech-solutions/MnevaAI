@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { newsApi } from '../../services/api'
 import EmptyState from '../ui/EmptyState'
@@ -13,6 +14,7 @@ const TABS = [
 ]
 
 export default function NewsDiscoveryPage() {
+  const navigate = useNavigate()
   const [tab, setTab] = useState('foryou')
   const { data, isLoading } = useQuery({ queryKey: ['news', tab], queryFn: () => newsApi.stories(tab), staleTime: 10 * 60000 })
 
@@ -31,7 +33,7 @@ export default function NewsDiscoveryPage() {
       {isLoading && <div className="skeleton" style={{ height: 200, borderRadius: 14 }} />}
       {!isLoading && !data?.stories?.length && <EmptyState icon="📰" title="No stories right now" body="Try again in a bit." />}
       {data?.stories?.map((s, i) => (
-        <motion.div variants={up} key={i} className="card" style={{ padding: 18, marginBottom: 12 }}>
+        <motion.div variants={up} key={i} className="card" style={{ padding: 18, marginBottom: 12, cursor: 'pointer' }} onClick={() => navigate('/discovery/news/story', { state: { story: s } })}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
             <span className="badge badge-pulse">{s.category}</span>
             <span style={{ fontSize: 11, color: 'var(--ink3)' }}>{s.time} · {s.readTime}</span>

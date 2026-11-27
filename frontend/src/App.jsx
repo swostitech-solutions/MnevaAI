@@ -35,8 +35,13 @@ import PhoneAlertsPage from './components/account/PhoneAlertsPage'
 import MorningBriefingPage from './components/account/MorningBriefingPage'
 import PrioritiesPage from './components/account/PrioritiesPage'
 import VaultPage from './components/account/VaultPage'
+import ProfilePage from './components/account/ProfilePage'
+import PhoneAlertDetailPage from './components/account/PhoneAlertDetailPage'
 import MovieDiscoveryPage from './components/discovery/MovieDiscoveryPage'
 import NewsDiscoveryPage from './components/discovery/NewsDiscoveryPage'
+import NewsStoryPage from './components/discovery/NewsStoryPage'
+import MusicDiscoveryPage from './components/discovery/MusicDiscoveryPage'
+import SportsDiscoveryPage from './components/discovery/SportsDiscoveryPage'
 import DiscoveryHub from './components/discovery/DiscoveryHub'
 import FamilyHub from './components/family/FamilyHub'
 import FamilyTasksPage from './components/family/FamilyTasksPage'
@@ -122,11 +127,16 @@ export default function App() {
         <Route path="search" element={<SearchPage />} />
         <Route path="memory" element={<MemoryOverviewPage />} />
         <Route path="alerts" element={<PhoneAlertsPage />} />
+        <Route path="alerts/:id" element={<PhoneAlertDetailPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route path="briefing" element={<MorningBriefingPage />} />
         <Route path="priorities" element={<PrioritiesPage />} />
         <Route path="discovery" element={<DiscoveryHub />} />
         <Route path="discovery/movies" element={<MovieDiscoveryPage />} />
         <Route path="discovery/news" element={<NewsDiscoveryPage />} />
+        <Route path="discovery/news/story" element={<NewsStoryPage />} />
+        <Route path="discovery/music" element={<MusicDiscoveryPage />} />
+        <Route path="discovery/sports" element={<SportsDiscoveryPage />} />
         <Route path="family" element={<FamilyHub />} />
         <Route path="family/tasks" element={<FamilyTasksPage />} />
         <Route path="family/medications" element={<ParentMedicationPage />} />

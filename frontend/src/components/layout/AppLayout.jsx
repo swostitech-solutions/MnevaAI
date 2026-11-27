@@ -24,13 +24,14 @@ const NAV_BASE = [
   { path: '/discovery', icon: '🧭', label: 'Discovery' },
   { path: '/twin',     icon: '📓', label: 'Twin Diary' },
   { path: '/vault',    icon: '🔒', label: 'Vault' },
+  { path: '/profile',  icon: '👤', label: 'Profile' },
   { path: '/memory',   icon: '🧠', label: 'Memory' },
   { path: '/subscription', icon: '⭐', label: 'Subscription' },
   { path: '/settings',   icon: '⚙️', label: 'Settings' },
   { path: '/ai-profile', icon: '🧠', label: 'AI Profile' },
 ]
 
-const TITLES = { '/': 'Daily Brief', '/chat': 'Ask Mneva', '/finance': 'Finance & Payments', '/comms': 'Communications', '/health': 'Health & Wellness', '/lifeops': 'Life Operations', '/contacts': 'Contacts', '/workspace': 'Workspace', '/family': 'Family', '/priorities': 'Priorities', '/search': 'Search', '/alerts': 'Alerts', '/discovery': 'Discovery', '/twin': 'Twin Diary', '/vault': 'Vault', '/memory': 'Memory Overview', '/subscription': 'Subscription', '/settings': 'Settings & Trust', '/ai-profile': 'AI Profile' }
+const TITLES = { '/': 'Daily Brief', '/chat': 'Ask Mneva', '/finance': 'Finance & Payments', '/comms': 'Communications', '/health': 'Health & Wellness', '/lifeops': 'Life Operations', '/contacts': 'Contacts', '/workspace': 'Workspace', '/family': 'Family', '/priorities': 'Priorities', '/search': 'Search', '/alerts': 'Alerts', '/discovery': 'Discovery', '/twin': 'Twin Diary', '/vault': 'Vault', '/profile': 'Profile', '/memory': 'Memory Overview', '/subscription': 'Subscription', '/settings': 'Settings & Trust', '/ai-profile': 'AI Profile' }
 
 // ── Professional chime using Web Audio API ───────────────────────────────────
 function playReminderChime() {
