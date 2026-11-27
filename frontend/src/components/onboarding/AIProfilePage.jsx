@@ -215,7 +215,7 @@ const PROFILE_SECTIONS = [
 const ALL_INTEGRATIONS = [
   { id: 'gmail',       icon: '📧', name: 'Gmail',            desc: 'Email drafting, follow-up radar & smart replies',  category: 'Comms' },
   { id: 'calendar',    icon: '📅', name: 'Google Calendar',  desc: 'Smart scheduling, reminders & meeting prep',        category: 'Comms', readOnly: true, note: 'Auto-connects with Gmail' },
-  { id: 'googlefit',   icon: '❤️', name: 'Google Fit',       desc: 'Being retired — connect Health Connect from the mobile app instead', category: 'Health' },
+  { id: 'googlefit',   icon: '❤️', name: 'Google Health',    desc: 'Available on the Mneva mobile app (Android) — steps, heart rate, sleep & fitness', category: 'Health' },
   { id: 'zerodha',     icon: '💹', name: 'Zerodha Kite',     desc: 'Stock & trading portfolio monitoring',               category: 'Finance', soon: true },
   { id: 'groww',       icon: '📈', name: 'Groww',            desc: 'Mutual funds & SIP portfolio monitoring',            category: 'Finance', soon: true },
   { id: 'ola',         icon: '🚗', name: 'Ola / Uber',       desc: 'Cab booking with driver & fare estimate',            category: 'Life Ops', soon: true },
@@ -426,8 +426,8 @@ function ConnectionsCard({ saved, onConnectedCountChange }) {
         if (gmailConnected) { await gmailApi.disconnect(); toast.success('Gmail disconnected'); await fetchStatuses() }
         else { const { url } = await gmailApi.connect(); window.location.href = url }
       } else if (intg.id === 'googlefit') {
-        if (fitConnected) { await googleFitApi.disconnect(); toast.success('Google Fit disconnected'); await fetchStatuses() }
-        else { toast('Google Fit is being retired. Open the Mneva mobile app and connect Health Connect from the Health screen instead.', { duration: 6000 }) }
+        if (fitConnected) { await googleFitApi.disconnect(); toast.success('Disconnected'); await fetchStatuses() }
+        else { toast('Google Health is only available on the Mneva mobile app (Android) — open it and connect from the Health screen.', { duration: 6000 }) }
       }
     } catch (err) { toast.error(err?.response?.data?.error || err.message || 'Connection failed') }
     finally { setConnecting(null) }

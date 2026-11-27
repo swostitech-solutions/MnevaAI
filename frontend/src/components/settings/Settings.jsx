@@ -365,7 +365,7 @@ export default function Settings() {
                     { icon: '📧', name: 'Gmail', status: gmailConnected ? 'Connected' : gmailConfigured === false ? 'Setup needed' : 'Not linked', detail: gmailConnected ? `Connected as ${gmailEmail} · Google Calendar synced automatically` : gmailConfigured === false ? 'Admin must add Google OAuth keys to backend/.env' : 'Connect Gmail — also enables Google Calendar sync', color: gmailConnected ? 'var(--go)' : gmailConfigured === false ? 'var(--warn)' : 'var(--ink3)' },
                     { icon: '📅', name: 'Google Calendar', status: gmailConnected ? 'Connected via Gmail' : 'Auto-connects with Gmail', detail: gmailConnected ? `Synced as ${calendarEmail || gmailEmail} · Managed via Gmail connection` : 'Connect Gmail above to enable Calendar sync automatically', color: gmailConnected ? 'var(--go)' : 'var(--ink3)', readOnly: true },
                     { icon: '📈', name: 'Zerodha Kite',    status: 'Not linked', detail: 'Connect portfolio access', color: 'var(--ink3)' },
-                    { icon: '❤️', name: 'Google Fit', status: fitConnected ? 'Connected' : 'Retired', detail: fitConnected ? `Syncing steps, heart rate, sleep · ${fitEmail} · being retired, switch to Health Connect on the app` : 'Being retired — connect Health Connect from the Mneva mobile app instead', color: fitConnected ? 'var(--warn)' : 'var(--ink3)' },
+                    { icon: '❤️', name: 'Google Health', status: fitConnected ? 'Connected (old)' : 'Android only', detail: fitConnected ? `Syncing steps, heart rate, sleep · ${fitEmail} · this is the old Google Fit — switch to Google Health on the app` : 'Available on the Mneva mobile app (Android) — connect from the Health screen there', color: fitConnected ? 'var(--warn)' : 'var(--ink3)' },
                     { icon: '👥', name: 'Google Contacts', status: contactsConnected ? 'Connected' : 'Not linked', detail: contactsConnected ? `Contacts synced · ${contactsEmail}` : 'Connect Google Contacts — AI knows your relationships', color: contactsConnected ? 'var(--go)' : 'var(--ink3)' },
                     { icon: '🗂️', name: 'Google Drive', status: driveConnected ? 'Connected' : 'Not linked', detail: driveConnected ? `Drive synced · ${driveEmail}` : 'Connect Drive to browse Docs, Sheets, Slides & files', color: driveConnected ? 'var(--go)' : 'var(--ink3)' },
                     { icon: '✅', name: 'Google Tasks', status: tasksConnected ? 'Connected' : 'Not linked', detail: tasksConnected ? `Tasks synced · ${tasksEmail}` : 'Connect Google Tasks to sync your to-dos with AI', color: tasksConnected ? 'var(--go)' : 'var(--ink3)' },
@@ -389,10 +389,10 @@ export default function Settings() {
                           } catch (err) { toast.error(err.response?.data?.error || err.message || 'Could not connect Gmail') }
                           return
                         }
-                        if (svc.name === 'Google Fit') {
-                          if (!fitConnected) { toast('Google Fit is being retired. Open the Mneva mobile app and connect Health Connect from the Health screen instead.', { duration: 6000 }); return }
-                          try { await googleFitApi.disconnect(); toast.success('Google Fit disconnected'); refetchFitStatus() }
-                          catch (err) { toast.error(err.response?.data?.error || err.message || 'Could not disconnect Google Fit') }
+                        if (svc.name === 'Google Health') {
+                          if (!fitConnected) { toast('Google Health is only available on the Mneva mobile app (Android) — open it and connect from the Health screen.', { duration: 6000 }); return }
+                          try { await googleFitApi.disconnect(); toast.success('Disconnected'); refetchFitStatus() }
+                          catch (err) { toast.error(err.response?.data?.error || err.message || 'Could not disconnect') }
                           return
                         }
                         if (svc.name === 'Google Contacts') {
@@ -438,7 +438,7 @@ export default function Settings() {
                         <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>{svc.detail}</div>
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 600, color: svc.color }}>
-                        {svc.status === 'Connected' ? '✓ ' : svc.status === 'Pending' ? '⏳ ' : svc.status === 'Retired' ? '⚠️ ' : '+ '}{svc.status}
+                        {svc.status === 'Connected' ? '✓ ' : svc.status === 'Pending' ? '⏳ ' : svc.status === 'Connected (old)' ? '⚠️ ' : svc.status === 'Android only' ? '📱 ' : '+ '}{svc.status}
                       </span>
                     </div>
                   ))}
